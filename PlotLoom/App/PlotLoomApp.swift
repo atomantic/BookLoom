@@ -6,6 +6,12 @@ private let appLogger = Logger(subsystem: "net.shadowpuppet.PlotLoom", category:
 
 @main
 struct PlotLoomApp: App {
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(PlotLoomAppDelegate.self) var appDelegate
+    #elseif os(macOS)
+    @NSApplicationDelegateAdaptor(PlotLoomAppDelegate.self) var appDelegate
+    #endif
+
     @State private var memberIdentity = MemberIdentity()
 
     var sharedModelContainer: ModelContainer = {
@@ -33,6 +39,26 @@ struct PlotLoomApp: App {
         WindowGroup {
             RootView()
                 .environment(memberIdentity)
+                .onContinueUserActivity(ShareAcceptance.activityType) { activity in
+                    guard let metadata = ShareAcceptance.metadata(from: activity) else { return }
+                    Task { @MainActor in
+                        await ShareAcceptance.handleAccept(
+                            metadata: metadata,
+                            context: sharedModelContainer.mainContext
+                        )
+                    }
+                }
+                .task {
+                    // Drain any shares that were accepted via the scene/app
+                    // delegate before SwiftUI was ready to receive them.
+                    let pending = AcceptedShareInbox.shared.drain()
+                    for metadata in pending {
+                        await ShareAcceptance.handleAccept(
+                            metadata: metadata,
+                            context: sharedModelContainer.mainContext
+                        )
+                    }
+                }
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)

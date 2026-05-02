@@ -4,6 +4,8 @@ import SwiftData
 struct BookClubHomeView: View {
     @Bindable var club: BookClub
 
+    @State private var showingInvite: Bool = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -53,6 +55,18 @@ struct BookClubHomeView: View {
                     }
                     .disabled(proposedSubmissions.isEmpty)
                 }
+                if club.isOwner {
+                    ToolbarItem(placement: .secondaryAction) {
+                        Button {
+                            showingInvite = true
+                        } label: {
+                            Label("Invite Members", systemImage: "person.crop.circle.badge.plus")
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showingInvite) {
+                InviteView(club: club)
             }
         }
     }

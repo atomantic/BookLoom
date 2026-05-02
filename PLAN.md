@@ -14,14 +14,21 @@
 - [x] `deploy.sh` for local TestFlight upload (iOS + macOS)
 - [x] Initial git commit + private GitHub repo
 
-## Up next (v0.2 — group sharing)
+## v0.2 — group sharing (code complete, awaiting portal setup)
 
-- [ ] CKShare-based book club sharing (cross-Apple-ID invite + accept flow)
-  - `UICloudSharingController` (iOS) / `NSSharingService` (macOS)
-  - Generate share URL when starting a club
-  - Accept share via universal link / `plotloom://` URL
-  - Make `BookClub` the CKShare root entity (all submissions/ratings/notes in same shared zone)
-  - See existing skill: `swiftdata-cloudkit-cross-appleid-sharing`
+- [x] CKShare-based book club sharing skeleton (cross-Apple-ID invite + accept flow)
+  - `CloudKitSharingService` — atomic root+share save, accept handler
+  - `UICloudSharingController` wrapper (iOS) — `CloudSharingControllerView`
+  - macOS share-URL copy UX (NSPasteboard)
+  - `ShareAcceptance` magic-string handler (`com.apple.CloudKit.ShareMetadata`)
+  - SceneDelegate (iOS) + AppDelegate (macOS) cold-launch fallback via `AcceptedShareInbox`
+  - `BookClub` extended with `cloudZoneName`, `ownerUserRecordName`, `shareIsActive`, `shareParticipantCount`
+- [x] Invite UI in club home, gated by `Features.cloudKitSharing`
+- [ ] **Portal setup (manual, blocking)**:
+  1. developer.apple.com → App ID `net.shadowpuppet.PlotLoom` → enable iCloud capability → register container `iCloud.net.shadowpuppet.PlotLoom`
+  2. icloud.developer.apple.com → push records from a Debug build to seed the Development schema → "Deploy Schema Changes…" to Production
+  3. Re-archive (automatic signing refreshes the provisioning profile)
+- [ ] Flip `Features.cloudKitSharing = true` and smoke-test on two Apple IDs
 - [ ] Member list view (CKShare participants → display names)
 - [ ] Sync status indicator in toolbar
 
