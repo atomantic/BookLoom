@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# PlotLoom — Local TestFlight Deploy
+# BookLoom — Local TestFlight Deploy
 #
 # Usage: ./deploy.sh [--skip-tests] [--ios] [--macos] [--all]
 #
@@ -43,12 +43,12 @@ if [ ! -f ~/.private_keys/"$KEY_FILENAME" ]; then
     echo "🔑 Symlinked API key to ~/.private_keys/"
 fi
 
-PROJECT="PlotLoom.xcodeproj"
+PROJECT="BookLoom.xcodeproj"
 BUILD_DIR="$SCRIPT_DIR/build"
-APP_NAME="PlotLoom"
-SCHEME_IOS="PlotLoom_iOS"
-SCHEME_MACOS="PlotLoom_macOS"
-TEST_BUNDLE_IOS="PlotLoomTests_iOS"
+APP_NAME="BookLoom"
+SCHEME_IOS="BookLoom_iOS"
+SCHEME_MACOS="BookLoom_macOS"
+TEST_BUNDLE_IOS="BookLoomTests_iOS"
 IOS_BUNDLE_ID="net.shadowpuppet.PlotLoom"
 ICLOUD_CONTAINER="iCloud.${IOS_BUNDLE_ID}"
 

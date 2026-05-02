@@ -13,16 +13,16 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT="$PROJECT_DIR/PlotLoom.xcodeproj"
-SCHEME="PlotLoom_iOS"
+PROJECT="$PROJECT_DIR/BookLoom.xcodeproj"
+SCHEME="BookLoom_iOS"
 SCREENSHOTS_DIR="$PROJECT_DIR/screenshots"
 CONFIG_FILE_PROJECT="$PROJECT_DIR/.screenshot_config.json"
-CONFIG_FILE_TMP="/tmp/plotloom_screenshot_config.json"
+CONFIG_FILE_TMP="/tmp/bookloom_screenshot_config.json"
 DERIVED_DATA="$PROJECT_DIR/.build/DerivedData"
 
 # Format: "Simulator Name|OS version|folder_name|test_method"
-IPHONE_DEVICE="${PLOTLOOM_IPHONE_DEVICE:-iPhone 16 Pro Max}|${PLOTLOOM_IPHONE_OS:-18.6}|iphone_6.7|testCaptureIPhoneScreenshots"
-IPAD_DEVICE="${PLOTLOOM_IPAD_DEVICE:-iPad Pro 13-inch (M4)}|${PLOTLOOM_IPAD_OS:-18.6}|ipad_13|testCaptureIPadScreenshots"
+IPHONE_DEVICE="${BOOKLOOM_IPHONE_DEVICE:-iPhone 16 Pro Max}|${BOOKLOOM_IPHONE_OS:-18.6}|iphone_6.7|testCaptureIPhoneScreenshots"
+IPAD_DEVICE="${BOOKLOOM_IPAD_DEVICE:-iPad Pro 13-inch (M4)}|${BOOKLOOM_IPAD_OS:-18.6}|ipad_13|testCaptureIPadScreenshots"
 
 ALL_LANGUAGES=("en")
 
@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
         --help|-h)
             echo "Usage: $0 [--iphone-only|--ipad-only] [--screen <name>] [locale ...]"
             echo "Screens: 01_clubs 02_club_home 03_current_read 04_vote 05_meeting 06_book_ideas 07_add_book"
-            echo "Override devices with PLOTLOOM_IPHONE_DEVICE/PLOTLOOM_IPAD_DEVICE and PLOTLOOM_IPHONE_OS/PLOTLOOM_IPAD_OS."
+            echo "Override devices with BOOKLOOM_IPHONE_DEVICE/BOOKLOOM_IPAD_DEVICE and BOOKLOOM_IPHONE_OS/BOOKLOOM_IPAD_OS."
             exit 0
             ;;
         *) LANGUAGES+=("$1"); shift ;;
@@ -49,7 +49,7 @@ done
 [[ ${#DEVICES[@]} -eq 0 ]] && DEVICES=("$IPHONE_DEVICE" "$IPAD_DEVICE")
 
 echo "=========================================="
-echo "  PlotLoom iOS Screenshot Capture"
+echo "  BookLoom iOS Screenshot Capture"
 echo "=========================================="
 echo "  Languages: ${LANGUAGES[*]}"
 echo "  Devices:   ${#DEVICES[@]}"
@@ -110,7 +110,7 @@ for device_spec in "${DEVICES[@]}"; do
             -scheme "$SCHEME" \
             -destination "$DESTINATION" \
             -derivedDataPath "$DERIVED_DATA" \
-            -only-testing:"PlotLoomUITests_iOS/ScreenshotTests/$TEST_METHOD" \
+            -only-testing:"BookLoomUITests_iOS/ScreenshotTests/$TEST_METHOD" \
             CODE_SIGNING_ALLOWED=NO \
             -quiet; then
             echo "  Complete: $LANG / $DEVICE_FOLDER"

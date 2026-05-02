@@ -1,8 +1,8 @@
-# PlotLoom UX Direction
+# BookLoom UX Direction
 
 ## Product Shape
 
-PlotLoom should feel like a quiet operating surface for a reading group: fast to scan, warm enough for books, and dense enough that the next useful action is visible without digging. The app is not a marketing site once the user has onboarded; returning screens should prioritize current reads, proposals, ratings, notes, and sharing state.
+BookLoom should feel like a quiet operating surface for a reading group: fast to scan, warm enough for books, and dense enough that the next useful action is visible without digging. The app is not a marketing site once the user has onboarded; returning screens should prioritize current reads, proposals, ratings, notes, and sharing state.
 
 ## Design Principles
 
@@ -15,7 +15,7 @@ PlotLoom should feel like a quiet operating surface for a reading group: fast to
 
 ## Current Pass
 
-- Tightened shared card/list primitives in `PlotLoomDesign.swift`.
+- Tightened shared card/list primitives in `BookLoomDesign.swift`.
 - Reworked club list and club home dashboards into compact summary bands.
 - Reduced proposal/current row height by shrinking covers, card padding, spacing, and metric tiles.
 - Collapsed Submission Detail from separate Book, Description, Your Rating, Group Ratings, Add Note, and Notes blocks into Details, Ratings, and Notes.

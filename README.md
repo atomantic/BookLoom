@@ -1,4 +1,4 @@
-# PlotLoom
+# BookLoom
 
 Book club companion for picking, tracking, rating, and noting your group's reads — like a potluck where everyone brings a book and the loom weaves the picks together.
 
@@ -31,7 +31,7 @@ Requires Xcode 16+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew 
 
 ```sh
 xcodegen generate
-open PlotLoom.xcodeproj
+open BookLoom.xcodeproj
 ```
 
 The project file is generated from `project.yml` and is git-ignored. Re-run `xcodegen generate` after editing `project.yml`.
@@ -39,7 +39,7 @@ The project file is generated from `project.yml` and is git-ignored. Re-run `xco
 ## Test
 
 ```sh
-xcodebuild test -project PlotLoom.xcodeproj -scheme PlotLoom_iOS \
+xcodebuild test -project BookLoom.xcodeproj -scheme BookLoom_iOS \
   -destination 'platform=iOS Simulator,name=iPhone 16' | xcbeautify
 ```
 
@@ -48,7 +48,7 @@ xcodebuild test -project PlotLoom.xcodeproj -scheme PlotLoom_iOS \
 Launch with deterministic in-memory screenshot data:
 
 ```sh
-open .build/DerivedData/Build/Products/Debug/PlotLoom.app --args -SeedSampleData
+open .build/DerivedData/Build/Products/Debug/BookLoom.app --args -SeedSampleData
 ```
 
 In Xcode, add `-SeedSampleData` to Run > Arguments. The sample launch uses an in-memory SwiftData store and includes a configured member, a shared test club, current read, proposals, completed history, ratings, notes, discussion prompts, meetings, RSVPs, and a ranked poll.
@@ -70,7 +70,7 @@ Useful variants:
 ./take_screenshots_macos.sh
 ```
 
-Outputs are written to `screenshots/{locale}/{device}/`. Override simulator defaults with `PLOTLOOM_IPHONE_DEVICE`, `PLOTLOOM_IPHONE_OS`, `PLOTLOOM_IPAD_DEVICE`, and `PLOTLOOM_IPAD_OS`.
+Outputs are written to `screenshots/{locale}/{device}/`. Override simulator defaults with `BOOKLOOM_IPHONE_DEVICE`, `BOOKLOOM_IPHONE_OS`, `BOOKLOOM_IPAD_DEVICE`, and `BOOKLOOM_IPAD_OS`.
 
 ## Deploy to TestFlight
 

@@ -1,9 +1,9 @@
-# PlotLoom Plan
+# BookLoom Plan
 
 ## Done
 
 - [x] Apple Developer: register `net.shadowpuppet.PlotLoom` Bundle ID
-- [x] App Store Connect: register `PlotLoom` app (App ID `6765790616`, iOS + macOS)
+- [x] App Store Connect: register `BookLoom` app (App ID `6765790616`, iOS + macOS)
 - [x] Project scaffold: XcodeGen `project.yml`, entitlements (iOS + macOS sandbox), assets, Info.plist
 - [x] SwiftData models: `BookClub`, `BookSubmission`, `Rating`, `BookNote`
 - [x] CloudKit sync via `ModelConfiguration(cloudKitDatabase: .automatic)`
@@ -24,7 +24,7 @@
 - [x] Pick Random confirmation dialog (prevents accidental rotation)
 - [x] User-actionable iCloud auth errors (Sign in / Turn on Drive / Network)
 - [x] Removed unreferenced CreateOrJoinClubView (replaced by NewClubFormView sheet)
-- [x] PlotLoomDesign system: shared `String.trimmed`, `plotLoomListRow()`, `TintedCapsuleLabel`
+- [x] BookLoomDesign system: shared `String.trimmed`, `bookLoomListRow()`, `TintedCapsuleLabel`
 - [x] Single-pass `BookClubMetrics` / `BookClubSubmissionSections` (was 5 filter passes)
 - [x] Skip redundant CloudKit fetch when `saveResults` returns the share directly
 - [x] Populate `AccentColor.colorset` with brand plum (matches `.tint` everywhere)
@@ -38,13 +38,17 @@
   - `ShareAcceptance` magic-string handler (`com.apple.CloudKit.ShareMetadata`)
   - SceneDelegate (iOS) + AppDelegate (macOS) cold-launch fallback via `AcceptedShareInbox`
   - `BookClub` extended with `cloudZoneName`, `ownerUserRecordName`, `shareIsActive`, `shareParticipantCount`
+- [x] Shared club snapshot sync for v1 collaboration
+  - `BookClubShareRoot.snapshotData` stores a versioned JSON club graph
+  - accepted invites import the real club, proposals, current read, history, meetings, polls, ratings, notes, prompts, and cover URLs for local cover caching
+  - club mutations publish a new share-root snapshot; shared clubs refresh on list/home load
 - [x] Invite UI in club home, gated by `Features.cloudKitSharing`
 - [x] developer.apple.com → App ID `net.shadowpuppet.PlotLoom` → iCloud capability enabled, container `iCloud.net.shadowpuppet.PlotLoom` registered and assigned
-- [ ] **Schema seed (blocked on running app once)**:
-  1. Flip `Features.cloudKitSharing = true` locally
-  2. Run app in Xcode (Debug, simulator or device signed into iCloud)
+- [ ] **Schema seed / deploy for share snapshot fields**:
+  1. Confirm `Features.cloudKitSharing = true`
+  2. Run app in Xcode (Debug, simulator or device signed into iCloud), or run the schema primer with `BOOKLOOM_PRIME_CLOUDKIT_SCHEMA=1`
   3. Create a club, tap Invite Members → CloudKit auto-creates the `BookClubShareRoot` record type in the Development schema
-  4. icloud.developer.apple.com → open `iCloud.net.shadowpuppet.PlotLoom` container → verify the record type appears under Development → click "Deploy Schema Changes…" to push to Production
+  4. icloud.developer.apple.com → open `iCloud.net.shadowpuppet.PlotLoom` container → verify `BookClubShareRoot` has `clubName`, `snapshotData`, and `snapshotUpdatedAt` → click "Deploy Schema Changes…" to push to Production
   5. Re-archive (automatic signing refreshes the provisioning profile to include the new entitlement)
   6. Smoke-test on two different Apple IDs via TestFlight
 - [x] Flip `Features.cloudKitSharing = true`
@@ -57,6 +61,7 @@
 - [x] OpenLibrary + Google Books lookup with parallel detail enrichment (BookMetadataService)
 - [x] Cover thumbnail in submission rows, current row, and detail hero (AsyncImage via `BookCoverTile.coverURL`)
 - [x] Description + published year captured from external metadata
+- [x] Local metadata search cache + cover image cache; cover bytes stay in the device Caches directory and are not written to SwiftData/iCloud for new submissions
 - [ ] Manual cover image upload as fallback
 
 ## v0.3 — appearance & welcome
@@ -85,10 +90,11 @@
 ## v1.0 — submission
 
 - [x] App Store screenshot capture automation (XCUITest iOS + macOS script)
+- [x] App Store screenshots uploaded for iPhone, iPad, and macOS
 - [x] App Store Connect copy + marketing URL captured for iOS/macOS in `docs/app-store-metadata.md`
-- [ ] Publish marketing, support, privacy, and terms pages under `https://plotloom.shadowpuppet.net`
-- [ ] Enter App Store Connect metadata for iOS/macOS
-- [ ] App Store submission
+- [x] Publish marketing, support, privacy, and terms pages under `https://bookloom.shadowpuppet.net`
+- [x] Enter App Store Connect metadata for iOS/macOS
+- [x] App Store submission (previous iOS 1.0 and macOS 1.0 builds were submitted; next build should include the v1 club snapshot fix before release)
 
 ## Notes
 

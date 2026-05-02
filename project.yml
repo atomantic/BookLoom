@@ -1,4 +1,4 @@
-name: PlotLoom
+name: BookLoom
 options:
   bundleIdPrefix: net.shadowpuppet
   deploymentTarget:
@@ -11,40 +11,40 @@ settings:
   base:
     DEVELOPMENT_TEAM: TYQ32QCF6K
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: 6
+    CURRENT_PROJECT_VERSION: 8
     SWIFT_VERSION: "6.0"
     DEAD_CODE_STRIPPING: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     SWIFT_EMIT_LOC_STRINGS: YES
 
 schemes:
-  PlotLoom_iOS:
+  BookLoom_iOS:
     build:
       targets:
-        PlotLoom_iOS: all
+        BookLoom_iOS: all
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - PlotLoomTests_iOS
-        - PlotLoomUITests_iOS
+        - BookLoomTests_iOS
+        - BookLoomUITests_iOS
     profile:
       config: Release
     analyze:
       config: Debug
     archive:
       config: Release
-  PlotLoom_macOS:
+  BookLoom_macOS:
     build:
       targets:
-        PlotLoom_macOS: all
+        BookLoom_macOS: all
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - PlotLoomTests_macOS
+        - BookLoomTests_macOS
     profile:
       config: Release
     analyze:
@@ -53,35 +53,35 @@ schemes:
       config: Release
 
 targets:
-  PlotLoom:
+  BookLoom:
     type: application
     platform: [iOS, macOS]
     sources:
-      - PlotLoom
+      - BookLoom
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom
         DEVELOPMENT_TEAM: TYQ32QCF6K
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        INFOPLIST_KEY_CFBundleDisplayName: PlotLoom
+        INFOPLIST_KEY_CFBundleDisplayName: BookLoom
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.lifestyle
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: false
-        # PlotLoom-macOS.entitlements is manually maintained because XcodeGen cannot
+        # BookLoom-macOS.entitlements is manually maintained because XcodeGen cannot
         # generate per-SDK entitlements. It mirrors the iOS keys (CloudKit, network)
         # PLUS macOS App Sandbox keys required for Mac App Store / TestFlight.
         # When shared capabilities change in `entitlements:` below, also update
-        # PlotLoom/App/PlotLoom-macOS.entitlements by hand.
-        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": PlotLoom/App/PlotLoom-macOS.entitlements
+        # BookLoom/App/BookLoom-macOS.entitlements by hand.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": BookLoom/App/BookLoom-macOS.entitlements
     info:
-      path: PlotLoom/App/Info.plist
+      path: BookLoom/App/Info.plist
       properties:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        CFBundleDisplayName: PlotLoom
+        CFBundleDisplayName: BookLoom
         LSApplicationCategoryType: public.app-category.lifestyle
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
@@ -98,49 +98,49 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         CFBundleURLTypes:
-          - CFBundleURLName: net.shadowpuppet.PlotLoom
+          - CFBundleURLName: net.shadowpuppet.BookLoom
             CFBundleURLSchemes:
-              - plotloom
+              - bookloom
     entitlements:
-      path: PlotLoom/App/PlotLoom.entitlements
+      path: BookLoom/App/BookLoom.entitlements
       properties:
         com.apple.developer.icloud-container-identifiers:
           - iCloud.net.shadowpuppet.PlotLoom
         com.apple.developer.icloud-services:
           - CloudKit
 
-  PlotLoomTests_iOS:
+  BookLoomTests_iOS:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - PlotLoomTests
+      - BookLoomTests
     dependencies:
-      - target: PlotLoom_iOS
+      - target: BookLoom_iOS
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.tests
+        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.BookLoom.tests
         GENERATE_INFOPLIST_FILE: YES
 
-  PlotLoomUITests_iOS:
+  BookLoomUITests_iOS:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - PlotLoomUITests
+      - BookLoomUITests
     dependencies:
-      - target: PlotLoom_iOS
+      - target: BookLoom_iOS
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.BookLoom.uitests
         GENERATE_INFOPLIST_FILE: YES
 
-  PlotLoomTests_macOS:
+  BookLoomTests_macOS:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - PlotLoomTests
+      - BookLoomTests
     dependencies:
-      - target: PlotLoom_macOS
+      - target: BookLoom_macOS
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.tests
+        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.BookLoom.tests
         GENERATE_INFOPLIST_FILE: YES

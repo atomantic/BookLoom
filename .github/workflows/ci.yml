@@ -35,9 +35,9 @@ jobs:
           fi
 
           xcodebuild test \
-            -project PlotLoom.xcodeproj \
-            -scheme PlotLoom_iOS \
-            -only-testing:PlotLoomTests_iOS \
+            -project BookLoom.xcodeproj \
+            -scheme BookLoom_iOS \
+            -only-testing:BookLoomTests_iOS \
             -destination "$DESTINATION" \
             -configuration Debug \
             -derivedDataPath build \
@@ -50,9 +50,9 @@ jobs:
       - name: Run macOS tests
         run: |
           xcodebuild test \
-            -project PlotLoom.xcodeproj \
-            -scheme PlotLoom_macOS \
-            -only-testing:PlotLoomTests_macOS \
+            -project BookLoom.xcodeproj \
+            -scheme BookLoom_macOS \
+            -only-testing:BookLoomTests_macOS \
             -destination 'platform=macOS' \
             -configuration Debug \
             -derivedDataPath build \

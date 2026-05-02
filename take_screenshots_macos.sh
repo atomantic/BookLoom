@@ -14,11 +14,11 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT="$PROJECT_DIR/PlotLoom.xcodeproj"
-SCHEME="PlotLoom_macOS"
+PROJECT="$PROJECT_DIR/BookLoom.xcodeproj"
+SCHEME="BookLoom_macOS"
 SCREENSHOTS_DIR="$PROJECT_DIR/screenshots"
 DERIVED_DATA="$PROJECT_DIR/.build/DerivedData"
-APP_PATH="$DERIVED_DATA/Build/Products/Debug/PlotLoom.app"
+APP_PATH="$DERIVED_DATA/Build/Products/Debug/BookLoom.app"
 
 ALL_LANGUAGES=("en")
 WINDOW_X=100
@@ -40,7 +40,7 @@ done
 [[ ${#LANGUAGES[@]} -eq 0 ]] && LANGUAGES=("${ALL_LANGUAGES[@]}")
 
 echo "=========================================="
-echo "  PlotLoom macOS Screenshot Capture"
+echo "  BookLoom macOS Screenshot Capture"
 echo "=========================================="
 echo "  Languages: ${LANGUAGES[*]}"
 echo "  Window:    ${WINDOW_WIDTH}x${WINDOW_HEIGHT}"
@@ -65,10 +65,10 @@ fi
 
 setup_window() {
     osascript -e "
-    tell application \"PlotLoom\" to activate
+    tell application \"BookLoom\" to activate
     delay 0.5
     tell application \"System Events\"
-        tell process \"PlotLoom\"
+        tell process \"BookLoom\"
             set frontmost to true
             if (count of windows) > 0 then
                 set position of first window to {$WINDOW_X, $WINDOW_Y}
@@ -89,7 +89,7 @@ capture_window() {
 capture_page() {
     local route="$1"
     local output="$2"
-    osascript -e "tell application \"PlotLoom\" to open location \"plotloom://screenshot/$route\"" 2>/dev/null || true
+    osascript -e "tell application \"BookLoom\" to open location \"bookloom://screenshot/$route\"" 2>/dev/null || true
     sleep 1.5
     capture_window "$output"
 }
@@ -101,7 +101,7 @@ capture_locale() {
     rm -f "$out_dir"/*.png
 
     echo "Capturing $lang..."
-    killall PlotLoom 2>/dev/null || true
+    killall BookLoom 2>/dev/null || true
     sleep 1
 
     open "$APP_PATH" --args \
@@ -118,7 +118,7 @@ capture_locale() {
     capture_page poll        "$out_dir/04_vote.png"
     capture_page meeting     "$out_dir/05_meeting.png"
 
-    killall PlotLoom 2>/dev/null || true
+    killall BookLoom 2>/dev/null || true
     sleep 1
 
     for file in "$out_dir"/*.png; do
