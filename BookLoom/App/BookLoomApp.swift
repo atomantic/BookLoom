@@ -14,6 +14,7 @@ struct BookLoomApp: App {
 
     @State private var memberIdentity = MemberIdentity()
     @StateObject private var acceptedShareInbox = AcceptedShareInbox.shared
+    @StateObject private var cloudKitChangeInbox = CloudKitChangeInbox.shared
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
 
     init() {
@@ -78,11 +79,18 @@ struct BookLoomApp: App {
 
                     SchemaPrimeDataCleanup.removeSchemaPrimeData(from: sharedModelContainer.mainContext)
                     CoverDataCleanup.clearPersistedCoverData(in: sharedModelContainer.mainContext)
+                    SharedClubSync.publishOwnedClubs(in: sharedModelContainer.mainContext)
                     await drainAcceptedShares()
+                    await CloudKitChangeNotifications.configureIfNeeded()
                 }
                 .onChange(of: acceptedShareInbox.pending.count) { _, _ in
                     Task { @MainActor in
                         await drainAcceptedShares()
+                    }
+                }
+                .onChange(of: cloudKitChangeInbox.pendingChangeCount) { _, _ in
+                    Task { @MainActor in
+                        await CloudKitChangeNotifications.refreshSharedClubs(in: sharedModelContainer.mainContext)
                     }
                 }
         }

@@ -35,7 +35,6 @@ enum SharedClubSync {
     static func refreshIfNeeded(_ club: BookClub, context: ModelContext) async {
         guard Features.cloudKitSharing, club.shareIsActive else { return }
         if club.isOwner {
-            publishIfNeeded(club, context: context)
             return
         }
 
@@ -53,6 +52,17 @@ enum SharedClubSync {
     static func refreshIfNeeded(_ clubs: [BookClub], context: ModelContext) async {
         for club in clubs where club.shareIsActive {
             await refreshIfNeeded(club, context: context)
+        }
+    }
+
+    static func publishOwnedClubs(in context: ModelContext) {
+        do {
+            let clubs = try context.fetch(FetchDescriptor<BookClub>())
+            for club in clubs where club.shareIsActive && club.isOwner {
+                publishIfNeeded(club, context: context)
+            }
+        } catch {
+            logger.error("Failed to fetch owner clubs for shared snapshot publish: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

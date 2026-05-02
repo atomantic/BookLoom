@@ -18,9 +18,12 @@ struct RootView: View {
 }
 
 private struct MainTabs: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
     @State private var selectedTab = 0
     @State private var clubPath = NavigationPath()
+    private let sharedSyncTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -41,9 +44,18 @@ private struct MainTabs: View {
             .tag(1)
         }
         .task {
+            await refreshSharedClubs()
             guard let route = AppLaunchOptions.screenshotRoute else { return }
             try? await Task.sleep(nanoseconds: 350_000_000)
             navigateToScreenshotRoute(route)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await refreshSharedClubs() }
+        }
+        .onReceive(sharedSyncTimer) { _ in
+            guard scenePhase == .active else { return }
+            Task { await refreshSharedClubs() }
         }
         .onOpenURL { url in
             guard url.scheme == "bookloom", url.host() == "screenshot" else { return }
@@ -54,6 +66,12 @@ private struct MainTabs: View {
 
     private var visibleClubs: [BookClub] {
         clubs.filter { !SchemaPrimeDataCleanup.isSchemaPrime($0) }
+    }
+
+    private func refreshSharedClubs() async {
+        let targets = visibleClubs.filter { $0.shareIsActive && !$0.isOwner }
+        guard !targets.isEmpty else { return }
+        await SharedClubSync.refreshIfNeeded(targets, context: context)
     }
 
     private func navigateToScreenshotRoute(_ route: String) {

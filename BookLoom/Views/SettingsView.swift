@@ -4,6 +4,9 @@ struct SettingsView: View {
     @Environment(MemberIdentity.self) private var memberIdentity
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
     @AppStorage(WelcomeReplay.storageKey) private var replayWelcome = false
+    @AppStorage(BookLoomNotificationPreferences.proposalKey) private var proposalNotifications = false
+    @AppStorage(BookLoomNotificationPreferences.selectionKey) private var selectionNotifications = false
+    @AppStorage(BookLoomNotificationPreferences.discussionKey) private var discussionNotifications = false
     @State private var draftName: String = ""
     @State private var nameSaved: Bool = false
 
@@ -25,6 +28,17 @@ struct SettingsView: View {
                 )
             } header: {
                 SectionTitle(title: "Preferences")
+            }
+            .bookLoomListRow()
+
+            Section {
+                NotificationPreferencesCard(
+                    proposalNotifications: $proposalNotifications,
+                    selectionNotifications: $selectionNotifications,
+                    discussionNotifications: $discussionNotifications
+                )
+            } header: {
+                SectionTitle(title: "Notifications")
             }
             .bookLoomListRow()
 
@@ -54,6 +68,21 @@ struct SettingsView: View {
         .onAppear {
             draftName = memberIdentity.name
         }
+        .onChange(of: proposalNotifications) { _, enabled in
+            requestNotificationAuthorizationIfNeeded(enabled: enabled) {
+                proposalNotifications = false
+            }
+        }
+        .onChange(of: selectionNotifications) { _, enabled in
+            requestNotificationAuthorizationIfNeeded(enabled: enabled) {
+                selectionNotifications = false
+            }
+        }
+        .onChange(of: discussionNotifications) { _, enabled in
+            requestNotificationAuthorizationIfNeeded(enabled: enabled) {
+                discussionNotifications = false
+            }
+        }
     }
 
     private var saveDisabled: Bool {
@@ -68,6 +97,18 @@ struct SettingsView: View {
         Task {
             try? await Task.sleep(for: .seconds(2))
             nameSaved = false
+        }
+    }
+
+    private func requestNotificationAuthorizationIfNeeded(enabled: Bool, onDenied: @escaping () -> Void) {
+        guard enabled else { return }
+        Task {
+            let granted = await BookLoomUserNotifications.requestAuthorizationIfNeeded()
+            if !granted {
+                await MainActor.run {
+                    onDenied()
+                }
+            }
         }
     }
 
@@ -160,6 +201,33 @@ private struct SettingsPreferencesCard: View {
             }
             .buttonStyle(.bordered)
         }
+        .bookLoomCard(padding: 12)
+    }
+}
+
+private struct NotificationPreferencesCard: View {
+    @Binding var proposalNotifications: Bool
+    @Binding var selectionNotifications: Bool
+    @Binding var discussionNotifications: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: $proposalNotifications) {
+                Label("Book proposals", systemImage: "plus.circle")
+            }
+            Toggle(isOn: $selectionNotifications) {
+                Label("Current book picks", systemImage: "book.closed")
+            }
+            Toggle(isOn: $discussionNotifications) {
+                Label("Ratings and notes", systemImage: "text.bubble")
+            }
+
+            Text("Notifications are sent from this device after BookLoom receives shared iCloud updates.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.subheadline)
         .bookLoomCard(padding: 12)
     }
 }

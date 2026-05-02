@@ -198,6 +198,10 @@ enum SharedClubSnapshotStore {
             return
         }
 
+        let notificationEvents = club.lastSharedSnapshotAt == nil
+            ? []
+            : BookLoomNotificationEvent.events(before: club, applying: snapshot)
+
         club.name = snapshot.club.name
         club.createdAt = snapshot.club.createdAt
         if club.cloudZoneName.isEmpty {
@@ -328,6 +332,12 @@ enum SharedClubSnapshotStore {
 
         club.lastSharedSnapshotAt = snapshot.capturedAt
         try context.save()
+
+        if !notificationEvents.isEmpty {
+            Task {
+                await BookLoomUserNotifications.schedule(notificationEvents)
+            }
+        }
     }
 
     private static func replaceChildren(of club: BookClub, context: ModelContext) {

@@ -175,6 +175,9 @@ struct BookClubHomeView: View {
             }
         }
         .listStyle(.plain)
+        .refreshable {
+            await SharedClubSync.refreshIfNeeded(club, context: context)
+        }
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle(club.name)

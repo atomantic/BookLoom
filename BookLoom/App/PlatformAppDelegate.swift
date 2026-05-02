@@ -18,6 +18,17 @@ final class BookLoomAppDelegate: NSObject, UIApplicationDelegate {
         config.delegateClass = BookLoomSceneDelegate.self
         return config
     }
+
+    func application(_ application: UIApplication,
+                     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        if CKNotification(fromRemoteNotificationDictionary: userInfo) != nil {
+            CloudKitChangeInbox.shared.enqueueChangeNotification()
+            completionHandler(.newData)
+        } else {
+            completionHandler(.noData)
+        }
+    }
 }
 
 final class BookLoomSceneDelegate: NSObject, UIWindowSceneDelegate {
@@ -39,6 +50,12 @@ final class BookLoomAppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication,
                      userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
         AcceptedShareInbox.shared.enqueue(metadata)
+    }
+
+    func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
+        if CKNotification(fromRemoteNotificationDictionary: userInfo) != nil {
+            CloudKitChangeInbox.shared.enqueueChangeNotification()
+        }
     }
 }
 #endif
