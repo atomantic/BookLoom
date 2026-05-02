@@ -28,6 +28,9 @@ struct SubmissionDetailView: View {
                     if !submission.isbn.isEmpty {
                         InfoLine(label: "ISBN", value: submission.isbn)
                     }
+                    if let publishedYear = submission.publishedYear {
+                        InfoLine(label: "Published", value: "\(publishedYear)")
+                    }
                     InfoLine(label: "Submitted by", value: submission.displaySubmitter)
                 }
                 .plotLoomCard(padding: 16)
@@ -35,6 +38,19 @@ struct SubmissionDetailView: View {
                 SectionTitle(title: "Book")
             }
             .plotLoomListRow()
+
+            if !submission.displayDescription.isEmpty {
+                Section {
+                    Text(submission.displayDescription)
+                        .font(.body)
+                        .foregroundStyle(PlotLoomStyle.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .plotLoomCard(padding: 16)
+                } header: {
+                    SectionTitle(title: "Description")
+                }
+                .plotLoomListRow()
+            }
 
             Section {
                 VStack(alignment: .leading, spacing: 16) {
@@ -186,7 +202,7 @@ private struct SubmissionHero: View {
 
     var body: some View {
         HStack(spacing: 18) {
-            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor, width: 104, height: 144)
+            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor, coverURL: submission.coverImageURL, width: 104, height: 144)
             VStack(alignment: .leading, spacing: 12) {
                 StatusPill(status: submission.status)
                 Text(submission.displayTitle)

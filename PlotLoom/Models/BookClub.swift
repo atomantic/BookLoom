@@ -33,4 +33,13 @@ final class BookClub {
         self.createdAt = createdAt
         self.cloudZoneName = "BookClub-\(UUID().uuidString)"
     }
+
+    func addSubmission(_ submission: BookSubmission) {
+        var updatedSubmissions = submissions ?? []
+        if !updatedSubmissions.contains(where: { $0 === submission }) {
+            updatedSubmissions.append(submission)
+        }
+        submissions = updatedSubmissions
+        submission.bookClub = self
+    }
 }

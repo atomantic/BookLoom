@@ -13,6 +13,7 @@ struct PlotLoomApp: App {
     #endif
 
     @State private var memberIdentity = MemberIdentity()
+    @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -39,6 +40,7 @@ struct PlotLoomApp: App {
         WindowGroup {
             RootView()
                 .environment(memberIdentity)
+                .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
                 .onContinueUserActivity(ShareAcceptance.activityType) { activity in
                     guard let metadata = ShareAcceptance.metadata(from: activity) else { return }
                     Task { @MainActor in

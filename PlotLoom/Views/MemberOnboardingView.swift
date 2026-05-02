@@ -2,21 +2,22 @@ import SwiftUI
 
 struct MemberOnboardingView: View {
     @Environment(MemberIdentity.self) private var memberIdentity
+    @AppStorage(WelcomeReplay.storageKey) private var replayWelcome = false
     @State private var draftName: String = ""
+    var isReplay: Bool = false
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 28) {
-                OnboardingHeroArtwork(maxHeight: 300)
-                    .padding(.top, 12)
+            VStack(spacing: 22) {
+                OnboardingHeroArtwork(maxHeight: 245)
+                    .padding(.top, 8)
 
-                VStack(spacing: 10) {
-                    BrandBadge(size: 72)
+                VStack(spacing: 8) {
                     Text("PlotLoom")
-                        .font(.system(size: 42, weight: .bold, design: .serif))
+                        .font(.system(size: 38, weight: .semibold))
                         .foregroundStyle(PlotLoomStyle.ink)
-                    Text("Make the next book feel chosen together.")
-                        .font(.title3)
+                    Text("Choose the next book together.")
+                        .font(.body)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -34,7 +35,7 @@ struct MemberOnboardingView: View {
                         .onSubmit(saveName)
 
                     Button(action: saveName) {
-                        Label("Continue", systemImage: "arrow.right.circle.fill")
+                        Label(isReplay ? "Return to App" : "Continue", systemImage: "arrow.right.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
@@ -44,11 +45,15 @@ struct MemberOnboardingView: View {
                 .plotLoomCard(padding: 18)
                 .frame(maxWidth: 420)
             }
-            .padding(24)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 18)
             .frame(maxWidth: 760)
             .frame(maxWidth: .infinity)
         }
         .plotLoomScreenBackground()
+        .onAppear {
+            draftName = memberIdentity.name
+        }
     }
 
     private var trimmedName: String { draftName.trimmed }
@@ -56,5 +61,6 @@ struct MemberOnboardingView: View {
     private func saveName() {
         guard let name = draftName.trimmedOrNil else { return }
         memberIdentity.name = name
+        replayWelcome = false
     }
 }

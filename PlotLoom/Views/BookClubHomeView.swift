@@ -4,21 +4,22 @@ import SwiftData
 struct BookClubHomeView: View {
     @Environment(\.modelContext) private var context
     @Bindable var club: BookClub
+    @Query(sort: \BookSubmission.submittedAt) private var submissions: [BookSubmission]
 
     @State private var showingInvite: Bool = false
     @State private var showingPickConfirmation: Bool = false
 
     var body: some View {
-        let sections = club.sections
+        let displayedSections = sections
 
         List {
             Section {
-                ClubHomeHeader(club: club, sections: sections)
+                ClubHomeHeader(club: club, sections: displayedSections)
                     .plotLoomListRow(top: 8, bottom: 12)
             }
 
             Section {
-                if let current = sections.current {
+                if let current = displayedSections.current {
                     NavigationLink(value: current) {
                         CurrentSubmissionRow(submission: current)
                     }
@@ -43,41 +44,41 @@ struct BookClubHomeView: View {
             .plotLoomListRow()
 
             Section {
-                if sections.proposed.isEmpty {
+                if displayedSections.proposed.isEmpty {
                     InlineEmptyState(
                         systemImage: "tray.full",
                         title: "No Proposals",
                         message: "Add a book to build the next pick list."
                     )
                 } else {
-                    ForEach(sections.proposed) { submission in
+                    ForEach(displayedSections.proposed) { submission in
                         NavigationLink(value: submission) {
                             SubmissionRow(submission: submission)
                         }
                         .plotLoomListRow()
                     }
                     .onDelete { offsets in
-                        delete(sections.proposed, at: offsets)
+                        delete(displayedSections.proposed, at: offsets)
                     }
                 }
             } header: {
-                SectionTitle(title: "Proposed", detail: "\(sections.proposed.count)")
+                SectionTitle(title: "Proposed", detail: "\(displayedSections.proposed.count)")
             }
             .plotLoomListRow()
 
-            if !sections.completed.isEmpty {
+            if !displayedSections.completed.isEmpty {
                 Section {
-                    ForEach(sections.completed) { submission in
+                    ForEach(displayedSections.completed) { submission in
                         NavigationLink(value: submission) {
                             SubmissionRow(submission: submission)
                         }
                         .plotLoomListRow()
                     }
                     .onDelete { offsets in
-                        delete(sections.completed, at: offsets)
+                        delete(displayedSections.completed, at: offsets)
                     }
                 } header: {
-                    SectionTitle(title: "Read", detail: "\(sections.completed.count)")
+                    SectionTitle(title: "Read", detail: "\(displayedSections.completed.count)")
                 }
             }
         }
@@ -102,7 +103,7 @@ struct BookClubHomeView: View {
                 } label: {
                     Label("Pick Random", systemImage: "shuffle")
                 }
-                .disabled(sections.proposed.isEmpty)
+                .disabled(displayedSections.proposed.isEmpty)
             }
             if club.isOwner {
                 ToolbarItem(placement: .secondaryAction) {
@@ -127,7 +128,7 @@ struct BookClubHomeView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            if sections.current != nil {
+            if displayedSections.current != nil {
                 Text("This will mark the current book as completed and pick a random proposal as the next read.")
             } else {
                 Text("This will pick a random proposal as the current read.")
@@ -136,7 +137,11 @@ struct BookClubHomeView: View {
     }
 
     private var sections: BookClubSubmissionSections {
-        club.sections
+        BookClubSubmissionSections(submissions: clubSubmissions)
+    }
+
+    private var clubSubmissions: [BookSubmission] {
+        submissions.filter { $0.bookClub?.persistentModelID == club.persistentModelID }
     }
 
     private func pickRandomNext() {
@@ -165,7 +170,7 @@ private struct SubmissionRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor)
+            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor, coverURL: submission.coverImageURL)
 
             VStack(alignment: .leading, spacing: 7) {
                 HStack(alignment: .top) {
@@ -207,7 +212,7 @@ private struct CurrentSubmissionRow: View {
 
     var body: some View {
         HStack(spacing: 18) {
-            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor, width: 86, height: 118)
+            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor, coverURL: submission.coverImageURL, width: 86, height: 118)
 
             VStack(alignment: .leading, spacing: 10) {
                 StatusPill(status: .current)
@@ -240,7 +245,7 @@ private struct ClubHomeHeader: View {
 
     var body: some View {
         let sharing = sharingDescriptor
-        let memberCount = club.metrics.memberCount
+        let memberCount = club.displayedMemberCount
 
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 14) {

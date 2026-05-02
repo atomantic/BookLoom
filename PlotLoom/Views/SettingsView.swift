@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(MemberIdentity.self) private var memberIdentity
+    @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
+    @AppStorage(WelcomeReplay.storageKey) private var replayWelcome = false
     @State private var draftName: String = ""
     @State private var nameSaved: Bool = false
 
@@ -37,6 +39,39 @@ struct SettingsView: View {
                 .plotLoomCard(padding: 16)
             } header: {
                 SectionTitle(title: "Profile")
+            }
+            .plotLoomListRow()
+
+            Section {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Appearance")
+                        .font(.headline)
+                        .foregroundStyle(PlotLoomStyle.ink)
+                    Picker("Appearance", selection: $appAppearanceRaw) {
+                        ForEach(AppAppearance.allCases) { appearance in
+                            Text(appearance.title).tag(appearance.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .plotLoomCard(padding: 16)
+            } header: {
+                SectionTitle(title: "Display")
+            }
+            .plotLoomListRow()
+
+            Section {
+                Button {
+                    replayWelcome = true
+                } label: {
+                    Label("Relaunch Welcome", systemImage: "sparkles.rectangle.stack")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .plotLoomCard(padding: 16)
+            } header: {
+                SectionTitle(title: "Welcome")
             }
             .plotLoomListRow()
 

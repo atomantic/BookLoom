@@ -101,6 +101,7 @@ private struct ClubRow: View {
             BookCoverTile(
                 title: currentTitle ?? club.name,
                 author: club.name,
+                coverURL: sections.current?.coverImageURL,
                 width: 54,
                 height: 72
             )
@@ -141,7 +142,7 @@ private struct ClubRow: View {
 
                 HStack(spacing: 8) {
                     CountBadge(value: metrics.completedCount, label: "read", tint: PlotLoomStyle.indigo)
-                    CountBadge(value: metrics.memberCount, label: "members", tint: PlotLoomStyle.sage)
+                    CountBadge(value: club.displayedMemberCount, label: "members", tint: PlotLoomStyle.sage)
                     CountBadge(value: metrics.noteCount, label: "notes", tint: PlotLoomStyle.plum)
                 }
             }

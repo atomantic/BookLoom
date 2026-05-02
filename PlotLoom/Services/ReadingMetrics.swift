@@ -113,6 +113,10 @@ extension BookClub {
     var metrics: BookClubMetrics {
         BookClubMetrics(submissions: allSubmissions)
     }
+
+    var displayedMemberCount: Int {
+        max(shareParticipantCount, metrics.memberCount)
+    }
 }
 
 extension BookSubmission {
@@ -122,6 +126,14 @@ extension BookSubmission {
 
     var displayAuthor: String {
         author.trimmed
+    }
+
+    var coverImageURL: URL? {
+        URL(string: coverURL.trimmed)
+    }
+
+    var displayDescription: String {
+        bookDescription.trimmed
     }
 
     var displaySubmitter: String {

@@ -29,6 +29,11 @@ final class BookSubmission {
     var statusRaw: String = BookSubmissionStatus.proposed.rawValue
     var pickedAt: Date? = nil
     var completedAt: Date? = nil
+    var bookDescription: String = ""
+    var publishedYear: Int? = nil
+    var coverURL: String = ""
+    var externalProvider: String = ""
+    var externalID: String = ""
 
     @Attribute(.externalStorage)
     var coverData: Data? = nil
@@ -50,6 +55,11 @@ final class BookSubmission {
         title: String = "",
         author: String = "",
         isbn: String = "",
+        bookDescription: String = "",
+        publishedYear: Int? = nil,
+        coverURL: String = "",
+        externalProvider: String = "",
+        externalID: String = "",
         submittedBy: String = "",
         submittedAt: Date = .now,
         status: BookSubmissionStatus = .proposed
@@ -57,6 +67,11 @@ final class BookSubmission {
         self.title = title
         self.author = author
         self.isbn = isbn
+        self.bookDescription = bookDescription
+        self.publishedYear = publishedYear
+        self.coverURL = coverURL
+        self.externalProvider = externalProvider
+        self.externalID = externalID
         self.submittedBy = submittedBy
         self.submittedAt = submittedAt
         self.statusRaw = status.rawValue

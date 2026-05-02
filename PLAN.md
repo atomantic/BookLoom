@@ -53,9 +53,16 @@
 
 ## v0.3 — book metadata
 
-- [ ] OpenLibrary / Google Books lookup by ISBN
-- [ ] Cover thumbnail in submission row
+- [x] OpenLibrary + Google Books lookup with parallel detail enrichment (BookMetadataService)
+- [x] Cover thumbnail in submission rows, current row, and detail hero (AsyncImage via `BookCoverTile.coverURL`)
+- [x] Description + published year captured from external metadata
 - [ ] Manual cover image upload as fallback
+
+## v0.3 — appearance & welcome
+
+- [x] System / Light / Dark appearance toggle in Settings (`AppAppearance` AppStorage)
+- [x] Adaptive design system colors and gradients for dark mode
+- [x] "Relaunch Welcome" action in Settings to replay onboarding
 
 ## v0.4 — meeting & deadlines
 

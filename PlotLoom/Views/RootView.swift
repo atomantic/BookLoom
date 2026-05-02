@@ -3,13 +3,17 @@ import SwiftData
 
 struct RootView: View {
     @Environment(MemberIdentity.self) private var memberIdentity
+    @AppStorage(WelcomeReplay.storageKey) private var replayWelcome = false
 
     var body: some View {
-        if !memberIdentity.isConfigured {
-            MemberOnboardingView()
-        } else {
-            MainTabs()
+        Group {
+            if replayWelcome || !memberIdentity.isConfigured {
+                MemberOnboardingView(isReplay: replayWelcome && memberIdentity.isConfigured)
+            } else {
+                MainTabs()
+            }
         }
+        .tint(PlotLoomStyle.plum)
     }
 }
 
@@ -30,6 +34,5 @@ private struct MainTabs: View {
                 Label("Settings", systemImage: "gearshape.fill")
             }
         }
-        .tint(PlotLoomStyle.plum)
     }
 }

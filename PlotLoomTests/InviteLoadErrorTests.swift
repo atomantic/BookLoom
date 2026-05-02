@@ -37,4 +37,15 @@ final class InviteLoadErrorTests: XCTestCase {
             .notSignedIntoICloud
         )
     }
+
+    func test_otherErrorsExposeDiagnosticDomainCodeAndMessage() {
+        let error = NSError(domain: "ExampleDomain", code: 42, userInfo: [
+            NSLocalizedDescriptionKey: "Specific failure"
+        ])
+
+        XCTAssertEqual(
+            InviteLoadError.from(error),
+            .other("ExampleDomain#42: Specific failure")
+        )
+    }
 }

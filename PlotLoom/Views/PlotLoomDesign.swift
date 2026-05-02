@@ -1,47 +1,136 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 enum PlotLoomStyle {
-    static let ink = Color(red: 0.13, green: 0.12, blue: 0.15)
-    static let paper = Color(red: 0.99, green: 0.96, blue: 0.89)
-    static let parchment = Color(red: 0.95, green: 0.89, blue: 0.78)
-    static let indigo = Color(red: 0.13, green: 0.18, blue: 0.38)
-    static let plum = Color(red: 0.42, green: 0.25, blue: 0.53)
-    static let sage = Color(red: 0.37, green: 0.49, blue: 0.34)
-    static let coral = Color(red: 0.80, green: 0.31, blue: 0.21)
-    static let gold = Color(red: 0.83, green: 0.60, blue: 0.24)
+    static let ink = adaptiveColor(
+        light: RGB(0.13, 0.12, 0.15),
+        dark: RGB(0.97, 0.92, 0.84)
+    )
+    static let paper = Color(red: 0.965, green: 0.898, blue: 0.804)
+    static let parchment = Color(red: 0.91, green: 0.80, blue: 0.64)
+    static let indigo = adaptiveColor(
+        light: RGB(0.13, 0.18, 0.38),
+        dark: RGB(0.58, 0.65, 0.94)
+    )
+    static let plum = adaptiveColor(
+        light: RGB(0.42, 0.25, 0.53),
+        dark: RGB(0.76, 0.57, 0.84)
+    )
+    static let sage = adaptiveColor(
+        light: RGB(0.37, 0.49, 0.34),
+        dark: RGB(0.66, 0.76, 0.57)
+    )
+    static let coral = adaptiveColor(
+        light: RGB(0.80, 0.31, 0.21),
+        dark: RGB(0.96, 0.48, 0.35)
+    )
+    static let gold = adaptiveColor(
+        light: RGB(0.83, 0.60, 0.24),
+        dark: RGB(0.94, 0.72, 0.36)
+    )
 
-    static var screenGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.98, green: 0.94, blue: 0.86),
-                Color(red: 0.92, green: 0.96, blue: 0.92),
-                Color(red: 0.94, green: 0.91, blue: 0.98)
-            ],
+    static func screenGradient(for colorScheme: ColorScheme) -> LinearGradient {
+        let colors: [Color]
+        if colorScheme == .dark {
+            colors = [
+                Color(red: 0.09, green: 0.08, blue: 0.10),
+                Color(red: 0.12, green: 0.13, blue: 0.18),
+                Color(red: 0.18, green: 0.13, blue: 0.20)
+            ]
+        } else {
+            colors = [
+                PlotLoomStyle.paper,
+                PlotLoomStyle.paper
+            ]
+        }
+        return LinearGradient(
+            colors: colors,
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+
+    private struct RGB {
+        let red: CGFloat
+        let green: CGFloat
+        let blue: CGFloat
+        let alpha: CGFloat
+
+        init(_ red: Double, _ green: Double, _ blue: Double, alpha: Double = 1) {
+            self.red = CGFloat(red)
+            self.green = CGFloat(green)
+            self.blue = CGFloat(blue)
+            self.alpha = CGFloat(alpha)
+        }
+    }
+
+    private static func adaptiveColor(light: RGB, dark: RGB) -> Color {
+        #if os(iOS)
+        Color(uiColor: UIColor { traits in
+            let color = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: color.red, green: color.green, blue: color.blue, alpha: color.alpha)
+        })
+        #elseif os(macOS)
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let color = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            return NSColor(red: color.red, green: color.green, blue: color.blue, alpha: color.alpha)
+        })
+        #else
+        Color(red: Double(light.red), green: Double(light.green), blue: Double(light.blue), opacity: Double(light.alpha))
+        #endif
     }
 }
 
 extension View {
     func plotLoomScreenBackground() -> some View {
-        background(PlotLoomStyle.screenGradient.ignoresSafeArea())
+        background(PlotLoomScreenBackground().ignoresSafeArea())
     }
 
     func plotLoomCard(padding: CGFloat = 16, radius: CGFloat = 20) -> some View {
-        self
-            .padding(padding)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(.white.opacity(0.55), lineWidth: 1)
-            }
+        modifier(PlotLoomCardModifier(padding: padding, radius: radius))
     }
 
     func plotLoomListRow(top: CGFloat = 6, bottom: CGFloat = 6) -> some View {
         listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
+    }
+}
+
+private struct PlotLoomScreenBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        PlotLoomStyle.screenGradient(for: colorScheme)
+    }
+}
+
+private struct PlotLoomCardModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let padding: CGFloat
+    let radius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .padding(padding)
+            .background(cardFill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .stroke(cardStroke, lineWidth: 1)
+            }
+    }
+
+    private var cardFill: Color {
+        colorScheme == .dark ? .white.opacity(0.08) : .white.opacity(0.36)
+    }
+
+    private var cardStroke: Color {
+        colorScheme == .dark ? .white.opacity(0.16) : .white.opacity(0.50)
     }
 }
 
@@ -57,15 +146,33 @@ extension String {
 }
 
 struct OnboardingHeroArtwork: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var maxHeight: CGFloat = 260
 
+    @ViewBuilder
     var body: some View {
+        heroImage
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(
+                        colorScheme == .dark ? PlotLoomStyle.paper.opacity(0.22) : .white.opacity(0.38),
+                        lineWidth: 1
+                    )
+            }
+            .shadow(
+                color: colorScheme == .dark ? .black.opacity(0.35) : PlotLoomStyle.ink.opacity(0.10),
+                radius: colorScheme == .dark ? 28 : 18,
+                y: colorScheme == .dark ? 16 : 8
+            )
+    }
+
+    private var heroImage: some View {
         Image("OnboardingHero")
             .resizable()
-            .scaledToFit()
-            .frame(maxHeight: maxHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .shadow(color: PlotLoomStyle.indigo.opacity(0.16), radius: 24, y: 12)
+            .scaledToFill()
+            .frame(width: maxHeight, height: maxHeight)
             .accessibilityHidden(true)
     }
 }
@@ -95,47 +202,73 @@ struct BrandBadge: View {
 struct BookCoverTile: View {
     let title: String
     let author: String
+    var coverURL: URL? = nil
     var width: CGFloat = 58
     var height: CGFloat = 78
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: coverColors,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(.black.opacity(0.10))
-                        .frame(width: 6)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(.white.opacity(0.35), lineWidth: 1)
-                }
+            coverArt
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(initials)
-                    .font(.system(size: width > 80 ? 26 : 18, weight: .bold, design: .serif))
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-                if !author.isEmpty {
-                    Text(author)
-                        .font(.system(size: width > 80 ? 9 : 7, weight: .medium))
-                        .lineLimit(2)
-                        .foregroundStyle(.white.opacity(0.78))
+            if coverURL == nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(initials)
+                        .font(.system(size: width > 80 ? 26 : 18, weight: .bold, design: .serif))
+                        .foregroundStyle(.white)
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    if !author.isEmpty {
+                        Text(author)
+                            .font(.system(size: width > 80 ? 9 : 7, weight: .medium))
+                            .lineLimit(2)
+                            .foregroundStyle(.white.opacity(0.78))
+                    }
                 }
+                .padding(width > 80 ? 12 : 8)
             }
-            .padding(width > 80 ? 12 : 8)
         }
         .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.white.opacity(0.35), lineWidth: 1)
+        }
         .shadow(color: PlotLoomStyle.ink.opacity(0.16), radius: 10, y: 5)
         .accessibilityLabel(title.isEmpty ? "Untitled book" : title)
+    }
+
+    @ViewBuilder
+    private var coverArt: some View {
+        if let coverURL {
+            AsyncImage(url: coverURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    placeholder
+                }
+            }
+        } else {
+            placeholder
+        }
+    }
+
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: coverColors,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(.black.opacity(0.10))
+                    .frame(width: 6)
+            }
     }
 
     private var initials: String {
@@ -225,6 +358,8 @@ struct CountBadge: View {
 }
 
 struct MetricTile: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let value: String
     let label: String
     let systemImage: String
@@ -248,7 +383,10 @@ struct MetricTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.white.opacity(0.48), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(
+            colorScheme == .dark ? .white.opacity(0.08) : .white.opacity(0.34),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
     }
 }
 

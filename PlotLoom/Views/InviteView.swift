@@ -202,7 +202,7 @@ enum InviteLoadError: Equatable {
         if message.contains("not authenticated") || message.contains("not signed in") {
             return .notSignedIntoICloud
         }
-        return .other(error.localizedDescription)
+        return .other(CloudKitErrorDescriber.describe(error))
     }
 
     var systemImage: String {

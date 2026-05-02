@@ -56,37 +56,33 @@ final class CloudKitSharingService {
         try await ensureZoneExists(zone)
 
         let rootID = CKRecord.ID(recordName: "ShareRoot", zoneID: zone.zoneID)
+        let rootRecord: CKRecord
 
-        // Reuse existing share by following root.share, not by guessing the
-        // share record ID.
-        if let existingRoot = try? await privateDB.record(for: rootID),
-           let shareReference = existingRoot.share,
-           let existingShareRecord = try? await privateDB.record(for: shareReference.recordID),
-           let existingShare = existingShareRecord as? CKShare {
-            club.shareIsActive = true
-            club.shareParticipantCount = existingShare.participants.count
-            return existingShare
+        // Reuse an existing root record when a prior build created one but
+        // failed before surfacing the share. Re-inserting the same root ID
+        // causes CloudKit to reject the save on later invite attempts.
+        if let existingRoot = try? await privateDB.record(for: rootID) {
+            if let existingShare = try await existingShare(for: existingRoot) {
+                markShareActive(existingShare, for: club)
+                return existingShare
+            }
+            rootRecord = existingRoot
+        } else {
+            rootRecord = CKRecord(recordType: Self.rootRecordType, recordID: rootID)
         }
-
-        // First-time: save root + share atomically. CloudKit rejects saving a
-        // share without its root in the same modifyRecords call.
-        let rootRecord = CKRecord(recordType: Self.rootRecordType, recordID: rootID)
         rootRecord["clubName"] = club.name as CKRecordValue
 
         let share = CKShare(rootRecord: rootRecord)
         share[CKShare.SystemFieldKey.title] = "Book Club: \(club.name)" as CKRecordValue
         share.publicPermission = .none
 
-        let result = try await privateDB.modifyRecords(
-            saving: [rootRecord, share],
-            deleting: []
-        )
+        let saveResults = try await saveRootAndShare(rootRecord: rootRecord, share: share)
         // Some OS releases return only the root record in saveResults even
         // though the CKShare save succeeded. When the resolver falls back to
         // our locally-built share, hydrate it from the database; when CloudKit
         // gave us the saved share directly, skip the extra round-trip.
         let resolution = try ShareSaveResultResolver.resolve(
-            saveResults: result.saveResults,
+            saveResults: saveResults,
             fallback: share
         )
         let finalShare: CKShare
@@ -96,8 +92,7 @@ final class CloudKitSharingService {
             finalShare = resolution.share
         }
 
-        club.shareIsActive = true
-        club.shareParticipantCount = finalShare.participants.count
+        markShareActive(finalShare, for: club)
         Self.logger.info("✅ Created share for club '\(club.name, privacy: .public)' (zone \(club.cloudZoneName, privacy: .public))")
         return finalShare
     }
@@ -134,6 +129,34 @@ final class CloudKitSharingService {
         }
         _ = try await privateDB.modifyRecordZones(saving: [zone], deleting: [])
     }
+
+    private func existingShare(for rootRecord: CKRecord) async throws -> CKShare? {
+        guard let shareReference = rootRecord.share else { return nil }
+        do {
+            return try await privateDB.record(for: shareReference.recordID) as? CKShare
+        } catch {
+            Self.logger.error("⚠️ Existing share reference could not be fetched: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    private func saveRootAndShare(rootRecord: CKRecord, share: CKShare) async throws -> [CKRecord.ID: Result<CKRecord, Error>] {
+        do {
+            let result = try await privateDB.modifyRecords(
+                saving: [rootRecord, share],
+                deleting: []
+            )
+            return result.saveResults
+        } catch {
+            Self.logger.error("⚠️ CKShare modifyRecords failed: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+            throw error
+        }
+    }
+
+    private func markShareActive(_ share: CKShare, for club: BookClub) {
+        club.shareIsActive = true
+        club.shareParticipantCount = share.participants.count
+    }
 }
 
 struct AcceptedShareInfo: Sendable {
@@ -144,15 +167,28 @@ struct AcceptedShareInfo: Sendable {
 
 enum SharingError: LocalizedError {
     case featureDisabled
-    case shareCreationFailed
 
     var errorDescription: String? {
         switch self {
         case .featureDisabled:
             return "iCloud sharing isn't available in this build yet."
-        case .shareCreationFailed:
-            return "Couldn't create the share. Please try again."
         }
+    }
+}
+
+enum CloudKitErrorDescriber {
+    static func describe(_ error: Error) -> String {
+        let ns = error as NSError
+        var parts = ["\(ns.domain)#\(ns.code): \(ns.localizedDescription)"]
+        if let partials = ns.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error] {
+            let details = partials.map { key, value -> String in
+                let child = value as NSError
+                return "\(key): \(child.domain)#\(child.code) \(child.localizedDescription)"
+            }
+            .sorted()
+            parts.append("partialErrors=[\(details.joined(separator: "; "))]")
+        }
+        return parts.joined(separator: " ")
     }
 }
 

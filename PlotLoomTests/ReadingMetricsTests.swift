@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import PlotLoom
 
 final class ReadingMetricsTests: XCTestCase {
@@ -58,5 +59,31 @@ final class ReadingMetricsTests: XCTestCase {
         XCTAssertEqual(summary.count, 2)
         XCTAssertEqual(summary.average, 4.5)
         XCTAssertEqual(summary.displayValue, "4.5")
+    }
+
+    func test_addSubmissionAttachesProposalToClubSections() throws {
+        let container = try ModelContainer(
+            for: BookClub.self, BookSubmission.self, Rating.self, BookNote.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        let club = BookClub(name: "Tuesday Bookworms")
+        let submission = BookSubmission(title: "Piranesi", author: "Susanna Clarke", submittedBy: "Alex")
+
+        context.insert(club)
+        club.addSubmission(submission)
+        context.insert(submission)
+        try context.save()
+
+        let fetchedClub = try XCTUnwrap(try context.fetch(FetchDescriptor<BookClub>()).first)
+        XCTAssertEqual(fetchedClub.sections.proposed.map(\.title), ["Piranesi"])
+        XCTAssertEqual(fetchedClub.metrics.proposedCount, 1)
+    }
+
+    func test_displayedMemberCountIncludesOwnerBeforeEngagement() {
+        let club = BookClub(name: "Tuesday Bookworms")
+
+        XCTAssertEqual(club.metrics.memberCount, 0)
+        XCTAssertEqual(club.displayedMemberCount, 1)
     }
 }
