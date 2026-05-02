@@ -11,7 +11,7 @@ struct InviteView: View {
     @Bindable var club: BookClub
 
     @State private var share: CKShare? = nil
-    @State private var loadError: String? = nil
+    @State private var loadError: InviteLoadError? = nil
     @State private var didCopyURL: Bool = false
 
     var body: some View {
@@ -44,6 +44,31 @@ struct InviteView: View {
         }
     }
 
+    private func errorView(_ error: InviteLoadError) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: error.systemImage)
+                .font(.system(size: 48))
+                .foregroundStyle(error.tint)
+            Text(error.title)
+                .font(.title3.bold())
+                .multilineTextAlignment(.center)
+            Text(error.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 32)
+            if let hint = error.actionHint {
+                Text(hint)
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 32)
+                    .padding(.top, 8)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var comingSoonView: some View {
         VStack(spacing: 16) {
             Image(systemName: "icloud.and.arrow.up")
@@ -52,22 +77,6 @@ struct InviteView: View {
             Text("Coming Soon")
                 .font(.title2.bold())
             Text("Group sharing via iCloud is being set up. This invite flow will light up in a future build.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 32)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func errorView(_ message: String) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(.orange)
-            Text("Couldn't prepare invite")
-                .font(.headline)
-            Text(message)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 32)
@@ -137,7 +146,94 @@ struct InviteView: View {
             let s = try await CloudKitSharingService.shared.createOrFetchShare(for: club)
             self.share = s
         } catch {
-            self.loadError = error.localizedDescription
+            self.loadError = InviteLoadError.from(error)
+        }
+    }
+}
+
+/// Categorized error states for the invite flow. Each case produces user-actionable
+/// copy explaining what to do — never raw `localizedDescription` strings, since the
+/// CKError messages ("Account temporarily unavailable due to bad or missing auth token")
+/// are useless to a non-developer.
+enum InviteLoadError {
+    case notSignedIntoICloud
+    case iCloudDriveOff
+    case networkUnavailable
+    case other(String)
+
+    static func from(_ error: Error) -> InviteLoadError {
+        // CKError surfaces are wrapped in NSError; bridge to inspect the code.
+        let ns = error as NSError
+        if ns.domain == CKErrorDomain {
+            switch ns.code {
+            case CKError.notAuthenticated.rawValue:
+                return .notSignedIntoICloud
+            case CKError.accountTemporarilyUnavailable.rawValue:
+                return .iCloudDriveOff
+            case CKError.networkUnavailable.rawValue, CKError.networkFailure.rawValue:
+                return .networkUnavailable
+            default:
+                break
+            }
+        }
+        // Heuristic fallback: the wording "auth token" / "temporarily unavailable"
+        // shows up in messages even when the code path doesn't expose CKErrorDomain.
+        let message = ns.localizedDescription.lowercased()
+        if message.contains("auth token") || message.contains("temporarily unavailable") {
+            return .iCloudDriveOff
+        }
+        if message.contains("not authenticated") || message.contains("not signed in") {
+            return .notSignedIntoICloud
+        }
+        return .other(error.localizedDescription)
+    }
+
+    var systemImage: String {
+        switch self {
+        case .notSignedIntoICloud: return "icloud.slash"
+        case .iCloudDriveOff: return "icloud.and.arrow.down"
+        case .networkUnavailable: return "wifi.slash"
+        case .other: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .other: return .orange
+        default: return .blue
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .notSignedIntoICloud: return "Sign in to iCloud"
+        case .iCloudDriveOff: return "Turn on iCloud Drive"
+        case .networkUnavailable: return "No internet connection"
+        case .other: return "Couldn't prepare invite"
+        }
+    }
+
+    var body: String {
+        switch self {
+        case .notSignedIntoICloud:
+            return "PlotLoom needs an iCloud account to share clubs across devices and people."
+        case .iCloudDriveOff:
+            return "PlotLoom uses iCloud to sync your book clubs, so iCloud Drive needs to be enabled."
+        case .networkUnavailable:
+            return "Connect to Wi-Fi or cellular and try again."
+        case .other(let detail):
+            return detail
+        }
+    }
+
+    var actionHint: String? {
+        switch self {
+        case .notSignedIntoICloud:
+            return "Open Settings → tap \"Sign in to your iPhone\" at the top, then come back."
+        case .iCloudDriveOff:
+            return "Open Settings → [Your Name] → iCloud → turn on iCloud Drive, then come back."
+        case .networkUnavailable, .other:
+            return nil
         }
     }
 }

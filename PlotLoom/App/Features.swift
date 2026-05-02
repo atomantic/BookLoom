@@ -21,5 +21,5 @@ enum Features {
     ///   3. Re-archive (automatic signing refreshes the provisioning profile
     ///      with the new entitlement).
     ///   4. Smoke-test in TestFlight on two different Apple IDs.
-    static let cloudKitSharing: Bool = false
+    static let cloudKitSharing: Bool = true
 }

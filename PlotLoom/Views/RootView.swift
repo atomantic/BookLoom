@@ -3,16 +3,31 @@ import SwiftData
 
 struct RootView: View {
     @Environment(MemberIdentity.self) private var memberIdentity
-    @Query private var clubs: [BookClub]
 
     var body: some View {
-        Group {
-            if !memberIdentity.isConfigured {
-                MemberOnboardingView()
-            } else if let club = clubs.first {
-                BookClubHomeView(club: club)
-            } else {
-                CreateOrJoinClubView()
+        if !memberIdentity.isConfigured {
+            MemberOnboardingView()
+        } else {
+            MainTabs()
+        }
+    }
+}
+
+private struct MainTabs: View {
+    var body: some View {
+        TabView {
+            NavigationStack {
+                ClubsListView()
+            }
+            .tabItem {
+                Label("Clubs", systemImage: "books.vertical.fill")
+            }
+
+            NavigationStack {
+                SettingsView()
+            }
+            .tabItem {
+                Label("Settings", systemImage: "gearshape.fill")
             }
         }
     }

@@ -14,6 +14,17 @@
 - [x] `deploy.sh` for local TestFlight upload (iOS + macOS)
 - [x] Initial git commit + private GitHub repo
 
+## v0.3 — Polished for TestFlight
+
+- [x] Tabbed root: Clubs / Settings (replaces single-club hard route)
+- [x] ClubsListView with empty state, swipe-to-delete, "+ New Club" toolbar
+- [x] SettingsView: edit member name, version info, iCloud setup status
+- [x] Swipe-to-delete on submissions (proposed and read sections)
+- [x] "Mark Complete" swipe action on currently-reading book
+- [x] Pick Random confirmation dialog (prevents accidental rotation)
+- [x] User-actionable iCloud auth errors (Sign in / Turn on Drive / Network)
+- [x] Removed unreferenced CreateOrJoinClubView (replaced by NewClubFormView sheet)
+
 ## v0.2 — group sharing (code complete, awaiting portal setup)
 
 - [x] CKShare-based book club sharing skeleton (cross-Apple-ID invite + accept flow)
