@@ -113,6 +113,29 @@ final class SharedClubSnapshotTests: XCTestCase {
         XCTAssertNil(submission.coverData)
     }
 
+    func test_contextSnapshotIncludesPersistedClubChildren() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        let submission = BookSubmission(title: "Accelerando", author: "Charles Stross")
+        let meeting = ClubMeeting(title: "Accelerando Discussion")
+        let poll = SelectionPoll(title: "Next Pick", candidates: [submission])
+
+        context.insert(club)
+        context.insert(submission)
+        context.insert(meeting)
+        context.insert(poll)
+        submission.bookClub = club
+        meeting.bookClub = club
+        poll.bookClub = club
+        try context.save()
+
+        let snapshot = SharedClubSnapshotStore.snapshot(from: club, context: context)
+
+        XCTAssertEqual(snapshot.submissions.map(\.title), ["Accelerando"])
+        XCTAssertEqual(snapshot.meetings.map(\.title), ["Accelerando Discussion"])
+        XCTAssertEqual(snapshot.polls.map(\.title), ["Next Pick"])
+    }
+
     private func makeContext() throws -> ModelContext {
         let container = try ModelContainer(
             for: BookClub.self,

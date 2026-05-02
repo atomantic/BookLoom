@@ -7,6 +7,7 @@ import CloudKit
 /// When `Features.cloudKitSharing` is off, shows a "coming soon" placeholder
 /// and never touches CloudKit.
 struct InviteView: View {
+    @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Bindable var club: BookClub
 
@@ -160,7 +161,8 @@ struct InviteView: View {
         }
         defer { isLoading = false }
         do {
-            let s = try await CloudKitSharingService.shared.createOrFetchShare(for: club)
+            let s = try await CloudKitSharingService.shared.createOrFetchShare(for: club, context: context)
+            try? context.save()
             self.share = s
         } catch {
             self.loadError = InviteLoadError.from(error)

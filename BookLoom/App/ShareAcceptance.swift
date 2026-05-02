@@ -57,6 +57,13 @@ enum ShareAcceptance {
             } else {
                 try context.save()
                 logger.info("✅ Accepted share — joined '\(info.title, privacy: .public)' (zone \(info.zoneName, privacy: .public))")
+                // Owner published the share root *after* `acceptShare` returned —
+                // give CloudKit a beat to materialize the shared zone before
+                // `fetchSnapshot` makes its single-shot read. Without this, the
+                // first refresh returns nil and the joined club stays empty
+                // until the user pulls to refresh.
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                await SharedClubSync.refreshIfNeeded(joined, context: context)
             }
         } catch {
             logger.error("⚠️ Share accept failed: \(error.localizedDescription, privacy: .public)")

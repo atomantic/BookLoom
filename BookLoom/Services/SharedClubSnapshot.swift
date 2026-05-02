@@ -122,13 +122,39 @@ struct SharedClubSnapshot: Codable, Equatable, Sendable {
 @MainActor
 enum SharedClubSnapshotStore {
     static func snapshot(from club: BookClub, capturedAt: Date = .now) -> SharedClubSnapshot {
-        let submissions = (club.submissions ?? [])
+        snapshot(
+            from: club,
+            submissions: club.submissions ?? [],
+            meetings: club.meetings ?? [],
+            polls: club.selectionPolls ?? [],
+            capturedAt: capturedAt
+        )
+    }
+
+    static func snapshot(from club: BookClub, context: ModelContext, capturedAt: Date = .now) -> SharedClubSnapshot {
+        snapshot(
+            from: club,
+            submissions: fetchedChildren(of: club, parentKeyPath: \BookSubmission.bookClub, fallback: club.submissions ?? [], context: context),
+            meetings: fetchedChildren(of: club, parentKeyPath: \ClubMeeting.bookClub, fallback: club.meetings ?? [], context: context),
+            polls: fetchedChildren(of: club, parentKeyPath: \SelectionPoll.bookClub, fallback: club.selectionPolls ?? [], context: context),
+            capturedAt: capturedAt
+        )
+    }
+
+    private static func snapshot(
+        from club: BookClub,
+        submissions: [BookSubmission],
+        meetings: [ClubMeeting],
+        polls: [SelectionPoll],
+        capturedAt: Date
+    ) -> SharedClubSnapshot {
+        let submissionPayloads = submissions
             .sorted { $0.submittedAt < $1.submittedAt }
             .map(submissionPayload)
-        let meetings = (club.meetings ?? [])
+        let meetingPayloads = meetings
             .sorted { $0.scheduledAt < $1.scheduledAt }
             .map(meetingPayload)
-        let polls = (club.selectionPolls ?? [])
+        let pollPayloads = polls
             .sorted { $0.createdAt < $1.createdAt }
             .map(pollPayload)
 
@@ -140,10 +166,30 @@ enum SharedClubSnapshotStore {
                 cloudZoneName: club.cloudZoneName,
                 shareParticipantCount: club.shareParticipantCount
             ),
-            submissions: submissions,
-            meetings: meetings,
-            polls: polls
+            submissions: submissionPayloads,
+            meetings: meetingPayloads,
+            polls: pollPayloads
         )
+    }
+
+    /// Works around a SwiftData faulting case where `club.submissions` (and
+    /// equivalent to-many relationships) returns an empty array immediately
+    /// after a CloudKit-driven merge, even though the rows are present in the
+    /// store. We fetch all rows of the child type and filter to the ones whose
+    /// parent matches `club`. The relationship array is used as a fallback if
+    /// the fetch fails or returns no matches (e.g. fresh in-memory contexts).
+    private static func fetchedChildren<T: PersistentModel>(
+        of club: BookClub,
+        parentKeyPath: KeyPath<T, BookClub?>,
+        fallback: [T],
+        context: ModelContext
+    ) -> [T] {
+        let clubID = club.persistentModelID
+        guard let fetched = try? context.fetch(FetchDescriptor<T>()) else {
+            return fallback
+        }
+        let matches = fetched.filter { $0[keyPath: parentKeyPath]?.persistentModelID == clubID }
+        return matches.isEmpty ? fallback : matches
     }
 
     static func apply(_ snapshot: SharedClubSnapshot, to club: BookClub, context: ModelContext) throws {

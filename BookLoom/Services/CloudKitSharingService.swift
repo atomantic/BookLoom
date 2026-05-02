@@ -1,6 +1,7 @@
 import Foundation
 import CloudKit
 import os
+import SwiftData
 
 /// Owns the CKShare invite handshake. SwiftData (`cloudKitDatabase: .automatic`)
 /// already replicates `BookClub` and its descendants across the user's own
@@ -47,7 +48,7 @@ final class CloudKitSharingService {
     /// can then be surfaced via `UICloudSharingController` (iOS) or copied to
     /// the pasteboard (macOS). Re-runs are idempotent — calling twice returns
     /// the same share.
-    func createOrFetchShare(for club: BookClub) async throws -> CKShare {
+    func createOrFetchShare(for club: BookClub, context: ModelContext) async throws -> CKShare {
         guard Features.cloudKitSharing else {
             throw SharingError.featureDisabled
         }
@@ -69,7 +70,7 @@ final class CloudKitSharingService {
         // causes CloudKit to reject the save on later invite attempts.
         if let existingRoot = try? await privateDB.record(for: rootID) {
             rootRecord = existingRoot
-            try updateRootRecord(rootRecord, with: club)
+            try updateRootRecord(rootRecord, with: club, context: context)
             if let existingShare = try await existingShare(for: existingRoot) {
                 try await saveRootRecord(rootRecord, in: privateDB)
                 markShareActive(existingShare, for: club)
@@ -77,7 +78,7 @@ final class CloudKitSharingService {
             }
         } else {
             rootRecord = CKRecord(recordType: Self.rootRecordType, recordID: rootID)
-            try updateRootRecord(rootRecord, with: club)
+            try updateRootRecord(rootRecord, with: club, context: context)
         }
 
         let share = CKShare(rootRecord: rootRecord)
@@ -115,7 +116,7 @@ final class CloudKitSharingService {
         }
         // Discard the return — the compiler warns if it's ignored implicitly.
         _ = try await container.accept([metadata])
-        let rootRecord = try? await rootRecord(zoneID: metadata.share.recordID.zoneID, in: sharedDB)
+        let rootRecord = await acceptedRootRecord(zoneID: metadata.share.recordID.zoneID)
         let snapshot = rootRecord.flatMap { decodeSnapshot(from: $0) }
         let title = snapshot?.club.name
             ?? rootRecord?[Self.clubNameKey] as? String
@@ -175,8 +176,8 @@ final class CloudKitSharingService {
         }
     }
 
-    private func updateRootRecord(_ rootRecord: CKRecord, with club: BookClub) throws {
-        let snapshot = SharedClubSnapshotStore.snapshot(from: club)
+    private func updateRootRecord(_ rootRecord: CKRecord, with club: BookClub, context: ModelContext) throws {
+        let snapshot = SharedClubSnapshotStore.snapshot(from: club, context: context)
         try applySnapshot(snapshot, to: rootRecord)
     }
 
@@ -213,6 +214,31 @@ final class CloudKitSharingService {
 
     private func rootRecord(zoneID: CKRecordZone.ID, in database: CKDatabase) async throws -> CKRecord {
         try await database.record(for: CKRecord.ID(recordName: Self.rootRecordName, zoneID: zoneID))
+    }
+
+    /// Immediately after `container.accept`, the shared zone may not be
+    /// queryable yet — CloudKit needs a moment to plumb the share through to
+    /// `sharedCloudDatabase`. Retry with exponential backoff (250ms → 500ms →
+    /// 1s, ~1.75s total budget) before giving up. Returns nil on persistent
+    /// failure so the caller can fall back to the metadata-only join path.
+    private func acceptedRootRecord(zoneID: CKRecordZone.ID) async -> CKRecord? {
+        var delay: UInt64 = 250_000_000
+        var lastError: Error?
+        for attempt in 0..<4 {
+            do {
+                return try await rootRecord(zoneID: zoneID, in: sharedDB)
+            } catch {
+                lastError = error
+                if attempt < 3 {
+                    try? await Task.sleep(nanoseconds: delay)
+                    delay *= 2
+                }
+            }
+        }
+        if let lastError {
+            Self.logger.error("Shared root was not available after accept: \(CloudKitErrorDescriber.describe(lastError), privacy: .public)")
+        }
+        return nil
     }
 
     private func database(for club: BookClub) throws -> CKDatabase {

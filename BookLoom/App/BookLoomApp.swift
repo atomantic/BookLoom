@@ -73,9 +73,10 @@ struct BookLoomApp: App {
                 }
                 .task {
                     #if DEBUG
-                    await CloudKitSchemaPrimer.runIfRequested(modelContext: sharedModelContainer.mainContext)
+                    await CloudKitSchemaPrimer.runIfRequested()
                     #endif
 
+                    SchemaPrimeDataCleanup.removeSchemaPrimeData(from: sharedModelContainer.mainContext)
                     CoverDataCleanup.clearPersistedCoverData(in: sharedModelContainer.mainContext)
                     await drainAcceptedShares()
                 }

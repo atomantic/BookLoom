@@ -2,7 +2,6 @@ import CloudKit
 import Darwin
 import Foundation
 import os
-import SwiftData
 
 #if DEBUG
 @MainActor
@@ -12,16 +11,13 @@ enum CloudKitSchemaPrimer {
     private static let launchArgument = "--prime-cloudkit-schema"
     private static let containerID = "iCloud.net.shadowpuppet.PlotLoom"
     private static let rootRecordType = "BookClubShareRoot"
-    private static let primeMemberID = "schema-prime"
-    private static let primeMemberName = "BookLoom"
 
-    static func runIfRequested(modelContext: ModelContext) async {
+    static func runIfRequested() async {
         guard shouldRun else { return }
 
         var exitCode: Int32 = 0
         do {
             log("Starting CloudKit Development schema prime")
-            try primeSwiftDataSchema(in: modelContext)
             try await primeShareSchema()
             log("Finished CloudKit Development schema prime")
         } catch {
@@ -41,43 +37,6 @@ enum CloudKitSchemaPrimer {
         || ProcessInfo.processInfo.arguments.contains(launchArgument)
     }
 
-    private static func primeSwiftDataSchema(in modelContext: ModelContext) throws {
-        let club = BookClub(name: "Schema Prime", createdAt: .now)
-        let submission = BookSubmission(
-            title: "Schema Prime",
-            author: primeMemberName,
-            bookDescription: "Development-only record used to register CloudKit schema.",
-            submittedBy: primeMemberName,
-            submittedByMemberID: primeMemberID,
-            status: .proposed
-        )
-        let rating = Rating(memberID: primeMemberID, memberName: primeMemberName, stars: 5)
-        let note = BookNote(memberID: primeMemberID, memberName: primeMemberName, text: "CloudKit schema prime")
-        let meeting = ClubMeeting(
-            title: "Schema Prime Meeting",
-            scheduledAt: .now.addingTimeInterval(86_400),
-            hostName: primeMemberName,
-            hostMemberID: primeMemberID,
-            location: "iCloud Development",
-            agenda: "Confirm meetings, RSVPs, polls, votes, and prompts sync."
-        )
-        let poll = SelectionPoll(title: "Schema Prime Vote", candidates: [submission])
-        let prompt = DiscussionPrompt(question: "What made this book work for the group?", orderIndex: 0, source: .starter)
-
-        modelContext.insert(club)
-        club.addSubmission(submission)
-        club.addMeeting(meeting)
-        club.addSelectionPoll(poll)
-        meeting.bookSubmission = submission
-        meeting.upsertRSVP(memberID: primeMemberID, memberName: primeMemberName, status: .attending)
-        poll.replaceVote(memberID: primeMemberID, memberName: primeMemberName, rankedSubmissionIDs: [submission.selectionID])
-        submission.ratings = [rating]
-        submission.notes = [note]
-        submission.discussionPrompts = [prompt]
-        try modelContext.save()
-        log("Saved SwiftData schema-prime graph")
-    }
-
     private static func primeShareSchema() async throws {
         let container = CKContainer(identifier: containerID)
         let status = try await container.accountStatus()
@@ -86,15 +45,15 @@ enum CloudKitSchemaPrimer {
         }
 
         let db = container.privateCloudDatabase
-        let zone = CKRecordZone(zoneName: "BookClub-SchemaPrime-\(UUID().uuidString)")
+        let zone = CKRecordZone(zoneName: "\(SchemaPrimeIdentity.cloudZonePrefix)\(UUID().uuidString)")
         _ = try await db.modifyRecordZones(saving: [zone], deleting: [])
 
         let rootID = CKRecord.ID(recordName: "ShareRoot", zoneID: zone.zoneID)
         let root = CKRecord(recordType: rootRecordType, recordID: rootID)
-        root["clubName"] = "Schema Prime" as CKRecordValue
+        root["clubName"] = SchemaPrimeIdentity.clubName as CKRecordValue
         let snapshot = SharedClubSnapshot(
             club: .init(
-                name: "Schema Prime",
+                name: SchemaPrimeIdentity.clubName,
                 createdAt: .now,
                 cloudZoneName: zone.zoneID.zoneName,
                 shareParticipantCount: 1
@@ -107,7 +66,7 @@ enum CloudKitSchemaPrimer {
         root["snapshotUpdatedAt"] = snapshot.capturedAt as CKRecordValue
 
         let share = CKShare(rootRecord: root)
-        share[CKShare.SystemFieldKey.title] = "Book Club: Schema Prime" as CKRecordValue
+        share[CKShare.SystemFieldKey.title] = "Book Club: \(SchemaPrimeIdentity.clubName)" as CKRecordValue
         share.publicPermission = .none
 
         _ = try await db.modifyRecords(saving: [root, share], deleting: [])

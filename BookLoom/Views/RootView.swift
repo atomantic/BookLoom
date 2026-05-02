@@ -52,11 +52,15 @@ private struct MainTabs: View {
         }
     }
 
+    private var visibleClubs: [BookClub] {
+        clubs.filter { !SchemaPrimeDataCleanup.isSchemaPrime($0) }
+    }
+
     private func navigateToScreenshotRoute(_ route: String) {
         selectedTab = 0
         clubPath = NavigationPath()
 
-        guard route != "clubs", let club = clubs.first else { return }
+        guard route != "clubs", let club = visibleClubs.first else { return }
         clubPath.append(club)
 
         switch route {

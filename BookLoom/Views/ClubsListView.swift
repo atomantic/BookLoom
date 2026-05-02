@@ -5,19 +5,20 @@ struct ClubsListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
     @State private var showingNewClubForm = false
+    @State private var pendingDeleteClubs: [BookClub] = []
 
     var body: some View {
         Group {
-            if clubs.isEmpty {
+            if visibleClubs.isEmpty {
                 emptyState
             } else {
                 List {
                     Section {
-                        ClubsOverviewHeader(clubs: clubs)
+                        ClubsOverviewHeader(clubs: visibleClubs)
                             .bookLoomListRow(top: 6, bottom: 8)
                     }
 
-                    ForEach(clubs) { club in
+                    ForEach(visibleClubs) { club in
                         NavigationLink(value: club) {
                             ClubRow(club: club)
                         }
@@ -35,7 +36,7 @@ struct ClubsListView: View {
         .bookLoomScreenBackground()
         .navigationTitle("Clubs")
         .toolbar {
-            if !clubs.isEmpty {
+            if !visibleClubs.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingNewClubForm = true
@@ -50,9 +51,62 @@ struct ClubsListView: View {
                 NewClubFormView()
             }
         }
-        .task(id: clubs.map(\.cloudZoneName).joined(separator: "|")) {
-            await SharedClubSync.refreshIfNeeded(clubs, context: context)
+        .confirmationDialog(
+            deleteConfirmationTitle,
+            isPresented: deleteConfirmationBinding,
+            titleVisibility: .visible
+        ) {
+            Button(deleteConfirmationButtonTitle, role: .destructive) {
+                confirmDeleteClubs()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(deleteConfirmationMessage)
         }
+        .task(id: clubsTaskSignature) {
+            await SharedClubSync.refreshIfNeeded(visibleClubs, context: context)
+        }
+    }
+
+    private var deleteConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { !pendingDeleteClubs.isEmpty },
+            set: { if !$0 { pendingDeleteClubs = [] } }
+        )
+    }
+
+    private var visibleClubs: [BookClub] {
+        clubs.filter { !SchemaPrimeDataCleanup.isSchemaPrime($0) }
+    }
+
+    private var clubsTaskSignature: String {
+        clubs.map { club in
+            [
+                club.name,
+                club.cloudZoneName,
+                "\(club.submissions?.count ?? 0)",
+                "\(club.meetings?.count ?? 0)",
+                "\(club.selectionPolls?.count ?? 0)"
+            ].joined(separator: ":")
+        }
+        .joined(separator: "|")
+    }
+
+    private var deleteConfirmationTitle: String {
+        if pendingDeleteClubs.count == 1, let club = pendingDeleteClubs.first {
+            return "Delete \(club.name)?"
+        }
+        return "Delete Clubs?"
+    }
+
+    private var deleteConfirmationMessage: String {
+        pendingDeleteClubs.count == 1
+            ? "This removes the club and its proposals, meetings, votes, ratings, and notes from this device."
+            : "This removes the selected clubs and their proposals, meetings, votes, ratings, and notes from this device."
+    }
+
+    private var deleteConfirmationButtonTitle: String {
+        pendingDeleteClubs.count == 1 ? "Delete Club" : "Delete Clubs"
     }
 
     private var emptyState: some View {
@@ -89,9 +143,14 @@ struct ClubsListView: View {
     }
 
     private func deleteClubs(at offsets: IndexSet) {
-        for index in offsets {
-            context.delete(clubs[index])
+        pendingDeleteClubs = offsets.map { visibleClubs[$0] }
+    }
+
+    private func confirmDeleteClubs() {
+        for club in pendingDeleteClubs {
+            context.delete(club)
         }
+        pendingDeleteClubs = []
     }
 }
 

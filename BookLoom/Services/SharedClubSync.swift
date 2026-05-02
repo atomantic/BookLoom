@@ -18,7 +18,7 @@ enum SharedClubSync {
         if CoverDataCleanup.clearPersistedCoverData(in: club) {
             try? context.save()
         }
-        let snapshot = SharedClubSnapshotStore.snapshot(from: club)
+        let snapshot = SharedClubSnapshotStore.snapshot(from: club, context: context)
         club.lastSharedSnapshotAt = snapshot.capturedAt
         try? context.save()
 
@@ -34,6 +34,11 @@ enum SharedClubSync {
 
     static func refreshIfNeeded(_ club: BookClub, context: ModelContext) async {
         guard Features.cloudKitSharing, club.shareIsActive else { return }
+        if club.isOwner {
+            publishIfNeeded(club, context: context)
+            return
+        }
+
         do {
             guard let snapshot = try await CloudKitSharingService.shared.fetchSnapshot(for: club) else {
                 return
