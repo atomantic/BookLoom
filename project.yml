@@ -1,0 +1,128 @@
+name: PlotLoom
+options:
+  bundleIdPrefix: net.shadowpuppet
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  groupSortPosition: top
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: TYQ32QCF6K
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: "6.0"
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_EMIT_LOC_STRINGS: YES
+
+schemes:
+  PlotLoom_iOS:
+    build:
+      targets:
+        PlotLoom_iOS: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PlotLoomTests_iOS
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+  PlotLoom_macOS:
+    build:
+      targets:
+        PlotLoom_macOS: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PlotLoomTests_macOS
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+
+targets:
+  PlotLoom:
+    type: application
+    platform: [iOS, macOS]
+    sources:
+      - PlotLoom
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom
+        DEVELOPMENT_TEAM: TYQ32QCF6K
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: PlotLoom
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.lifestyle
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: false
+        # PlotLoom-macOS.entitlements is manually maintained because XcodeGen cannot
+        # generate per-SDK entitlements. It mirrors the iOS keys (CloudKit, network)
+        # PLUS macOS App Sandbox keys required for Mac App Store / TestFlight.
+        # When shared capabilities change in `entitlements:` below, also update
+        # PlotLoom/App/PlotLoom-macOS.entitlements by hand.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": PlotLoom/App/PlotLoom-macOS.entitlements
+    info:
+      path: PlotLoom/App/Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleDisplayName: PlotLoom
+        LSApplicationCategoryType: public.app-category.lifestyle
+        UILaunchScreen: {}
+        ITSAppUsesNonExemptEncryption: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        CFBundleURLTypes:
+          - CFBundleURLName: net.shadowpuppet.PlotLoom
+            CFBundleURLSchemes:
+              - plotloom
+    entitlements:
+      path: PlotLoom/App/PlotLoom.entitlements
+      properties:
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.net.shadowpuppet.PlotLoom
+        com.apple.developer.icloud-services:
+          - CloudKit
+
+  PlotLoomTests_iOS:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - PlotLoomTests
+    dependencies:
+      - target: PlotLoom_iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.tests
+
+  PlotLoomTests_macOS:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - PlotLoomTests
+    dependencies:
+      - target: PlotLoom_macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.tests

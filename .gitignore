@@ -1,0 +1,35 @@
+# Xcode
+build/
+DerivedData/
+*.xcworkspace
+*.xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+# XcodeGen-generated project (regenerate via `xcodegen generate`)
+PlotLoom.xcodeproj/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.resolved
+
+# Local secrets
+.env
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# OS
+.DS_Store
+
+# Playwright
+.playwright-mcp/
+
+# Claude
+.claude/settings.local.json
+
+# Screenshots
+screenshots/
