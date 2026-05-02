@@ -11,83 +11,37 @@ struct SettingsView: View {
         List {
             Section {
                 SettingsHeader(name: memberIdentity.name)
-                    .plotLoomListRow(top: 8, bottom: 12)
+                    .plotLoomListRow(top: 6, bottom: 8)
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Display Name")
-                        .font(.headline)
-                        .foregroundStyle(PlotLoomStyle.ink)
-                    TextField("Display name", text: $draftName)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.words)
-                        #endif
-                        .textFieldStyle(.roundedBorder)
-
-                    Button(action: saveName) {
-                        Label(
-                            nameSaved ? "Saved" : "Save Name",
-                            systemImage: nameSaved ? "checkmark.circle.fill" : "checkmark.circle"
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(nameSaved ? .green : nil)
-                    .disabled(saveDisabled)
-                }
-                .plotLoomCard(padding: 16)
+                SettingsPreferencesCard(
+                    draftName: $draftName,
+                    appAppearanceRaw: $appAppearanceRaw,
+                    replayWelcome: $replayWelcome,
+                    nameSaved: nameSaved,
+                    saveDisabled: saveDisabled,
+                    onSaveName: saveName
+                )
             } header: {
-                SectionTitle(title: "Profile")
-            }
-            .plotLoomListRow()
-
-            Section {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Appearance")
-                        .font(.headline)
-                        .foregroundStyle(PlotLoomStyle.ink)
-                    Picker("Appearance", selection: $appAppearanceRaw) {
-                        ForEach(AppAppearance.allCases) { appearance in
-                            Text(appearance.title).tag(appearance.rawValue)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                .plotLoomCard(padding: 16)
-            } header: {
-                SectionTitle(title: "Display")
-            }
-            .plotLoomListRow()
-
-            Section {
-                Button {
-                    replayWelcome = true
-                } label: {
-                    Label("Relaunch Welcome", systemImage: "sparkles.rectangle.stack")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .plotLoomCard(padding: 16)
-            } header: {
-                SectionTitle(title: "Welcome")
+                SectionTitle(title: "Preferences")
             }
             .plotLoomListRow()
 
             Section {
                 CloudKitStatusCard()
             } header: {
-                SectionTitle(title: "iCloud")
+                SectionTitle(title: "Sync")
             }
             .plotLoomListRow()
 
             Section {
-                VStack(spacing: 12) {
+                VStack(spacing: 8) {
                     LabeledContent("Version", value: appVersionString)
                     LabeledContent("Build", value: appBuildString)
                 }
-                .plotLoomCard(padding: 16)
+                .font(.subheadline)
+                .plotLoomCard(padding: 12)
             } header: {
                 SectionTitle(title: "About")
             }
@@ -130,30 +84,92 @@ private struct SettingsHeader: View {
     let name: String
 
     var body: some View {
-        HStack(spacing: 14) {
-            BrandBadge(size: 58)
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 12) {
+            BrandBadge(size: 44)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(name.isEmpty ? "Reader" : name)
-                    .font(.title2.bold())
+                    .font(.headline.bold())
                     .foregroundStyle(PlotLoomStyle.ink)
                     .lineLimit(1)
                 Text("Submissions, ratings, and notes use this name.")
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .plotLoomCard(padding: 18)
+        .plotLoomCard(padding: 12)
+    }
+}
+
+private struct SettingsPreferencesCard: View {
+    @Binding var draftName: String
+    @Binding var appAppearanceRaw: String
+    @Binding var replayWelcome: Bool
+
+    let nameSaved: Bool
+    let saveDisabled: Bool
+    let onSaveName: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Display Name")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PlotLoomStyle.ink)
+                HStack(spacing: 8) {
+                    TextField("Display name", text: $draftName)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.words)
+                        #endif
+                        .textFieldStyle(.roundedBorder)
+
+                    Button(action: onSaveName) {
+                        Label(
+                            nameSaved ? "Saved" : "Save",
+                            systemImage: nameSaved ? "checkmark.circle.fill" : "checkmark.circle"
+                        )
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(nameSaved ? .green : nil)
+                    .disabled(saveDisabled)
+                }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Appearance")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PlotLoomStyle.ink)
+                Picker("Appearance", selection: $appAppearanceRaw) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            Divider()
+
+            Button {
+                replayWelcome = true
+            } label: {
+                Label("Relaunch Welcome", systemImage: "sparkles.rectangle.stack")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
+        .plotLoomCard(padding: 12)
     }
 }
 
 private struct CloudKitStatusCard: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Label {
                 Text(Features.cloudKitSharing ? "Group sharing is enabled" : "Group sharing is in setup")
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(PlotLoomStyle.ink)
             } icon: {
                 Image(systemName: Features.cloudKitSharing ? "icloud.fill" : "icloud")
@@ -165,6 +181,6 @@ private struct CloudKitStatusCard: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .plotLoomCard(padding: 16)
+        .plotLoomCard(padding: 12)
     }
 }

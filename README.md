@@ -6,20 +6,23 @@ iOS + macOS, SwiftUI + SwiftData, synced via iCloud.
 
 ## Status
 
-Early scaffold (v0.1). Core flows implemented:
+Core flows implemented:
 
 - Local member identity (your display name, stored in UserDefaults)
 - Create a book club
 - Submit books to the proposal pool
 - Random picker — promotes a proposed book to "currently reading" and archives the previous one
+- Ranked selection polls for choosing the next book
+- Meeting scheduling with RSVPs, agenda, and local reminder scheduling
+- Past meeting history
 - Per-member 1–5 star ratings
 - Per-member notes per book
+- Starter and custom discussion prompts with Discussion Mode
+- iCloud invite path (CKShare-based group sharing)
 
 Not yet implemented (see `PLAN.md`):
 
-- iCloud invite path (CKShare-based group sharing)
 - Cover image fetch from ISBN
-- Reading deadlines / meeting dates
 - Export / import club history
 
 ## Develop
@@ -39,6 +42,35 @@ The project file is generated from `project.yml` and is git-ignored. Re-run `xco
 xcodebuild test -project PlotLoom.xcodeproj -scheme PlotLoom_iOS \
   -destination 'platform=iOS Simulator,name=iPhone 16' | xcbeautify
 ```
+
+## Sample Data
+
+Launch with deterministic in-memory screenshot data:
+
+```sh
+open .build/DerivedData/Build/Products/Debug/PlotLoom.app --args -SeedSampleData
+```
+
+In Xcode, add `-SeedSampleData` to Run > Arguments. The sample launch uses an in-memory SwiftData store and includes a configured member, a shared test club, current read, proposals, completed history, ratings, notes, discussion prompts, meetings, RSVPs, and a ranked poll.
+
+## Screenshots
+
+Regenerate iPhone and iPad App Store screenshots:
+
+```sh
+./take_screenshots.sh
+```
+
+Useful variants:
+
+```sh
+./take_screenshots.sh --iphone-only
+./take_screenshots.sh --ipad-only
+./take_screenshots.sh --screen 01_clubs
+./take_screenshots_macos.sh
+```
+
+Outputs are written to `screenshots/{locale}/{device}/`. Override simulator defaults with `PLOTLOOM_IPHONE_DEVICE`, `PLOTLOOM_IPHONE_OS`, `PLOTLOOM_IPAD_DEVICE`, and `PLOTLOOM_IPAD_OS`.
 
 ## Deploy to TestFlight
 

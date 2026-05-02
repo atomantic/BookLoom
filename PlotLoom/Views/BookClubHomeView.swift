@@ -5,23 +5,36 @@ struct BookClubHomeView: View {
     @Environment(\.modelContext) private var context
     @Bindable var club: BookClub
     @Query(sort: \BookSubmission.submittedAt) private var submissions: [BookSubmission]
+    @Query(sort: \ClubMeeting.scheduledAt) private var meetings: [ClubMeeting]
+    @Query(sort: \SelectionPoll.createdAt, order: .reverse) private var polls: [SelectionPoll]
 
     @State private var showingInvite: Bool = false
     @State private var showingPickConfirmation: Bool = false
+    @State private var showingMeetingForm: Bool = false
+    @State private var showingPollForm: Bool = false
 
     var body: some View {
         let displayedSections = sections
+        let upcoming = upcomingMeetings
+        let recentPolls = visiblePolls
 
         List {
             Section {
                 ClubHomeHeader(club: club, sections: displayedSections)
-                    .plotLoomListRow(top: 8, bottom: 12)
+                    .plotLoomListRow(top: 6, bottom: 8)
             }
+
+            Section {
+                MemberSummaryCard(club: club)
+            } header: {
+                SectionTitle(title: "Members")
+            }
+            .plotLoomListRow()
 
             Section {
                 if let current = displayedSections.current {
                     NavigationLink(value: current) {
-                        CurrentSubmissionRow(submission: current)
+                        CurrentSubmissionRow(submission: current, meeting: nextMeeting(for: current))
                     }
                     .swipeActions(edge: .trailing) {
                         Button {
@@ -40,6 +53,72 @@ struct BookClubHomeView: View {
                 }
             } header: {
                 SectionTitle(title: "Currently Reading")
+            }
+            .plotLoomListRow()
+
+            Section {
+                if upcoming.isEmpty {
+                    MeetingActionCard(
+                        title: "No Meeting Scheduled",
+                        message: displayedSections.current == nil ? "Pick a current book before scheduling the next discussion." : "Add the next discussion date, host, reminders, and agenda.",
+                        buttonTitle: "Schedule Meeting",
+                        systemImage: "calendar.badge.plus",
+                        isDisabled: displayedSections.current == nil
+                    ) {
+                        showingMeetingForm = true
+                    }
+                } else {
+                    ForEach(upcoming.prefix(2)) { meeting in
+                        NavigationLink(value: meeting) {
+                            MeetingRow(meeting: meeting)
+                        }
+                        .plotLoomListRow()
+                    }
+                    MeetingActionCard(
+                        title: "Add another meeting",
+                        message: "Schedule future discussions or planning sessions.",
+                        buttonTitle: "Schedule",
+                        systemImage: "calendar.badge.plus",
+                        isDisabled: displayedSections.current == nil
+                    ) {
+                        showingMeetingForm = true
+                    }
+                }
+            } header: {
+                SectionTitle(title: "Meetings", detail: "\(clubMeetings.count)")
+            }
+            .plotLoomListRow()
+
+            Section {
+                if recentPolls.isEmpty {
+                    MeetingActionCard(
+                        title: "No Active Vote",
+                        message: displayedSections.proposed.count < 2 ? "Add at least two proposals to start a ranked vote." : "Let members rank their top three proposals before picking.",
+                        buttonTitle: "Start Poll",
+                        systemImage: "list.number",
+                        isDisabled: displayedSections.proposed.count < 2
+                    ) {
+                        showingPollForm = true
+                    }
+                } else {
+                    ForEach(recentPolls.prefix(2)) { poll in
+                        NavigationLink(value: poll) {
+                            SelectionPollRow(poll: poll, candidates: displayedSections.proposed + displayedSections.completed + [displayedSections.current].compactMap { $0 })
+                        }
+                        .plotLoomListRow()
+                    }
+                    MeetingActionCard(
+                        title: "New ranked vote",
+                        message: "Create a fresh poll from the current proposal list.",
+                        buttonTitle: "Start Poll",
+                        systemImage: "list.number",
+                        isDisabled: displayedSections.proposed.count < 2
+                    ) {
+                        showingPollForm = true
+                    }
+                }
+            } header: {
+                SectionTitle(title: "Vote", detail: "\(clubPolls.count)")
             }
             .plotLoomListRow()
 
@@ -81,6 +160,19 @@ struct BookClubHomeView: View {
                     SectionTitle(title: "Read", detail: "\(displayedSections.completed.count)")
                 }
             }
+
+            if !pastMeetings.isEmpty {
+                Section {
+                    ForEach(pastMeetings.prefix(4)) { meeting in
+                        NavigationLink(value: meeting) {
+                            MeetingRow(meeting: meeting)
+                        }
+                        .plotLoomListRow()
+                    }
+                } header: {
+                    SectionTitle(title: "Past Meetings", detail: "\(pastMeetings.count)")
+                }
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -89,7 +181,16 @@ struct BookClubHomeView: View {
         .navigationDestination(for: BookSubmission.self) { sub in
             SubmissionDetailView(submission: sub)
         }
+        .navigationDestination(for: ClubMeeting.self) { meeting in
+            MeetingDetailView(meeting: meeting)
+        }
+        .navigationDestination(for: SelectionPoll.self) { poll in
+            SelectionPollDetailView(poll: poll, candidates: clubSubmissions)
+        }
         .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Label(syncDescriptor.label, systemImage: syncDescriptor.icon)
+            }
             ToolbarItem {
                 NavigationLink {
                     AddSubmissionView(club: club)
@@ -118,6 +219,12 @@ struct BookClubHomeView: View {
         .sheet(isPresented: $showingInvite) {
             InviteView(club: club)
         }
+        .sheet(isPresented: $showingMeetingForm) {
+            ScheduleMeetingView(club: club, currentSubmission: displayedSections.current)
+        }
+        .sheet(isPresented: $showingPollForm) {
+            StartPollView(club: club, candidates: displayedSections.proposed)
+        }
         .confirmationDialog(
             "Pick the next book?",
             isPresented: $showingPickConfirmation,
@@ -144,6 +251,45 @@ struct BookClubHomeView: View {
         submissions.filter { $0.bookClub?.persistentModelID == club.persistentModelID }
     }
 
+    private var clubMeetings: [ClubMeeting] {
+        meetings.filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+    }
+
+    private var clubPolls: [SelectionPoll] {
+        polls.filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+    }
+
+    private var upcomingMeetings: [ClubMeeting] {
+        clubMeetings
+            .filter { !$0.isCompleted && $0.scheduledAt >= .now }
+            .sorted { $0.scheduledAt < $1.scheduledAt }
+    }
+
+    private var pastMeetings: [ClubMeeting] {
+        clubMeetings
+            .filter { $0.isCompleted || $0.scheduledAt < .now }
+            .sorted { ($0.completedAt ?? $0.scheduledAt) > ($1.completedAt ?? $1.scheduledAt) }
+    }
+
+    private var visiblePolls: [SelectionPoll] {
+        let openPolls = clubPolls.filter(\.isOpen)
+        if !openPolls.isEmpty {
+            return openPolls.sorted { $0.createdAt > $1.createdAt }
+        }
+        return Array(clubPolls.sorted { $0.createdAt > $1.createdAt }.prefix(1))
+    }
+
+    private func nextMeeting(for submission: BookSubmission) -> ClubMeeting? {
+        upcomingMeetings.first { $0.bookSubmission?.persistentModelID == submission.persistentModelID }
+    }
+
+    private var syncDescriptor: (label: String, icon: String) {
+        if !club.isOwner {
+            return ("Shared club", "person.2.fill")
+        }
+        return club.shareIsActive ? ("iCloud sharing on", "icloud.fill") : ("Owner device", "lock.fill")
+    }
+
     private func pickRandomNext() {
         if let current = sections.current {
             markComplete(current)
@@ -151,6 +297,7 @@ struct BookClubHomeView: View {
         guard let pick = BookPicker.pickNext(from: sections.proposed) else { return }
         pick.status = .current
         pick.pickedAt = .now
+        DiscussionPromptLibrary.ensureStarterPrompts(for: pick, context: context)
     }
 
     private func markComplete(_ submission: BookSubmission) {
@@ -169,12 +316,18 @@ private struct SubmissionRow: View {
     @Bindable var submission: BookSubmission
 
     var body: some View {
-        HStack(spacing: 14) {
-            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor, coverURL: submission.coverImageURL)
+        HStack(spacing: 12) {
+            BookCoverTile(
+                title: submission.displayTitle,
+                author: submission.displayAuthor,
+                coverURL: submission.coverImageURL,
+                width: 48,
+                height: 64
+            )
 
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(submission.displayTitle)
                             .font(.headline)
                             .foregroundStyle(PlotLoomStyle.ink)
@@ -203,21 +356,28 @@ private struct SubmissionRow: View {
                 .foregroundStyle(.secondary)
             }
         }
-        .plotLoomCard(padding: 14)
+        .plotLoomCard(padding: 10)
     }
 }
 
 private struct CurrentSubmissionRow: View {
     @Bindable var submission: BookSubmission
+    let meeting: ClubMeeting?
 
     var body: some View {
-        HStack(spacing: 18) {
-            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor, coverURL: submission.coverImageURL, width: 86, height: 118)
+        HStack(spacing: 14) {
+            BookCoverTile(
+                title: submission.displayTitle,
+                author: submission.displayAuthor,
+                coverURL: submission.coverImageURL,
+                width: 72,
+                height: 98
+            )
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 7) {
                 StatusPill(status: .current)
                 Text(submission.displayTitle)
-                    .font(.title3.bold())
+                    .font(.headline.bold())
                     .foregroundStyle(PlotLoomStyle.ink)
                     .lineLimit(2)
                 if !submission.displayAuthor.isEmpty {
@@ -232,10 +392,45 @@ private struct CurrentSubmissionRow: View {
                 }
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
+
+                if let meeting {
+                    Label(meeting.scheduledAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(PlotLoomStyle.indigo)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
         }
-        .plotLoomCard(padding: 16)
+        .plotLoomCard(padding: 12)
+    }
+}
+
+private struct MeetingActionCard: View {
+    let title: String
+    let message: String
+    let buttonTitle: String
+    let systemImage: String
+    let isDisabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(PlotLoomStyle.ink)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: action) {
+                Label(buttonTitle, systemImage: systemImage)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isDisabled)
+        }
+        .plotLoomCard(padding: 10)
     }
 }
 
@@ -247,16 +442,16 @@ private struct ClubHomeHeader: View {
         let sharing = sharingDescriptor
         let memberCount = club.displayedMemberCount
 
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 14) {
-                BrandBadge(size: 54)
-                VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                BrandBadge(size: 42)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(club.name)
-                        .font(.title2.bold())
+                        .font(.headline.bold())
                         .foregroundStyle(PlotLoomStyle.ink)
-                        .lineLimit(2)
+                        .lineLimit(1)
                     Label(sharing.label, systemImage: sharing.icon)
-                        .font(.caption.weight(.medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -268,7 +463,7 @@ private struct ClubHomeHeader: View {
                 MetricTile(value: "\(memberCount)", label: "members", systemImage: "person.2.fill", tint: PlotLoomStyle.sage)
             }
         }
-        .plotLoomCard(padding: 18)
+        .plotLoomCard(padding: 12)
     }
 
     private var sharingDescriptor: (label: String, icon: String) {

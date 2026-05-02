@@ -106,6 +106,14 @@ extension BookClub {
         submissions ?? []
     }
 
+    var allMeetings: [ClubMeeting] {
+        meetings ?? []
+    }
+
+    var allSelectionPolls: [SelectionPoll] {
+        selectionPolls ?? []
+    }
+
     var sections: BookClubSubmissionSections {
         BookClubSubmissionSections(submissions: allSubmissions)
     }
@@ -115,7 +123,34 @@ extension BookClub {
     }
 
     var displayedMemberCount: Int {
-        max(shareParticipantCount, metrics.memberCount)
+        max(shareParticipantCount, metrics.memberCount, ClubMemberCollector.collect(from: self).count)
+    }
+
+    var memberDigests: [ClubMemberDigest] {
+        ClubMemberCollector.collect(from: self)
+    }
+
+    var openSelectionPolls: [SelectionPoll] {
+        allSelectionPolls
+            .filter(\.isOpen)
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    var recentSelectionPolls: [SelectionPoll] {
+        allSelectionPolls
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    var upcomingMeetings: [ClubMeeting] {
+        allMeetings
+            .filter { !$0.isCompleted && $0.scheduledAt >= .now }
+            .sorted { $0.scheduledAt < $1.scheduledAt }
+    }
+
+    var pastMeetings: [ClubMeeting] {
+        allMeetings
+            .filter { $0.isCompleted || $0.scheduledAt < .now }
+            .sorted { ($0.completedAt ?? $0.scheduledAt) > ($1.completedAt ?? $1.scheduledAt) }
     }
 }
 
@@ -138,6 +173,15 @@ extension BookSubmission {
 
     var displaySubmitter: String {
         submittedBy.trimmedOrNil ?? "Unknown member"
+    }
+
+    var activeDiscussionPrompts: [DiscussionPrompt] {
+        (discussionPrompts ?? [])
+            .filter { !$0.isArchived && !$0.question.trimmed.isEmpty }
+            .sorted {
+                if $0.orderIndex != $1.orderIndex { return $0.orderIndex < $1.orderIndex }
+                return $0.createdAt < $1.createdAt
+            }
     }
 
     var ratingSummary: RatingSummary {

@@ -12,6 +12,8 @@ enum CloudKitSchemaPrimer {
     private static let launchArgument = "--prime-cloudkit-schema"
     private static let containerID = "iCloud.net.shadowpuppet.PlotLoom"
     private static let rootRecordType = "BookClubShareRoot"
+    private static let primeMemberID = "schema-prime"
+    private static let primeMemberName = "PlotLoom"
 
     static func runIfRequested(modelContext: ModelContext) async {
         guard shouldRun else { return }
@@ -43,18 +45,35 @@ enum CloudKitSchemaPrimer {
         let club = BookClub(name: "Schema Prime", createdAt: .now)
         let submission = BookSubmission(
             title: "Schema Prime",
-            author: "PlotLoom",
+            author: primeMemberName,
             bookDescription: "Development-only record used to register CloudKit schema.",
-            submittedBy: "PlotLoom",
+            submittedBy: primeMemberName,
+            submittedByMemberID: primeMemberID,
             status: .proposed
         )
-        let rating = Rating(memberName: "PlotLoom", stars: 5)
-        let note = BookNote(memberName: "PlotLoom", text: "CloudKit schema prime")
+        let rating = Rating(memberID: primeMemberID, memberName: primeMemberName, stars: 5)
+        let note = BookNote(memberID: primeMemberID, memberName: primeMemberName, text: "CloudKit schema prime")
+        let meeting = ClubMeeting(
+            title: "Schema Prime Meeting",
+            scheduledAt: .now.addingTimeInterval(86_400),
+            hostName: primeMemberName,
+            hostMemberID: primeMemberID,
+            location: "iCloud Development",
+            agenda: "Confirm meetings, RSVPs, polls, votes, and prompts sync."
+        )
+        let poll = SelectionPoll(title: "Schema Prime Vote", candidates: [submission])
+        let prompt = DiscussionPrompt(question: "What made this book work for the group?", orderIndex: 0, source: .starter)
 
         modelContext.insert(club)
         club.addSubmission(submission)
+        club.addMeeting(meeting)
+        club.addSelectionPoll(poll)
+        meeting.bookSubmission = submission
+        meeting.upsertRSVP(memberID: primeMemberID, memberName: primeMemberName, status: .attending)
+        poll.replaceVote(memberID: primeMemberID, memberName: primeMemberName, rankedSubmissionIDs: [submission.selectionID])
         submission.ratings = [rating]
         submission.notes = [note]
+        submission.discussionPrompts = [prompt]
         try modelContext.save()
         log("Saved SwiftData schema-prime graph")
     }

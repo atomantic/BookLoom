@@ -17,25 +17,30 @@ struct AddSubmissionView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                VStack(spacing: 12) {
+            VStack(spacing: 14) {
+                HStack(spacing: 14) {
                     BookCoverTile(
                         title: title,
                         author: author,
                         coverURL: selectedMetadata?.coverURL,
-                        width: 96,
-                        height: 132
+                        width: 64,
+                        height: 88
                     )
-                    Text("Add a Proposal")
-                        .font(.title.bold())
-                        .foregroundStyle(PlotLoomStyle.ink)
-                    Text(club.name)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Add a Proposal")
+                            .font(.title3.bold())
+                            .foregroundStyle(PlotLoomStyle.ink)
+                        Text(club.name)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
                 }
+                .plotLoomCard(padding: 12)
+                .frame(maxWidth: 500)
 
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     Group {
                         TextField("Title", text: $title)
                         TextField("Author", text: $author)
@@ -68,10 +73,10 @@ struct AddSubmissionView: View {
                     .controlSize(.large)
                     .disabled(trimmedTitle.isEmpty)
                 }
-                .plotLoomCard(padding: 18)
+                .plotLoomCard(padding: 12)
                 .frame(maxWidth: 500)
             }
-            .padding(24)
+            .padding(16)
             .frame(maxWidth: .infinity)
         }
         .plotLoomScreenBackground()
@@ -115,7 +120,8 @@ struct AddSubmissionView: View {
             coverURL: selectedMetadata?.coverURL?.absoluteString ?? "",
             externalProvider: selectedMetadata?.provider.rawValue ?? "",
             externalID: selectedMetadata?.externalID ?? "",
-            submittedBy: memberIdentity.name
+            submittedBy: memberIdentity.name,
+            submittedByMemberID: memberIdentity.memberID
         )
         club.addSubmission(submission)
         context.insert(submission)
@@ -141,7 +147,7 @@ private struct BookMetadataSummary: View {
     let candidate: BookMetadataCandidate
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             Label("Matched with \(candidate.provider.displayName)", systemImage: "checkmark.seal.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(PlotLoomStyle.sage)
@@ -159,7 +165,7 @@ private struct BookMetadataSummary: View {
                     .lineLimit(3)
             }
         }
-        .padding(12)
-        .background(PlotLoomStyle.sage.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(10)
+        .background(PlotLoomStyle.sage.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }

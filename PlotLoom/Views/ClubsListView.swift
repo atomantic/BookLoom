@@ -14,7 +14,7 @@ struct ClubsListView: View {
                 List {
                     Section {
                         ClubsOverviewHeader(clubs: clubs)
-                            .plotLoomListRow(top: 8, bottom: 12)
+                            .plotLoomListRow(top: 6, bottom: 8)
                     }
 
                     ForEach(clubs) { club in
@@ -54,13 +54,13 @@ struct ClubsListView: View {
 
     private var emptyState: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                OnboardingHeroArtwork(maxHeight: 260)
-                VStack(spacing: 8) {
-                    Text("Start a Reading Circle")
+            VStack(spacing: 18) {
+                OnboardingHeroArtwork(maxHeight: 220)
+                VStack(spacing: 6) {
+                    Text("Create or Join a Club")
                         .font(.title.bold())
                         .foregroundStyle(PlotLoomStyle.ink)
-                    Text("Collect nominations, pick the next read, and keep notes in one shared place.")
+                    Text("Create a club if you are starting one. If someone already made the club in PlotLoom, you can wait here and open their invite when it arrives.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -69,13 +69,16 @@ struct ClubsListView: View {
                 Button {
                     showingNewClubForm = true
                 } label: {
-                    Label("Create Club", systemImage: "plus.circle.fill")
+                    Label("Create New Club", systemImage: "plus.circle.fill")
                         .frame(maxWidth: 260)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                Label("No club needed until you create one or open an invite.", systemImage: "envelope.badge")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
-            .padding(24)
+            .padding(18)
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
         }
@@ -97,16 +100,16 @@ private struct ClubRow: View {
         let metrics = club.metrics
         let currentTitle = sections.current?.displayTitle
 
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             BookCoverTile(
                 title: currentTitle ?? club.name,
                 author: club.name,
                 coverURL: sections.current?.coverImageURL,
-                width: 54,
-                height: 72
+                width: 46,
+                height: 62
             )
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(club.name)
                         .font(.headline)
@@ -147,7 +150,7 @@ private struct ClubRow: View {
                 }
             }
         }
-        .plotLoomCard(padding: 14)
+        .plotLoomCard(padding: 10)
     }
 }
 
@@ -157,16 +160,17 @@ private struct ClubsOverviewHeader: View {
     var body: some View {
         let totals = clubTotals
 
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 14) {
-                BrandBadge(size: 54)
-                VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                BrandBadge(size: 42)
+                VStack(alignment: .leading, spacing: 2) {
                     Text("PlotLoom")
-                        .font(.title2.bold())
+                        .font(.headline.bold())
                         .foregroundStyle(PlotLoomStyle.ink)
                     Text("Keep every club's next read in motion.")
-                        .font(.subheadline)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer()
             }
@@ -177,7 +181,7 @@ private struct ClubsOverviewHeader: View {
                 MetricTile(value: "\(totals.proposed)", label: "proposals", systemImage: "sparkles", tint: PlotLoomStyle.plum)
             }
         }
-        .plotLoomCard(padding: 18)
+        .plotLoomCard(padding: 12)
     }
 
     private var clubTotals: (current: Int, proposed: Int) {

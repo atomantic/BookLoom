@@ -90,12 +90,12 @@ extension View {
         background(PlotLoomScreenBackground().ignoresSafeArea())
     }
 
-    func plotLoomCard(padding: CGFloat = 16, radius: CGFloat = 20) -> some View {
+    func plotLoomCard(padding: CGFloat = 12, radius: CGFloat = 8) -> some View {
         modifier(PlotLoomCardModifier(padding: padding, radius: radius))
     }
 
-    func plotLoomListRow(top: CGFloat = 6, bottom: CGFloat = 6) -> some View {
-        listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
+    func plotLoomListRow(top: CGFloat = 4, bottom: CGFloat = 4, horizontal: CGFloat = 14) -> some View {
+        listRowInsets(EdgeInsets(top: top, leading: horizontal, bottom: bottom, trailing: horizontal))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
     }
@@ -145,6 +145,12 @@ extension String {
     }
 }
 
+extension Collection {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+
 struct OnboardingHeroArtwork: View {
     @Environment(\.colorScheme) private var colorScheme
 
@@ -153,9 +159,9 @@ struct OnboardingHeroArtwork: View {
     @ViewBuilder
     var body: some View {
         heroImage
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(
                         colorScheme == .dark ? PlotLoomStyle.paper.opacity(0.22) : .white.opacity(0.38),
                         lineWidth: 1
@@ -228,12 +234,12 @@ struct BookCoverTile: View {
             }
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(.white.opacity(0.35), lineWidth: 1)
         }
-        .shadow(color: PlotLoomStyle.ink.opacity(0.16), radius: 10, y: 5)
+        .shadow(color: PlotLoomStyle.ink.opacity(0.12), radius: 6, y: 3)
         .accessibilityLabel(title.isEmpty ? "Untitled book" : title)
     }
 
@@ -256,7 +262,7 @@ struct BookCoverTile: View {
     }
 
     private var placeholder: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
             .fill(
                 LinearGradient(
                     colors: coverColors,
@@ -366,26 +372,30 @@ struct MetricTile: View {
     var tint: Color = PlotLoomStyle.indigo
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.headline)
+                .font(.callout.weight(.semibold))
                 .foregroundStyle(tint)
-            Text(value)
-                .font(.title3.bold())
-                .foregroundStyle(PlotLoomStyle.ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(.headline.bold())
+                    .foregroundStyle(PlotLoomStyle.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(label)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
         .background(
             colorScheme == .dark ? .white.opacity(0.08) : .white.opacity(0.34),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
     }
 }
@@ -397,13 +407,16 @@ struct SectionTitle: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(.headline)
-                .foregroundStyle(PlotLoomStyle.ink)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
             Spacer()
             if let detail {
-                Text(detail)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                TintedCapsuleLabel(
+                    text: detail,
+                    tint: PlotLoomStyle.plum,
+                    horizontalPadding: 7,
+                    verticalPadding: 3
+                )
             }
         }
         .textCase(nil)
@@ -416,21 +429,21 @@ struct InlineEmptyState: View {
     let message: String
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 30, weight: .semibold))
+                .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(PlotLoomStyle.plum)
                 .symbolRenderingMode(.hierarchical)
             Text(title)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .multilineTextAlignment(.center)
             Text(message)
-                .font(.subheadline)
+                .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
-        .plotLoomCard(padding: 20)
+        .plotLoomCard(padding: 14)
     }
 }

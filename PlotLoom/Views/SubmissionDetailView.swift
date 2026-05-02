@@ -8,137 +8,51 @@ struct SubmissionDetailView: View {
     @Bindable var submission: BookSubmission
 
     @State private var draftNote: String = ""
+    @State private var draftPrompt: String = ""
+    @State private var showingDiscussionMode: Bool = false
 
     var body: some View {
         let summary = submission.ratingSummary
         let noteCount = (submission.notes ?? []).count
+        let allRatings = (submission.ratings ?? []).sorted { $0.createdAt < $1.createdAt }
+        let allNotes = (submission.notes ?? []).sorted { $0.createdAt > $1.createdAt }
+        let prompts = submission.activeDiscussionPrompts
 
         List {
             Section {
                 SubmissionHero(submission: submission)
-                    .plotLoomListRow(top: 8, bottom: 12)
+                    .plotLoomListRow(top: 6, bottom: 8)
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    InfoLine(label: "Title", value: submission.displayTitle)
-                    if !submission.displayAuthor.isEmpty {
-                        InfoLine(label: "Author", value: submission.displayAuthor)
-                    }
-                    if !submission.isbn.isEmpty {
-                        InfoLine(label: "ISBN", value: submission.isbn)
-                    }
-                    if let publishedYear = submission.publishedYear {
-                        InfoLine(label: "Published", value: "\(publishedYear)")
-                    }
-                    InfoLine(label: "Submitted by", value: submission.displaySubmitter)
-                }
-                .plotLoomCard(padding: 16)
+                BookDetailsCard(submission: submission)
             } header: {
-                SectionTitle(title: "Book")
-            }
-            .plotLoomListRow()
-
-            if !submission.displayDescription.isEmpty {
-                Section {
-                    Text(submission.displayDescription)
-                        .font(.body)
-                        .foregroundStyle(PlotLoomStyle.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .plotLoomCard(padding: 16)
-                } header: {
-                    SectionTitle(title: "Description")
-                }
-                .plotLoomListRow()
-            }
-
-            Section {
-                VStack(alignment: .leading, spacing: 16) {
-                    StarRatingView(stars: bindingForOwnRating())
-                    if summary.average != nil {
-                        Label("\(summary.displayValue) average from \(summary.count) ratings", systemImage: "star.fill")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("No group ratings yet.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .plotLoomCard(padding: 16)
-            } header: {
-                SectionTitle(title: "Your Rating")
+                SectionTitle(title: "Details")
             }
             .plotLoomListRow()
 
             Section {
-                let allRatings = (submission.ratings ?? []).sorted { $0.createdAt < $1.createdAt }
-                if allRatings.isEmpty {
-                    InlineEmptyState(
-                        systemImage: "star",
-                        title: "No Ratings",
-                        message: "Ratings appear here as members weigh in."
-                    )
-                } else {
-                    ForEach(allRatings) { rating in
-                        HStack {
-                            Text(rating.memberName)
-                                .font(.subheadline.weight(.medium))
-                            Spacer()
-                            Text(String(repeating: "★", count: rating.stars))
-                                .foregroundStyle(PlotLoomStyle.gold)
-                                .accessibilityLabel("\(rating.stars) stars")
-                        }
-                        .plotLoomCard(padding: 14, radius: 16)
-                    }
-                }
+                RatingsCard(stars: bindingForOwnRating(), summary: summary, ratings: allRatings)
             } header: {
-                SectionTitle(title: "Group Ratings", detail: "\(summary.count)")
+                SectionTitle(title: "Ratings", detail: "\(summary.count)")
             }
             .plotLoomListRow()
 
             Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    TextField("Your thoughts...", text: $draftNote, axis: .vertical)
-                        .lineLimit(3...8)
-                        .textFieldStyle(.roundedBorder)
-                    Button(action: saveNote) {
-                        Label("Save Note", systemImage: "square.and.pencil")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(draftNote.trimmed.isEmpty)
-                }
-                .plotLoomCard(padding: 16)
-            } header: {
-                SectionTitle(title: "Add Note")
-            }
-            .plotLoomListRow()
-
-            Section {
-                let allNotes = (submission.notes ?? []).sorted { $0.createdAt > $1.createdAt }
-                if allNotes.isEmpty {
-                    InlineEmptyState(
-                        systemImage: "note.text",
-                        title: "No Notes",
-                        message: "Capture favorite passages, objections, or meeting topics."
-                    )
-                } else {
-                    ForEach(allNotes) { note in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label(note.memberName, systemImage: "person.fill")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                            Text(note.text)
-                                .font(.body)
-                                .foregroundStyle(PlotLoomStyle.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .plotLoomCard(padding: 14, radius: 16)
-                    }
-                }
+                NotesCard(draftNote: $draftNote, notes: allNotes, onSaveNote: saveNote)
             } header: {
                 SectionTitle(title: "Notes", detail: "\(noteCount)")
+            }
+            .plotLoomListRow()
+
+            Section {
+                DiscussionPromptCard(
+                    submission: submission,
+                    draftPrompt: $draftPrompt,
+                    onStartDiscussion: { showingDiscussionMode = true }
+                )
+            } header: {
+                SectionTitle(title: "Discussion", detail: "\(prompts.count)")
             }
             .plotLoomListRow()
         }
@@ -146,6 +60,9 @@ struct SubmissionDetailView: View {
         .scrollContentBackground(.hidden)
         .plotLoomScreenBackground()
         .navigationTitle(submission.displayTitle)
+        .sheet(isPresented: $showingDiscussionMode) {
+            DiscussionModeView(submissionTitle: submission.displayTitle, prompts: prompts)
+        }
     }
 
     private func bindingForOwnRating() -> Binding<Int> {
@@ -155,7 +72,7 @@ struct SubmissionDetailView: View {
                 if let existing = ownRating() {
                     existing.stars = newValue
                 } else {
-                    let rating = Rating(memberName: memberIdentity.name, stars: newValue)
+                    let rating = Rating(memberID: memberIdentity.memberID, memberName: memberIdentity.name, stars: newValue)
                     rating.submission = submission
                     context.insert(rating)
                 }
@@ -164,12 +81,12 @@ struct SubmissionDetailView: View {
     }
 
     private func ownRating() -> Rating? {
-        (submission.ratings ?? []).first { $0.memberName == memberIdentity.name }
+        (submission.ratings ?? []).first { $0.matches(memberID: memberIdentity.memberID, memberName: memberIdentity.name) }
     }
 
     private func saveNote() {
         guard let trimmed = draftNote.trimmedOrNil else { return }
-        let note = BookNote(memberName: memberIdentity.name, text: trimmed)
+        let note = BookNote(memberID: memberIdentity.memberID, memberName: memberIdentity.name, text: trimmed)
         note.submission = submission
         context.insert(note)
         draftNote = ""
@@ -197,28 +114,147 @@ private struct StarRatingView: View {
     }
 }
 
+private struct BookDetailsCard: View {
+    let submission: BookSubmission
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !submission.isbn.isEmpty {
+                InfoLine(label: "ISBN", value: submission.isbn)
+            }
+            if let publishedYear = submission.publishedYear {
+                InfoLine(label: "Published", value: "\(publishedYear)")
+            }
+            InfoLine(label: "Submitted by", value: submission.displaySubmitter)
+
+            if !submission.displayDescription.isEmpty {
+                Divider()
+                Text(submission.displayDescription)
+                    .font(.callout)
+                    .foregroundStyle(PlotLoomStyle.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .plotLoomCard(padding: 12)
+    }
+}
+
+private struct RatingsCard: View {
+    @Binding var stars: Int
+
+    let summary: RatingSummary
+    let ratings: [Rating]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                StarRatingView(stars: $stars)
+                Spacer(minLength: 12)
+                if summary.average != nil {
+                    Label(summary.displayValue, systemImage: "star.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(PlotLoomStyle.gold)
+                }
+            }
+
+            if ratings.isEmpty {
+                Text("No group ratings yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Divider()
+                VStack(spacing: 8) {
+                    ForEach(ratings) { rating in
+                        HStack {
+                            Text(rating.memberName)
+                                .font(.subheadline.weight(.medium))
+                            Spacer()
+                            Text(String(repeating: "★", count: rating.stars))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(PlotLoomStyle.gold)
+                                .accessibilityLabel("\(rating.stars) stars")
+                        }
+                    }
+                }
+            }
+        }
+        .plotLoomCard(padding: 12)
+    }
+}
+
+private struct NotesCard: View {
+    @Binding var draftNote: String
+
+    let notes: [BookNote]
+    let onSaveNote: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("Your thoughts...", text: $draftNote, axis: .vertical)
+                    .lineLimit(2...5)
+                    .textFieldStyle(.roundedBorder)
+                Button(action: onSaveNote) {
+                    Label("Save", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(draftNote.trimmed.isEmpty)
+            }
+
+            if notes.isEmpty {
+                Text("Capture favorite passages, objections, or meeting topics.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(notes) { note in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Label(note.memberName, systemImage: "person.fill")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            Text(note.text)
+                                .font(.callout)
+                                .foregroundStyle(PlotLoomStyle.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+        }
+        .plotLoomCard(padding: 12)
+    }
+}
+
 private struct SubmissionHero: View {
     @Bindable var submission: BookSubmission
 
     var body: some View {
-        HStack(spacing: 18) {
-            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor, coverURL: submission.coverImageURL, width: 104, height: 144)
-            VStack(alignment: .leading, spacing: 12) {
+        HStack(spacing: 14) {
+            BookCoverTile(
+                title: submission.displayTitle,
+                author: submission.displayAuthor,
+                coverURL: submission.coverImageURL,
+                width: 78,
+                height: 108
+            )
+            VStack(alignment: .leading, spacing: 8) {
                 StatusPill(status: submission.status)
                 Text(submission.displayTitle)
-                    .font(.title2.bold())
+                    .font(.title3.bold())
                     .foregroundStyle(PlotLoomStyle.ink)
                     .lineLimit(3)
                 if !submission.displayAuthor.isEmpty {
                     Text(submission.displayAuthor)
-                        .font(.headline)
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
             }
             Spacer(minLength: 0)
         }
-        .plotLoomCard(padding: 18)
+        .plotLoomCard(padding: 12)
     }
 }
 

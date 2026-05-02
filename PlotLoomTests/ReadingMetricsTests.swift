@@ -63,7 +63,15 @@ final class ReadingMetricsTests: XCTestCase {
 
     func test_addSubmissionAttachesProposalToClubSections() throws {
         let container = try ModelContainer(
-            for: BookClub.self, BookSubmission.self, Rating.self, BookNote.self,
+            for: BookClub.self,
+            BookSubmission.self,
+            Rating.self,
+            BookNote.self,
+            ClubMeeting.self,
+            MeetingRSVP.self,
+            SelectionPoll.self,
+            BookVote.self,
+            DiscussionPrompt.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let context = ModelContext(container)

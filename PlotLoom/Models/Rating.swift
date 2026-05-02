@@ -3,15 +3,24 @@ import SwiftData
 
 @Model
 final class Rating {
+    var memberID: String = ""
     var memberName: String = ""
     var stars: Int = 0
     var createdAt: Date = Date.now
 
     var submission: BookSubmission? = nil
 
-    init(memberName: String = "", stars: Int = 0, createdAt: Date = .now) {
+    init(memberID: String = "", memberName: String = "", stars: Int = 0, createdAt: Date = .now) {
+        self.memberID = memberID
         self.memberName = memberName
         self.stars = stars
         self.createdAt = createdAt
+    }
+
+    func matches(memberID: String, memberName: String) -> Bool {
+        if !memberID.isEmpty, self.memberID == memberID {
+            return true
+        }
+        return self.memberID.isEmpty && self.memberName == memberName
     }
 }

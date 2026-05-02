@@ -47,9 +47,10 @@
   4. icloud.developer.apple.com → open `iCloud.net.shadowpuppet.PlotLoom` container → verify the record type appears under Development → click "Deploy Schema Changes…" to push to Production
   5. Re-archive (automatic signing refreshes the provisioning profile to include the new entitlement)
   6. Smoke-test on two different Apple IDs via TestFlight
-- [ ] Flip `Features.cloudKitSharing = true` and smoke-test on two Apple IDs
-- [ ] Member list view (CKShare participants → display names)
-- [ ] Sync status indicator in toolbar
+- [x] Flip `Features.cloudKitSharing = true`
+- [ ] Smoke-test on two Apple IDs
+- [x] Member list view (discovered member activity + share participant count)
+- [x] Sync status indicator in toolbar
 
 ## v0.3 — book metadata
 
@@ -64,17 +65,29 @@
 - [x] Adaptive design system colors and gradients for dark mode
 - [x] "Relaunch Welcome" action in Settings to replay onboarding
 
+## v0.3 — UX density and App Store readiness
+
+- [x] Compact returning-user screens so valuable club, proposal, rating, and note content appears earlier
+- [x] UX direction captured in `docs/ux-design-direction.md`
+- [x] Screenshot sample data fixture for populated Clubs, Club Home, Submission Detail, Add Book, vote, and meeting states
+- [ ] SwiftUI previews or screenshot fixtures for empty Clubs, Club Home, Submission Detail, and Add Book states
+
 ## v0.4 — meeting & deadlines
 
-- [ ] Meeting date per "current" book
-- [ ] Reading reminders (local notifications)
-- [ ] Past meetings log
+- [x] Meeting date per "current" book
+- [x] Reading reminders (local notifications)
+- [x] Past meetings log
+- [x] Member list and sync status surface
+- [x] Ranked selection polls with one ballot per member, tie display, and winner promotion
+- [x] Reusable starter discussion prompts, custom prompts, meeting agenda, and Discussion Mode
+- [x] App Store naming/subtitle recommendation captured in `docs/app-store-metadata.md`
 
 ## v1.0 — submission
 
-- [ ] App Store screenshots (XCUITest automation, iOS + macOS)
-- [ ] Privacy policy + terms (shadowpuppet.net subdomain)
-- [ ] Marketing copy + subtitle
+- [x] App Store screenshot capture automation (XCUITest iOS + macOS script)
+- [x] App Store Connect copy + marketing URL captured for iOS/macOS in `docs/app-store-metadata.md`
+- [ ] Publish marketing, support, privacy, and terms pages under `https://plotloom.shadowpuppet.net`
+- [ ] Enter App Store Connect metadata for iOS/macOS
 - [ ] App Store submission
 
 ## Notes

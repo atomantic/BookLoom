@@ -45,9 +45,9 @@ struct InviteView: View {
     }
 
     private func errorView(_ error: InviteLoadError) -> some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             Image(systemName: error.systemImage)
-                .font(.system(size: 48))
+                .font(.system(size: 36))
                 .foregroundStyle(error.tint)
             Text(error.title)
                 .font(.title3.bold())
@@ -55,14 +55,14 @@ struct InviteView: View {
             Text(error.body)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, 20)
             if let hint = error.actionHint {
                 Text(hint)
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 32)
-                    .padding(.top, 8)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 4)
             }
             Button {
                 Task { await loadShare(force: true) }
@@ -79,16 +79,16 @@ struct InviteView: View {
     }
 
     private var comingSoonView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             Image(systemName: "icloud.and.arrow.up")
-                .font(.system(size: 48))
+                .font(.system(size: 36))
                 .foregroundStyle(.tint)
             Text("Coming Soon")
                 .font(.title2.bold())
             Text("Group sharing via iCloud is being set up. This invite flow will light up in a future build.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, 20)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -110,21 +110,21 @@ struct InviteView: View {
 
     #if os(macOS)
     private func macShareView(_ share: CKShare) -> some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 14) {
             Image(systemName: "person.2.badge.plus")
-                .font(.system(size: 48))
+                .font(.system(size: 36))
                 .foregroundStyle(.tint)
-                Text("Share \"\(club.name)\"")
-                .font(.title2.bold())
+            Text("Share \"\(club.name)\"")
+                .font(.title3.bold())
             if let url = share.url {
                 Text(url.absoluteString)
                     .font(.callout.monospaced())
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
-                    .padding()
+                    .padding(12)
                     .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, 20)
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url.absoluteString, forType: .string)
@@ -142,10 +142,10 @@ struct InviteView: View {
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.tertiary)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, 20)
         }
         .padding()
-        .frame(minWidth: 480, minHeight: 360)
+        .frame(minWidth: 460, minHeight: 300)
         .plotLoomScreenBackground()
     }
     #endif
@@ -270,7 +270,7 @@ enum InviteLoadError: Equatable {
 
 private struct PreparingInviteView: View {
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
             ProgressView()
                 .controlSize(.large)
             VStack(spacing: 6) {

@@ -93,16 +93,16 @@ private struct BookMetadataCandidateRow: View {
     let candidate: BookMetadataCandidate
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             BookCoverTile(
                 title: candidate.title,
                 author: candidate.authorLine,
                 coverURL: candidate.coverURL,
-                width: 58,
-                height: 78
+                width: 50,
+                height: 68
             )
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(candidate.title)
                     .font(.headline)
                     .foregroundStyle(PlotLoomStyle.ink)
@@ -135,6 +135,6 @@ private struct BookMetadataCandidateRow: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.tertiary)
         }
-        .plotLoomCard(padding: 14)
+        .plotLoomCard(padding: 10)
     }
 }

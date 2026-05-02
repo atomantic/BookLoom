@@ -26,6 +26,12 @@ final class BookClub {
     @Relationship(deleteRule: .cascade, inverse: \BookSubmission.bookClub)
     var submissions: [BookSubmission]? = nil
 
+    @Relationship(deleteRule: .cascade, inverse: \ClubMeeting.bookClub)
+    var meetings: [ClubMeeting]? = nil
+
+    @Relationship(deleteRule: .cascade, inverse: \SelectionPoll.bookClub)
+    var selectionPolls: [SelectionPoll]? = nil
+
     var isOwner: Bool { ownerUserRecordName == nil }
 
     init(name: String = "", createdAt: Date = .now) {
@@ -41,5 +47,23 @@ final class BookClub {
         }
         submissions = updatedSubmissions
         submission.bookClub = self
+    }
+
+    func addMeeting(_ meeting: ClubMeeting) {
+        var updatedMeetings = meetings ?? []
+        if !updatedMeetings.contains(where: { $0 === meeting }) {
+            updatedMeetings.append(meeting)
+        }
+        meetings = updatedMeetings
+        meeting.bookClub = self
+    }
+
+    func addSelectionPoll(_ poll: SelectionPoll) {
+        var updatedPolls = selectionPolls ?? []
+        if !updatedPolls.contains(where: { $0 === poll }) {
+            updatedPolls.append(poll)
+        }
+        selectionPolls = updatedPolls
+        poll.bookClub = self
     }
 }

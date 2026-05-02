@@ -28,6 +28,7 @@ schemes:
       config: Debug
       targets:
         - PlotLoomTests_iOS
+        - PlotLoomUITests_iOS
     profile:
       config: Release
     analyze:
@@ -118,6 +119,18 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+  PlotLoomUITests_iOS:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - PlotLoomUITests
+    dependencies:
+      - target: PlotLoom_iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.uitests
         GENERATE_INFOPLIST_FILE: YES
 
   PlotLoomTests_macOS:

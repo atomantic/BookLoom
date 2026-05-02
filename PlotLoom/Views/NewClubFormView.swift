@@ -11,15 +11,18 @@ struct NewClubFormView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                VStack(spacing: 10) {
-                    BrandBadge(size: 58)
+            VStack(spacing: 14) {
+                HStack(spacing: 12) {
+                    BrandBadge(size: 44)
                     Text("New Club")
-                        .font(.title.bold())
+                        .font(.title3.bold())
                         .foregroundStyle(PlotLoomStyle.ink)
+                    Spacer(minLength: 0)
                 }
+                .plotLoomCard(padding: 12)
+                .frame(maxWidth: 460)
 
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Club Name")
                         .font(.headline)
                         .foregroundStyle(PlotLoomStyle.ink)
@@ -36,10 +39,10 @@ struct NewClubFormView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .plotLoomCard(padding: 18)
+                .plotLoomCard(padding: 12)
                 .frame(maxWidth: 460)
             }
-            .padding(24)
+            .padding(16)
             .frame(maxWidth: .infinity)
         }
         .plotLoomScreenBackground()

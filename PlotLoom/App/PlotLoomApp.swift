@@ -15,24 +15,40 @@ struct PlotLoomApp: App {
     @State private var memberIdentity = MemberIdentity()
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
 
+    private static let appSchema = Schema([
+        BookClub.self,
+        BookSubmission.self,
+        Rating.self,
+        BookNote.self,
+        ClubMeeting.self,
+        MeetingRSVP.self,
+        SelectionPoll.self,
+        BookVote.self,
+        DiscussionPrompt.self,
+    ])
+
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            BookClub.self,
-            BookSubmission.self,
-            Rating.self,
-            BookNote.self,
-        ])
+        if AppLaunchOptions.isSampleDataEnabled {
+            let configuration = ModelConfiguration(
+                schema: Self.appSchema,
+                isStoredInMemoryOnly: true
+            )
+            let container = try! ModelContainer(for: Self.appSchema, configurations: [configuration])
+            ScreenshotSampleData.populate(container: container)
+            return container
+        }
+
         let configuration = ModelConfiguration(
-            schema: schema,
+            schema: Self.appSchema,
             isStoredInMemoryOnly: false,
             cloudKitDatabase: .automatic
         )
         do {
-            return try ModelContainer(for: schema, configurations: [configuration])
+            return try ModelContainer(for: Self.appSchema, configurations: [configuration])
         } catch {
             appLogger.error("⚠️ ModelContainer init failed: \(error.localizedDescription, privacy: .public) — falling back to in-memory")
-            let memoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            return try! ModelContainer(for: schema, configurations: [memoryConfig])
+            let memoryConfig = ModelConfiguration(schema: Self.appSchema, isStoredInMemoryOnly: true)
+            return try! ModelContainer(for: Self.appSchema, configurations: [memoryConfig])
         }
     }()
 
