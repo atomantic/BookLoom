@@ -24,10 +24,14 @@
   - SceneDelegate (iOS) + AppDelegate (macOS) cold-launch fallback via `AcceptedShareInbox`
   - `BookClub` extended with `cloudZoneName`, `ownerUserRecordName`, `shareIsActive`, `shareParticipantCount`
 - [x] Invite UI in club home, gated by `Features.cloudKitSharing`
-- [ ] **Portal setup (manual, blocking)**:
-  1. developer.apple.com → App ID `net.shadowpuppet.PlotLoom` → enable iCloud capability → register container `iCloud.net.shadowpuppet.PlotLoom`
-  2. icloud.developer.apple.com → push records from a Debug build to seed the Development schema → "Deploy Schema Changes…" to Production
-  3. Re-archive (automatic signing refreshes the provisioning profile)
+- [x] developer.apple.com → App ID `net.shadowpuppet.PlotLoom` → iCloud capability enabled, container `iCloud.net.shadowpuppet.PlotLoom` registered and assigned
+- [ ] **Schema seed (blocked on running app once)**:
+  1. Flip `Features.cloudKitSharing = true` locally
+  2. Run app in Xcode (Debug, simulator or device signed into iCloud)
+  3. Create a club, tap Invite Members → CloudKit auto-creates the `BookClubShareRoot` record type in the Development schema
+  4. icloud.developer.apple.com → open `iCloud.net.shadowpuppet.PlotLoom` container → verify the record type appears under Development → click "Deploy Schema Changes…" to push to Production
+  5. Re-archive (automatic signing refreshes the provisioning profile to include the new entitlement)
+  6. Smoke-test on two different Apple IDs via TestFlight
 - [ ] Flip `Features.cloudKitSharing = true` and smoke-test on two Apple IDs
 - [ ] Member list view (CKShare participants → display names)
 - [ ] Sync status indicator in toolbar
