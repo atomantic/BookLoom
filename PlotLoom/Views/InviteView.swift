@@ -176,6 +176,7 @@ enum InviteLoadError: Equatable {
     case notSignedIntoICloud
     case iCloudDriveOff
     case networkUnavailable
+    case productionSchemaMissing
     case other(String)
 
     static func from(_ error: Error) -> InviteLoadError {
@@ -195,28 +196,35 @@ enum InviteLoadError: Equatable {
         }
         // Heuristic fallback: the wording "auth token" / "temporarily unavailable"
         // shows up in messages even when the code path doesn't expose CKErrorDomain.
-        let message = ns.localizedDescription.lowercased()
+        let diagnostic = CloudKitErrorDescriber.describe(error)
+        let message = diagnostic.lowercased()
+        if message.contains(productionSchemaMarker) {
+            return .productionSchemaMissing
+        }
         if message.contains("auth token") || message.contains("temporarily unavailable") {
             return .iCloudDriveOff
         }
         if message.contains("not authenticated") || message.contains("not signed in") {
             return .notSignedIntoICloud
         }
-        return .other(CloudKitErrorDescriber.describe(error))
+        return .other(diagnostic)
     }
+
+    static let productionSchemaMarker = "cannot create new type cloudkit.share in production schema"
 
     var systemImage: String {
         switch self {
         case .notSignedIntoICloud: return "icloud.slash"
         case .iCloudDriveOff: return "icloud.and.arrow.down"
         case .networkUnavailable: return "wifi.slash"
+        case .productionSchemaMissing: return "icloud.and.arrow.up"
         case .other: return "exclamationmark.triangle.fill"
         }
     }
 
     var tint: Color {
         switch self {
-        case .other: return .orange
+        case .productionSchemaMissing, .other: return .orange
         default: return .blue
         }
     }
@@ -226,6 +234,7 @@ enum InviteLoadError: Equatable {
         case .notSignedIntoICloud: return "Sign in to iCloud"
         case .iCloudDriveOff: return "Turn on iCloud Drive"
         case .networkUnavailable: return "No internet connection"
+        case .productionSchemaMissing: return "CloudKit setup needed"
         case .other: return "Couldn't prepare invite"
         }
     }
@@ -238,6 +247,8 @@ enum InviteLoadError: Equatable {
             return "PlotLoom uses iCloud to sync your book clubs, so iCloud Drive needs to be enabled."
         case .networkUnavailable:
             return "Connect to Wi-Fi or cellular and try again."
+        case .productionSchemaMissing:
+            return "The production CloudKit schema does not include iCloud sharing yet."
         case .other(let detail):
             return detail
         }
@@ -249,6 +260,8 @@ enum InviteLoadError: Equatable {
             return "Open Settings → tap \"Sign in to your iPhone\" at the top, then come back."
         case .iCloudDriveOff:
             return "Open Settings → [Your Name] → iCloud → turn on iCloud Drive, then come back."
+        case .productionSchemaMissing:
+            return "Run a Development build once, create an invite, then deploy schema changes in CloudKit Console."
         case .networkUnavailable, .other:
             return nil
         }

@@ -38,6 +38,22 @@ final class InviteLoadErrorTests: XCTestCase {
         )
     }
 
+    func test_mapsProductionShareSchemaFailureToSetupState() {
+        let recordID = CKRecord.ID(recordName: "Share-Test")
+        let partialError = NSError(domain: CKErrorDomain, code: CKError.serverRejectedRequest.rawValue, userInfo: [
+            NSLocalizedDescriptionKey: "Cannot create new type cloudkit.share in production schema"
+        ])
+        let error = NSError(domain: CKErrorDomain, code: CKError.partialFailure.rawValue, userInfo: [
+            NSLocalizedDescriptionKey: "Error saving record",
+            CKPartialErrorsByItemIDKey: [recordID: partialError]
+        ])
+
+        XCTAssertEqual(
+            InviteLoadError.from(error),
+            .productionSchemaMissing
+        )
+    }
+
     func test_otherErrorsExposeDiagnosticDomainCodeAndMessage() {
         let error = NSError(domain: "ExampleDomain", code: 42, userInfo: [
             NSLocalizedDescriptionKey: "Specific failure"

@@ -51,6 +51,10 @@ struct PlotLoomApp: App {
                     }
                 }
                 .task {
+                    #if DEBUG
+                    await CloudKitSchemaPrimer.runIfRequested(modelContext: sharedModelContainer.mainContext)
+                    #endif
+
                     // Drain any shares that were accepted via the scene/app
                     // delegate before SwiftUI was ready to receive them.
                     let pending = AcceptedShareInbox.shared.drain()

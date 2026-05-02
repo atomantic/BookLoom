@@ -11,7 +11,7 @@ settings:
   base:
     DEVELOPMENT_TEAM: TYQ32QCF6K
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: 3
+    CURRENT_PROJECT_VERSION: 6
     SWIFT_VERSION: "6.0"
     DEAD_CODE_STRIPPING: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -85,6 +85,8 @@ targets:
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
         CKSharingSupported: true
+        UIBackgroundModes:
+          - remote-notification
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
@@ -116,6 +118,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.tests
+        GENERATE_INFOPLIST_FILE: YES
 
   PlotLoomTests_macOS:
     type: bundle.unit-test
@@ -127,3 +130,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.tests
+        GENERATE_INFOPLIST_FILE: YES
