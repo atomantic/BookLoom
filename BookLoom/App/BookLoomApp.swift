@@ -79,9 +79,9 @@ struct BookLoomApp: App {
 
                     SchemaPrimeDataCleanup.removeSchemaPrimeData(from: sharedModelContainer.mainContext)
                     CoverDataCleanup.clearPersistedCoverData(in: sharedModelContainer.mainContext)
-                    SharedClubSync.publishOwnedClubs(in: sharedModelContainer.mainContext)
                     await drainAcceptedShares()
                     await CloudKitChangeNotifications.configureIfNeeded()
+                    await SharedClubSync.synchronizeSharedClubs(in: sharedModelContainer.mainContext)
                 }
                 .onChange(of: acceptedShareInbox.pending.count) { _, _ in
                     Task { @MainActor in

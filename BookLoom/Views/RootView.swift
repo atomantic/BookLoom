@@ -69,7 +69,7 @@ private struct MainTabs: View {
     }
 
     private func refreshSharedClubs() async {
-        let targets = visibleClubs.filter { $0.shareIsActive && !$0.isOwner }
+        let targets = visibleClubs.filter(\.shareIsActive)
         guard !targets.isEmpty else { return }
         await SharedClubSync.refreshIfNeeded(targets, context: context)
     }

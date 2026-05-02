@@ -48,7 +48,7 @@ enum ShareAcceptance {
 
             joined.ownerUserRecordName = info.ownerUserRecordName
             joined.shareIsActive = true
-            joined.shareParticipantCount = max(joined.shareParticipantCount, info.participantCount)
+            joined.shareParticipantCount = max(1, info.participantCount)
 
             if let snapshot = info.snapshot {
                 try SharedClubSnapshotStore.apply(snapshot, to: joined, context: context)

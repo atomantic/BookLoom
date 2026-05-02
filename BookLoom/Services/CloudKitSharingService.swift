@@ -126,7 +126,7 @@ final class CloudKitSharingService {
             zoneName: metadata.share.recordID.zoneID.zoneName,
             ownerUserRecordName: metadata.share.recordID.zoneID.ownerName,
             title: title,
-            participantCount: metadata.share.participants.count,
+            participantCount: Self.acceptedParticipantCount(in: metadata.share),
             snapshot: snapshot
         )
     }
@@ -150,6 +150,20 @@ final class CloudKitSharingService {
         let zoneID = try zoneID(for: club)
         let root = try await rootRecord(zoneID: zoneID, in: database)
         return decodeSnapshot(from: root)
+    }
+
+    func fetchAcceptedParticipantCount(for club: BookClub) async throws -> Int {
+        guard Features.cloudKitSharing else {
+            throw SharingError.featureDisabled
+        }
+        let database = try database(for: club)
+        let zoneID = try zoneID(for: club)
+        let root = try await rootRecord(zoneID: zoneID, in: database)
+        guard let shareReference = root.share,
+              let share = try await database.record(for: shareReference.recordID) as? CKShare else {
+            return max(1, club.shareParticipantCount)
+        }
+        return Self.acceptedParticipantCount(in: share)
     }
 
     func cloudKitContainer() -> CKContainer {
@@ -280,7 +294,14 @@ final class CloudKitSharingService {
 
     private func markShareActive(_ share: CKShare, for club: BookClub) {
         club.shareIsActive = true
-        club.shareParticipantCount = share.participants.count
+        club.shareParticipantCount = Self.acceptedParticipantCount(in: share)
+    }
+
+    private static func acceptedParticipantCount(in share: CKShare) -> Int {
+        let count = share.participants.filter { participant in
+            participant.acceptanceStatus == .accepted || participant.role == .owner
+        }.count
+        return max(1, count)
     }
 
     private static func cleanShareTitle(_ rawTitle: String?) -> String? {

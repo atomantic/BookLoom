@@ -10,6 +10,9 @@ struct BookClubHomeView: View {
 
     @State private var showingInvite: Bool = false
     @State private var showingPickConfirmation: Bool = false
+    @State private var showingManualPickDialog: Bool = false
+    @State private var showingCompleteConfirmation: Bool = false
+    @State private var showingMoveCurrentToProposalsConfirmation: Bool = false
     @State private var showingMeetingForm: Bool = false
     @State private var showingPollForm: Bool = false
 
@@ -25,7 +28,12 @@ struct BookClubHomeView: View {
             }
 
             Section {
-                MemberSummaryCard(club: club)
+                NavigationLink {
+                    ClubMembersView(club: club)
+                } label: {
+                    MemberSummaryCard(club: club)
+                }
+                .buttonStyle(.plain)
             } header: {
                 SectionTitle(title: "Members")
             }
@@ -43,6 +51,32 @@ struct BookClubHomeView: View {
                             Label("Complete", systemImage: "checkmark.seal.fill")
                         }
                         .tint(.green)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            moveCurrentToProposals(current)
+                        } label: {
+                            Label("Move Back", systemImage: "tray.full.fill")
+                        }
+                        .tint(BookLoomStyle.plum)
+                    }
+                    MeetingActionCard(
+                        title: "Finished this book",
+                        message: "Move the current book to reading history.",
+                        buttonTitle: "Mark Read",
+                        systemImage: "checkmark.seal.fill",
+                        isDisabled: false
+                    ) {
+                        showingCompleteConfirmation = true
+                    }
+                    MeetingActionCard(
+                        title: "Not reading this yet",
+                        message: "Return the current book to proposals without marking it read.",
+                        buttonTitle: "Move Back to Proposals",
+                        systemImage: "tray.full.fill",
+                        isDisabled: false
+                    ) {
+                        showingMoveCurrentToProposalsConfirmation = true
                     }
                 } else {
                     InlineEmptyState(
@@ -130,9 +164,29 @@ struct BookClubHomeView: View {
                         message: "Add a book to build the next pick list."
                     )
                 } else {
+                    MeetingActionCard(
+                        title: "Choose current book",
+                        message: displayedSections.current == nil
+                            ? "Set one proposal as the club's current read."
+                            : "Set one proposal as current and move the existing current book to reading history.",
+                        buttonTitle: "Choose Book",
+                        systemImage: "book.closed.fill",
+                        isDisabled: false
+                    ) {
+                        showingManualPickDialog = true
+                    }
+
                     ForEach(displayedSections.proposed) { submission in
                         NavigationLink(value: submission) {
                             SubmissionRow(submission: submission)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button {
+                                assignCurrent(submission)
+                            } label: {
+                                Label("Set Current", systemImage: "book.fill")
+                            }
+                            .tint(BookLoomStyle.sage)
                         }
                         .bookLoomListRow()
                     }
@@ -157,7 +211,7 @@ struct BookClubHomeView: View {
                         delete(displayedSections.completed, at: offsets)
                     }
                 } header: {
-                    SectionTitle(title: "Read", detail: "\(displayedSections.completed.count)")
+                    SectionTitle(title: "Reading History", detail: "\(displayedSections.completed.count)")
                 }
             }
 
@@ -176,7 +230,7 @@ struct BookClubHomeView: View {
         }
         .listStyle(.plain)
         .refreshable {
-            await SharedClubSync.refreshIfNeeded(club, context: context)
+            await syncClubForCurrentRole()
         }
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
@@ -192,7 +246,12 @@ struct BookClubHomeView: View {
         }
         .toolbar {
             ToolbarItem(placement: .secondaryAction) {
-                Label(syncDescriptor.label, systemImage: syncDescriptor.icon)
+                Button {
+                    Task { await syncClubForCurrentRole() }
+                } label: {
+                    Label(syncDescriptor.label, systemImage: syncDescriptor.icon)
+                }
+                .disabled(!club.shareIsActive)
             }
             ToolbarItem {
                 NavigationLink {
@@ -206,6 +265,14 @@ struct BookClubHomeView: View {
                     showingPickConfirmation = true
                 } label: {
                     Label("Pick Random", systemImage: "shuffle")
+                }
+                .disabled(displayedSections.proposed.isEmpty)
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button {
+                    showingManualPickDialog = true
+                } label: {
+                    Label("Choose Current", systemImage: "book.closed.fill")
                 }
                 .disabled(displayedSections.proposed.isEmpty)
             }
@@ -244,8 +311,54 @@ struct BookClubHomeView: View {
                 Text("This will pick a random proposal as the current read.")
             }
         }
+        .confirmationDialog(
+            "Choose the current book",
+            isPresented: $showingManualPickDialog,
+            titleVisibility: .visible
+        ) {
+            ForEach(sections.proposed) { submission in
+                Button(submission.displayTitle) {
+                    assignCurrent(submission)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if sections.current != nil {
+                Text("The current book will move to reading history.")
+            } else {
+                Text("Select a proposal to set as the club's current read.")
+            }
+        }
+        .confirmationDialog(
+            "Mark the current book as read?",
+            isPresented: $showingCompleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Mark Read") {
+                if let current = sections.current {
+                    markComplete(current)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This moves the current book into reading history and clears the current slot.")
+        }
+        .confirmationDialog(
+            "Move the current book back to proposals?",
+            isPresented: $showingMoveCurrentToProposalsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Move Back to Proposals") {
+                if let current = sections.current {
+                    moveCurrentToProposals(current)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This clears the current book and returns it to the proposal list.")
+        }
         .task(id: club.cloudZoneName) {
-            await SharedClubSync.refreshIfNeeded(club, context: context)
+            await syncClubForCurrentRole()
         }
     }
 
@@ -291,26 +404,36 @@ struct BookClubHomeView: View {
 
     private var syncDescriptor: (label: String, icon: String) {
         if !club.isOwner {
-            return ("Shared club", "person.2.fill")
+            return ("Refresh Club", "arrow.triangle.2.circlepath")
         }
-        return club.shareIsActive ? ("iCloud sharing on", "icloud.fill") : ("Owner device", "lock.fill")
+        return club.shareIsActive ? ("Publish Changes", "arrow.up.icloud.fill") : ("Owner Device", "lock.fill")
+    }
+
+    private func syncClubForCurrentRole() async {
+        await SharedClubSync.synchronizeIfNeeded(club, context: context)
     }
 
     private func pickRandomNext() {
-        if let current = sections.current {
-            current.status = .completed
-            current.completedAt = .now
-        }
         guard let pick = BookPicker.pickNext(from: sections.proposed) else { return }
-        pick.status = .current
-        pick.pickedAt = .now
-        DiscussionPromptLibrary.ensureStarterPrompts(for: pick, context: context)
+        assignCurrent(pick)
+    }
+
+    private func assignCurrent(_ submission: BookSubmission) {
+        SelectionPollCoordinator.promoteWinner(submission, in: club)
+        DiscussionPromptLibrary.ensureStarterPrompts(for: submission, context: context)
         saveClubChanges()
     }
 
     private func markComplete(_ submission: BookSubmission) {
         submission.status = .completed
         submission.completedAt = .now
+        saveClubChanges()
+    }
+
+    private func moveCurrentToProposals(_ submission: BookSubmission) {
+        submission.status = .proposed
+        submission.pickedAt = nil
+        submission.completedAt = nil
         saveClubChanges()
     }
 

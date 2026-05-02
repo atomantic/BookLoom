@@ -208,7 +208,7 @@ enum SharedClubSnapshotStore {
             club.cloudZoneName = snapshot.club.cloudZoneName
         }
         club.shareIsActive = true
-        club.shareParticipantCount = max(club.shareParticipantCount, snapshot.club.shareParticipantCount)
+        club.shareParticipantCount = max(1, snapshot.club.shareParticipantCount)
 
         replaceChildren(of: club, context: context)
 

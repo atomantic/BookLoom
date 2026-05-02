@@ -23,8 +23,17 @@ enum SharedClubSync {
         try? context.save()
 
         Task { @MainActor in
+            var snapshotToPublish = snapshot
             do {
-                try await CloudKitSharingService.shared.publishSnapshot(snapshot, for: club)
+                if club.isOwner,
+                   let acceptedCount = try? await CloudKitSharingService.shared.fetchAcceptedParticipantCount(for: club),
+                   acceptedCount != club.shareParticipantCount {
+                    club.shareParticipantCount = acceptedCount
+                    snapshotToPublish = SharedClubSnapshotStore.snapshot(from: club, context: context)
+                    club.lastSharedSnapshotAt = snapshotToPublish.capturedAt
+                    try? context.save()
+                }
+                try await CloudKitSharingService.shared.publishSnapshot(snapshotToPublish, for: club)
                 logger.info("Published shared snapshot for \(club.name, privacy: .public)")
             } catch {
                 logger.error("Shared snapshot publish failed: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
@@ -34,7 +43,7 @@ enum SharedClubSync {
 
     static func refreshIfNeeded(_ club: BookClub, context: ModelContext) async {
         guard Features.cloudKitSharing, club.shareIsActive else { return }
-        if club.isOwner {
+        if club.isOwner && club.lastSharedSnapshotAt == nil {
             return
         }
 
@@ -43,6 +52,11 @@ enum SharedClubSync {
                 return
             }
             try SharedClubSnapshotStore.apply(snapshot, to: club, context: context)
+            if let acceptedCount = try? await CloudKitSharingService.shared.fetchAcceptedParticipantCount(for: club),
+               acceptedCount != club.shareParticipantCount {
+                club.shareParticipantCount = acceptedCount
+                try? context.save()
+            }
             logger.info("Imported shared snapshot for \(club.name, privacy: .public)")
         } catch {
             logger.error("Shared snapshot refresh failed: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
@@ -52,6 +66,33 @@ enum SharedClubSync {
     static func refreshIfNeeded(_ clubs: [BookClub], context: ModelContext) async {
         for club in clubs where club.shareIsActive {
             await refreshIfNeeded(club, context: context)
+        }
+    }
+
+    static func synchronizeIfNeeded(_ club: BookClub, context: ModelContext) async {
+        guard Features.cloudKitSharing, club.shareIsActive else { return }
+        if club.isOwner {
+            if club.lastSharedSnapshotAt != nil {
+                await refreshIfNeeded(club, context: context)
+            }
+            publishIfNeeded(club, context: context)
+        } else {
+            await refreshIfNeeded(club, context: context)
+        }
+    }
+
+    static func synchronizeIfNeeded(_ clubs: [BookClub], context: ModelContext) async {
+        for club in clubs where club.shareIsActive {
+            await synchronizeIfNeeded(club, context: context)
+        }
+    }
+
+    static func synchronizeSharedClubs(in context: ModelContext) async {
+        do {
+            let clubs = try context.fetch(FetchDescriptor<BookClub>())
+            await synchronizeIfNeeded(clubs, context: context)
+        } catch {
+            logger.error("Failed to fetch shared clubs for synchronization: \(error.localizedDescription, privacy: .public)")
         }
     }
 
