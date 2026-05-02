@@ -13,6 +13,7 @@ struct InviteView: View {
     @State private var share: CKShare? = nil
     @State private var loadError: InviteLoadError? = nil
     @State private var didCopyURL: Bool = false
+    @State private var isLoading: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -39,8 +40,7 @@ struct InviteView: View {
         } else if let share {
             shareView(share)
         } else {
-            ProgressView("Preparing share…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            PreparingInviteView()
         }
     }
 
@@ -64,9 +64,18 @@ struct InviteView: View {
                     .padding(.horizontal, 32)
                     .padding(.top, 8)
             }
+            Button {
+                Task { await loadShare(force: true) }
+            } label: {
+                Label("Try Again", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(isLoading)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .plotLoomScreenBackground()
     }
 
     private var comingSoonView: some View {
@@ -83,6 +92,7 @@ struct InviteView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .plotLoomScreenBackground()
     }
 
     @ViewBuilder
@@ -104,7 +114,7 @@ struct InviteView: View {
             Image(systemName: "person.2.badge.plus")
                 .font(.system(size: 48))
                 .foregroundStyle(.tint)
-            Text("Share \"\(club.name)\"")
+                Text("Share \"\(club.name)\"")
                 .font(.title2.bold())
             if let url = share.url {
                 Text(url.absoluteString)
@@ -136,12 +146,19 @@ struct InviteView: View {
         }
         .padding()
         .frame(minWidth: 480, minHeight: 360)
+        .plotLoomScreenBackground()
     }
     #endif
 
-    private func loadShare() async {
+    private func loadShare(force: Bool = false) async {
         guard Features.cloudKitSharing else { return }
-        guard share == nil else { return }
+        guard force || share == nil else { return }
+        isLoading = true
+        loadError = nil
+        if force {
+            share = nil
+        }
+        defer { isLoading = false }
         do {
             let s = try await CloudKitSharingService.shared.createOrFetchShare(for: club)
             self.share = s
@@ -155,7 +172,7 @@ struct InviteView: View {
 /// copy explaining what to do — never raw `localizedDescription` strings, since the
 /// CKError messages ("Account temporarily unavailable due to bad or missing auth token")
 /// are useless to a non-developer.
-enum InviteLoadError {
+enum InviteLoadError: Equatable {
     case notSignedIntoICloud
     case iCloudDriveOff
     case networkUnavailable
@@ -235,5 +252,26 @@ enum InviteLoadError {
         case .networkUnavailable, .other:
             return nil
         }
+    }
+}
+
+private struct PreparingInviteView: View {
+    var body: some View {
+        VStack(spacing: 18) {
+            ProgressView()
+                .controlSize(.large)
+            VStack(spacing: 6) {
+                Text("Preparing Invite")
+                    .font(.title3.bold())
+                    .foregroundStyle(PlotLoomStyle.ink)
+                Text("Creating a private iCloud share for this club.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .plotLoomScreenBackground()
     }
 }

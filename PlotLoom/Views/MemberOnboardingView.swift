@@ -5,31 +5,56 @@ struct MemberOnboardingView: View {
     @State private var draftName: String = ""
 
     var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "books.vertical.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
+        ScrollView {
+            VStack(spacing: 28) {
+                OnboardingHeroArtwork(maxHeight: 300)
+                    .padding(.top, 12)
 
-            VStack(spacing: 8) {
-                Text("Welcome to PlotLoom")
-                    .font(.largeTitle.bold())
-                Text("Your book club's potluck pick.")
-                    .foregroundStyle(.secondary)
-            }
+                VStack(spacing: 10) {
+                    BrandBadge(size: 72)
+                    Text("PlotLoom")
+                        .font(.system(size: 42, weight: .bold, design: .serif))
+                        .foregroundStyle(PlotLoomStyle.ink)
+                    Text("Make the next book feel chosen together.")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Your name").font(.subheadline).foregroundStyle(.secondary)
-                TextField("e.g. Alex", text: $draftName)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 320)
-            }
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Your Name")
+                        .font(.headline)
+                        .foregroundStyle(PlotLoomStyle.ink)
+                    TextField("Alex", text: $draftName)
+                        .textFieldStyle(.roundedBorder)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.words)
+                        #endif
+                        .submitLabel(.done)
+                        .onSubmit(saveName)
 
-            Button("Continue") {
-                memberIdentity.name = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Button(action: saveName) {
+                        Label("Continue", systemImage: "arrow.right.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(trimmedName.isEmpty)
+                }
+                .plotLoomCard(padding: 18)
+                .frame(maxWidth: 420)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .padding(24)
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
         }
-        .padding(40)
+        .plotLoomScreenBackground()
+    }
+
+    private var trimmedName: String { draftName.trimmed }
+
+    private func saveName() {
+        guard let name = draftName.trimmedOrNil else { return }
+        memberIdentity.name = name
     }
 }

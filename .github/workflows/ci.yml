@@ -24,12 +24,12 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Run tests
+      - name: Run iOS tests
         run: |
-          if xcrun simctl list devices available | grep -q "iPhone 16"; then
-            DESTINATION="platform=iOS Simulator,name=iPhone 16"
-          elif xcrun simctl list devices available | grep -q "iPhone 15"; then
-            DESTINATION="platform=iOS Simulator,name=iPhone 15"
+          if DEVICE_ID=$(xcrun simctl list devices available | awk -F'[()]' '/iPhone 16/ && /Booted|Shutdown/ { print $2; exit }') && [ -n "$DEVICE_ID" ]; then
+            DESTINATION="platform=iOS Simulator,id=$DEVICE_ID"
+          elif DEVICE_ID=$(xcrun simctl list devices available | awk -F'[()]' '/iPhone 15/ && /Booted|Shutdown/ { print $2; exit }') && [ -n "$DEVICE_ID" ]; then
+            DESTINATION="platform=iOS Simulator,id=$DEVICE_ID"
           else
             DESTINATION="platform=iOS Simulator,name=iPhone 14"
           fi
@@ -39,6 +39,21 @@ jobs:
             -scheme PlotLoom_iOS \
             -only-testing:PlotLoomTests_iOS \
             -destination "$DESTINATION" \
+            -configuration Debug \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            | xcbeautify
+
+      - name: Run macOS tests
+        run: |
+          xcodebuild test \
+            -project PlotLoom.xcodeproj \
+            -scheme PlotLoom_macOS \
+            -only-testing:PlotLoomTests_macOS \
+            -destination 'platform=macOS' \
             -configuration Debug \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \

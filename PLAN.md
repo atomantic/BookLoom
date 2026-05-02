@@ -24,6 +24,10 @@
 - [x] Pick Random confirmation dialog (prevents accidental rotation)
 - [x] User-actionable iCloud auth errors (Sign in / Turn on Drive / Network)
 - [x] Removed unreferenced CreateOrJoinClubView (replaced by NewClubFormView sheet)
+- [x] PlotLoomDesign system: shared `String.trimmed`, `plotLoomListRow()`, `TintedCapsuleLabel`
+- [x] Single-pass `BookClubMetrics` / `BookClubSubmissionSections` (was 5 filter passes)
+- [x] Skip redundant CloudKit fetch when `saveResults` returns the share directly
+- [x] Populate `AccentColor.colorset` with brand plum (matches `.tint` everywhere)
 
 ## v0.2 — group sharing (code complete, awaiting portal setup)
 

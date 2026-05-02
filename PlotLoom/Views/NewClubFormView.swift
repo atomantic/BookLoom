@@ -10,20 +10,39 @@ struct NewClubFormView: View {
     @State private var name: String = ""
 
     var body: some View {
-        Form {
-            Section("Club Name") {
-                TextField("e.g. Tuesday Bookworms", text: $name)
-                    #if os(iOS)
-                    .textInputAutocapitalization(.words)
-                    #endif
-            }
+        ScrollView {
+            VStack(spacing: 20) {
+                VStack(spacing: 10) {
+                    BrandBadge(size: 58)
+                    Text("New Club")
+                        .font(.title.bold())
+                        .foregroundStyle(PlotLoomStyle.ink)
+                }
 
-            Section {
-                Text("You can invite members via iCloud after the club is created.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Club Name")
+                        .font(.headline)
+                        .foregroundStyle(PlotLoomStyle.ink)
+                    TextField("Tuesday Bookworms", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.words)
+                        #endif
+                        .submitLabel(.done)
+                        .onSubmit(createClub)
+
+                    Label("Invite members from the club screen after it exists.", systemImage: "icloud.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .plotLoomCard(padding: 18)
+                .frame(maxWidth: 460)
             }
+            .padding(24)
+            .frame(maxWidth: .infinity)
         }
+        .plotLoomScreenBackground()
         .navigationTitle("New Club")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -33,15 +52,18 @@ struct NewClubFormView: View {
                 Button("Cancel") { dismiss() }
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Create") {
-                    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    let club = BookClub(name: trimmed)
-                    context.insert(club)
-                    dismiss()
-                }
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Create", action: createClub)
+                    .disabled(trimmedName.isEmpty)
             }
         }
+    }
+
+    private var trimmedName: String { name.trimmed }
+
+    private func createClub() {
+        guard let name = name.trimmedOrNil else { return }
+        let club = BookClub(name: name)
+        context.insert(club)
+        dismiss()
     }
 }

@@ -30,5 +30,6 @@ private struct MainTabs: View {
                 Label("Settings", systemImage: "gearshape.fill")
             }
         }
+        .tint(PlotLoomStyle.plum)
     }
 }

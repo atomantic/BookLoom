@@ -9,54 +9,81 @@ struct BookClubHomeView: View {
     @State private var showingPickConfirmation: Bool = false
 
     var body: some View {
+        let sections = club.sections
+
         List {
-            Section("Currently Reading") {
-                if let current = currentSubmission {
+            Section {
+                ClubHomeHeader(club: club, sections: sections)
+                    .plotLoomListRow(top: 8, bottom: 12)
+            }
+
+            Section {
+                if let current = sections.current {
                     NavigationLink(value: current) {
-                        SubmissionRow(submission: current)
+                        CurrentSubmissionRow(submission: current)
                     }
                     .swipeActions(edge: .trailing) {
-                        Button("Mark Complete") {
-                            current.status = .completed
-                            current.completedAt = .now
+                        Button {
+                            markComplete(current)
+                        } label: {
+                            Label("Complete", systemImage: "checkmark.seal.fill")
                         }
                         .tint(.green)
                     }
                 } else {
-                    Text("No book chosen yet. Add proposals below, then tap Pick Random.")
-                        .foregroundStyle(.secondary)
+                    InlineEmptyState(
+                        systemImage: "shuffle.circle.fill",
+                        title: "No Current Book",
+                        message: "Add proposals, then pick one when the group is ready."
+                    )
                 }
+            } header: {
+                SectionTitle(title: "Currently Reading")
             }
+            .plotLoomListRow()
 
-            Section("Proposed") {
-                if proposedSubmissions.isEmpty {
-                    Text("No proposals yet. Add a book to start.")
-                        .foregroundStyle(.secondary)
+            Section {
+                if sections.proposed.isEmpty {
+                    InlineEmptyState(
+                        systemImage: "tray.full",
+                        title: "No Proposals",
+                        message: "Add a book to build the next pick list."
+                    )
                 } else {
-                    ForEach(proposedSubmissions) { sub in
-                        NavigationLink(value: sub) {
-                            SubmissionRow(submission: sub)
+                    ForEach(sections.proposed) { submission in
+                        NavigationLink(value: submission) {
+                            SubmissionRow(submission: submission)
                         }
+                        .plotLoomListRow()
                     }
                     .onDelete { offsets in
-                        delete(proposedSubmissions, at: offsets)
+                        delete(sections.proposed, at: offsets)
                     }
                 }
+            } header: {
+                SectionTitle(title: "Proposed", detail: "\(sections.proposed.count)")
             }
+            .plotLoomListRow()
 
-            if !completedSubmissions.isEmpty {
-                Section("Read") {
-                    ForEach(completedSubmissions) { sub in
-                        NavigationLink(value: sub) {
-                            SubmissionRow(submission: sub)
+            if !sections.completed.isEmpty {
+                Section {
+                    ForEach(sections.completed) { submission in
+                        NavigationLink(value: submission) {
+                            SubmissionRow(submission: submission)
                         }
+                        .plotLoomListRow()
                     }
                     .onDelete { offsets in
-                        delete(completedSubmissions, at: offsets)
+                        delete(sections.completed, at: offsets)
                     }
+                } header: {
+                    SectionTitle(title: "Read", detail: "\(sections.completed.count)")
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .plotLoomScreenBackground()
         .navigationTitle(club.name)
         .navigationDestination(for: BookSubmission.self) { sub in
             SubmissionDetailView(submission: sub)
@@ -75,7 +102,7 @@ struct BookClubHomeView: View {
                 } label: {
                     Label("Pick Random", systemImage: "shuffle")
                 }
-                .disabled(proposedSubmissions.isEmpty)
+                .disabled(sections.proposed.isEmpty)
             }
             if club.isOwner {
                 ToolbarItem(placement: .secondaryAction) {
@@ -100,7 +127,7 @@ struct BookClubHomeView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            if currentSubmission != nil {
+            if sections.current != nil {
                 Text("This will mark the current book as completed and pick a random proposal as the next read.")
             } else {
                 Text("This will pick a random proposal as the current read.")
@@ -108,34 +135,22 @@ struct BookClubHomeView: View {
         }
     }
 
-    private var allSubmissions: [BookSubmission] {
-        club.submissions ?? []
-    }
-
-    private var currentSubmission: BookSubmission? {
-        allSubmissions.first { $0.status == .current }
-    }
-
-    private var proposedSubmissions: [BookSubmission] {
-        allSubmissions
-            .filter { $0.status == .proposed }
-            .sorted { $0.submittedAt < $1.submittedAt }
-    }
-
-    private var completedSubmissions: [BookSubmission] {
-        allSubmissions
-            .filter { $0.status == .completed }
-            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+    private var sections: BookClubSubmissionSections {
+        club.sections
     }
 
     private func pickRandomNext() {
-        if let current = currentSubmission {
-            current.status = .completed
-            current.completedAt = .now
+        if let current = sections.current {
+            markComplete(current)
         }
-        guard let pick = BookPicker.pickNext(from: proposedSubmissions) else { return }
+        guard let pick = BookPicker.pickNext(from: sections.proposed) else { return }
         pick.status = .current
         pick.pickedAt = .now
+    }
+
+    private func markComplete(_ submission: BookSubmission) {
+        submission.status = .completed
+        submission.completedAt = .now
     }
 
     private func delete(_ items: [BookSubmission], at offsets: IndexSet) {
@@ -149,17 +164,114 @@ private struct SubmissionRow: View {
     @Bindable var submission: BookSubmission
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(submission.title.isEmpty ? "Untitled" : submission.title)
-                .font(.headline)
-            if !submission.author.isEmpty {
-                Text(submission.author).foregroundStyle(.secondary)
-            }
-            if !submission.submittedBy.isEmpty {
-                Text("Submitted by \(submission.submittedBy)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+        HStack(spacing: 14) {
+            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor)
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(submission.displayTitle)
+                            .font(.headline)
+                            .foregroundStyle(PlotLoomStyle.ink)
+                            .lineLimit(2)
+                        if !submission.displayAuthor.isEmpty {
+                            Text(submission.displayAuthor)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 10)
+                    StatusPill(status: submission.status)
+                }
+
+                HStack(spacing: 10) {
+                    Label(submission.displaySubmitter, systemImage: "person.fill")
+                    if submission.ratingSummary.count > 0 {
+                        Label(submission.ratingSummary.displayValue, systemImage: "star.fill")
+                    }
+                    if !(submission.notes ?? []).isEmpty {
+                        Label("\((submission.notes ?? []).count)", systemImage: "note.text")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
+        .plotLoomCard(padding: 14)
+    }
+}
+
+private struct CurrentSubmissionRow: View {
+    @Bindable var submission: BookSubmission
+
+    var body: some View {
+        HStack(spacing: 18) {
+            BookCoverTile(title: submission.displayTitle, author: submission.displayAuthor, width: 86, height: 118)
+
+            VStack(alignment: .leading, spacing: 10) {
+                StatusPill(status: .current)
+                Text(submission.displayTitle)
+                    .font(.title3.bold())
+                    .foregroundStyle(PlotLoomStyle.ink)
+                    .lineLimit(2)
+                if !submission.displayAuthor.isEmpty {
+                    Text(submission.displayAuthor)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 12) {
+                    Label(submission.ratingSummary.displayValue, systemImage: "star.fill")
+                    Label("\((submission.notes ?? []).count) notes", systemImage: "note.text")
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .plotLoomCard(padding: 16)
+    }
+}
+
+private struct ClubHomeHeader: View {
+    let club: BookClub
+    let sections: BookClubSubmissionSections
+
+    var body: some View {
+        let sharing = sharingDescriptor
+        let memberCount = club.metrics.memberCount
+
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 14) {
+                BrandBadge(size: 54)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(club.name)
+                        .font(.title2.bold())
+                        .foregroundStyle(PlotLoomStyle.ink)
+                        .lineLimit(2)
+                    Label(sharing.label, systemImage: sharing.icon)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 10) {
+                MetricTile(value: "\(sections.proposed.count)", label: "proposed", systemImage: "tray.full.fill", tint: PlotLoomStyle.plum)
+                MetricTile(value: "\(sections.completed.count)", label: "read", systemImage: "checkmark.seal.fill", tint: PlotLoomStyle.indigo)
+                MetricTile(value: "\(memberCount)", label: "members", systemImage: "person.2.fill", tint: PlotLoomStyle.sage)
+            }
+        }
+        .plotLoomCard(padding: 18)
+    }
+
+    private var sharingDescriptor: (label: String, icon: String) {
+        if !club.isOwner {
+            return ("Shared with you", "person.2.fill")
+        }
+        return club.shareIsActive
+            ? ("Sharing enabled", "icloud.fill")
+            : ("Owner", "person.crop.circle.fill")
     }
 }

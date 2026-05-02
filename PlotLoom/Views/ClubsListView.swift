@@ -12,19 +12,28 @@ struct ClubsListView: View {
                 emptyState
             } else {
                 List {
+                    Section {
+                        ClubsOverviewHeader(clubs: clubs)
+                            .plotLoomListRow(top: 8, bottom: 12)
+                    }
+
                     ForEach(clubs) { club in
                         NavigationLink(value: club) {
                             ClubRow(club: club)
                         }
+                        .plotLoomListRow()
                     }
                     .onDelete(perform: deleteClubs)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .navigationDestination(for: BookClub.self) { club in
                     BookClubHomeView(club: club)
                 }
             }
         }
-        .navigationTitle("Book Clubs")
+        .plotLoomScreenBackground()
+        .navigationTitle("Clubs")
         .toolbar {
             if !clubs.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
@@ -44,27 +53,33 @@ struct ClubsListView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "books.vertical")
-                .font(.system(size: 56))
-                .foregroundStyle(.tint)
-            Text("No book clubs yet")
-                .font(.title2.bold())
-            Text("Start one for your reading group, or accept an iCloud invite from someone who already has.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 32)
-            Button {
-                showingNewClubForm = true
-            } label: {
-                Label("Create Your First Club", systemImage: "plus.circle.fill")
+        ScrollView {
+            VStack(spacing: 24) {
+                OnboardingHeroArtwork(maxHeight: 260)
+                VStack(spacing: 8) {
+                    Text("Start a Reading Circle")
+                        .font(.title.bold())
+                        .foregroundStyle(PlotLoomStyle.ink)
+                    Text("Collect nominations, pick the next read, and keep notes in one shared place.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button {
+                    showingNewClubForm = true
+                } label: {
+                    Label("Create Club", systemImage: "plus.circle.fill")
+                        .frame(maxWidth: 260)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding(.top, 8)
+            .padding(24)
+            .frame(maxWidth: 620)
+            .frame(maxWidth: .infinity)
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .plotLoomScreenBackground()
     }
 
     private func deleteClubs(at offsets: IndexSet) {
@@ -78,41 +93,100 @@ private struct ClubRow: View {
     let club: BookClub
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(club.name)
-                    .font(.headline)
-                Spacer()
-                if !club.isOwner {
-                    Image(systemName: "person.2.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .help("Shared with you")
+        let sections = club.sections
+        let metrics = club.metrics
+        let currentTitle = sections.current?.displayTitle
+
+        HStack(spacing: 14) {
+            BookCoverTile(
+                title: currentTitle ?? club.name,
+                author: club.name,
+                width: 54,
+                height: 72
+            )
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(club.name)
+                        .font(.headline)
+                        .foregroundStyle(PlotLoomStyle.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if !club.isOwner {
+                        Label("Shared", systemImage: "person.2.fill")
+                            .labelStyle(.iconOnly)
+                            .font(.caption)
+                            .foregroundStyle(PlotLoomStyle.sage)
+                            .help("Shared with you")
+                    } else if club.shareIsActive {
+                        Label("Sharing", systemImage: "icloud.fill")
+                            .labelStyle(.iconOnly)
+                            .font(.caption)
+                            .foregroundStyle(PlotLoomStyle.indigo)
+                            .help("Sharing enabled")
+                    }
                 }
-            }
-            HStack(spacing: 8) {
-                if let current = currentTitle {
-                    Label(current, systemImage: "book.fill")
-                        .font(.caption)
+
+                if let currentTitle {
+                    Label(currentTitle, systemImage: "book.fill")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
-                    Text("\(proposedCount) proposed")
-                        .font(.caption)
+                    Label("\(metrics.proposedCount) proposed", systemImage: "tray.full.fill")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 8) {
+                    CountBadge(value: metrics.completedCount, label: "read", tint: PlotLoomStyle.indigo)
+                    CountBadge(value: metrics.memberCount, label: "members", tint: PlotLoomStyle.sage)
+                    CountBadge(value: metrics.noteCount, label: "notes", tint: PlotLoomStyle.plum)
                 }
             }
         }
-        .padding(.vertical, 2)
+        .plotLoomCard(padding: 14)
+    }
+}
+
+private struct ClubsOverviewHeader: View {
+    let clubs: [BookClub]
+
+    var body: some View {
+        let totals = clubTotals
+
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                BrandBadge(size: 54)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("PlotLoom")
+                        .font(.title2.bold())
+                        .foregroundStyle(PlotLoomStyle.ink)
+                    Text("Keep every club's next read in motion.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            HStack(spacing: 10) {
+                MetricTile(value: "\(clubs.count)", label: "clubs", systemImage: "person.3.fill", tint: PlotLoomStyle.indigo)
+                MetricTile(value: "\(totals.current)", label: "active reads", systemImage: "book.fill", tint: PlotLoomStyle.sage)
+                MetricTile(value: "\(totals.proposed)", label: "proposals", systemImage: "sparkles", tint: PlotLoomStyle.plum)
+            }
+        }
+        .plotLoomCard(padding: 18)
     }
 
-    private var currentTitle: String? {
-        (club.submissions ?? [])
-            .first { $0.status == .current }
-            .map { $0.title.isEmpty ? "Untitled" : $0.title }
-    }
-
-    private var proposedCount: Int {
-        (club.submissions ?? []).filter { $0.status == .proposed }.count
+    private var clubTotals: (current: Int, proposed: Int) {
+        var current = 0
+        var proposed = 0
+        for club in clubs {
+            let metrics = club.metrics
+            current += metrics.currentCount
+            proposed += metrics.proposedCount
+        }
+        return (current, proposed)
     }
 }

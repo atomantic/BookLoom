@@ -7,9 +7,10 @@ import os
 /// devices; this service overlays a `CKShare` so users on **different Apple
 /// IDs** can join the same club.
 ///
-/// The service does NOT manually mirror SwiftData records into the shared zone.
-/// SwiftData's underlying NSPersistentCloudKitContainer handles the actual
-/// record replication once a share is accepted.
+/// This service creates the inviteable share root. SwiftData's `.automatic`
+/// CloudKit mode still primarily handles private-database sync, so a signed
+/// two-account TestFlight smoke test must verify whether club mutations
+/// actually propagate across participants before calling collaboration done.
 ///
 /// ⚠️ This file references `CKContainer(identifier:)`, which traps at runtime
 /// in signed builds if the container isn't registered on the developer portal
@@ -80,19 +81,25 @@ final class CloudKitSharingService {
             saving: [rootRecord, share],
             deleting: []
         )
-        // Modern async API returns dictionaries keyed by record ID, not
-        // [CKRecord] arrays — old Stack Overflow answers will mislead.
-        let savedShare: CKShare? = result.saveResults.values.compactMap { res in
-            if case .success(let record) = res { return record as? CKShare }
-            return nil
-        }.first
-        guard let savedShare else {
-            throw SharingError.shareCreationFailed
+        // Some OS releases return only the root record in saveResults even
+        // though the CKShare save succeeded. When the resolver falls back to
+        // our locally-built share, hydrate it from the database; when CloudKit
+        // gave us the saved share directly, skip the extra round-trip.
+        let resolution = try ShareSaveResultResolver.resolve(
+            saveResults: result.saveResults,
+            fallback: share
+        )
+        let finalShare: CKShare
+        if resolution.needsHydration {
+            finalShare = (try? await privateDB.record(for: resolution.share.recordID) as? CKShare) ?? resolution.share
+        } else {
+            finalShare = resolution.share
         }
+
         club.shareIsActive = true
-        club.shareParticipantCount = savedShare.participants.count
+        club.shareParticipantCount = finalShare.participants.count
         Self.logger.info("✅ Created share for club '\(club.name, privacy: .public)' (zone \(club.cloudZoneName, privacy: .public))")
-        return savedShare
+        return finalShare
     }
 
     // MARK: - Member-side: accept share
@@ -146,5 +153,33 @@ enum SharingError: LocalizedError {
         case .shareCreationFailed:
             return "Couldn't create the share. Please try again."
         }
+    }
+}
+
+enum ShareSaveResultResolver {
+    struct Resolution {
+        let share: CKShare
+        /// True when the share was reconstructed from the local fallback (not
+        /// returned in saveResults) and should be re-fetched from the database.
+        let needsHydration: Bool
+    }
+
+    static func resolve(
+        saveResults: [CKRecord.ID: Result<CKRecord, Error>],
+        fallback: CKShare
+    ) throws -> Resolution {
+        for result in saveResults.values {
+            if case .success(let record) = result, let share = record as? CKShare {
+                return Resolution(share: share, needsHydration: false)
+            }
+        }
+
+        for result in saveResults.values {
+            if case .failure(let error) = result {
+                throw error
+            }
+        }
+
+        return Resolution(share: fallback, needsHydration: true)
     }
 }

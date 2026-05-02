@@ -6,77 +6,130 @@ struct SettingsView: View {
     @State private var nameSaved: Bool = false
 
     var body: some View {
-        Form {
+        List {
             Section {
-                TextField("Display name", text: $draftName)
-                    #if os(iOS)
-                    .textInputAutocapitalization(.words)
-                    #endif
-                Button {
-                    let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    memberIdentity.name = trimmed
-                    nameSaved = true
-                    Task {
-                        try? await Task.sleep(for: .seconds(2))
-                        nameSaved = false
-                    }
-                } label: {
-                    if nameSaved {
-                        Label("Saved", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Text("Save Name")
-                    }
-                }
-                .disabled(
-                    draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    draftName == memberIdentity.name
-                )
-            } header: {
-                Text("Your Name")
-            } footer: {
-                Text("This is the name shown on your book submissions, ratings, and notes inside each club.")
+                SettingsHeader(name: memberIdentity.name)
+                    .plotLoomListRow(top: 8, bottom: 12)
             }
 
             Section {
-                Label {
-                    if Features.cloudKitSharing {
-                        Text("Group sharing is enabled")
-                    } else {
-                        Text("Group sharing is in setup")
-                    }
-                } icon: {
-                    Image(systemName: Features.cloudKitSharing ? "icloud.fill" : "icloud")
-                        .foregroundStyle(Features.cloudKitSharing ? .blue : .secondary)
-                }
-                if !Features.cloudKitSharing {
-                    Text("Once iCloud setup is complete, you'll be able to invite other members to a club. Until then, your data syncs across your own devices but cannot be shared.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("iCloud")
-            } footer: {
-                Text("If sharing isn't working, check that you're signed into iCloud in Settings → [Your Name] and that iCloud Drive is on.")
-            }
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Display Name")
+                        .font(.headline)
+                        .foregroundStyle(PlotLoomStyle.ink)
+                    TextField("Display name", text: $draftName)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.words)
+                        #endif
+                        .textFieldStyle(.roundedBorder)
 
-            Section("About") {
-                LabeledContent("Version", value: appVersionString)
-                LabeledContent("Build", value: appBuildString)
+                    Button(action: saveName) {
+                        Label(
+                            nameSaved ? "Saved" : "Save Name",
+                            systemImage: nameSaved ? "checkmark.circle.fill" : "checkmark.circle"
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(nameSaved ? .green : nil)
+                    .disabled(saveDisabled)
+                }
+                .plotLoomCard(padding: 16)
+            } header: {
+                SectionTitle(title: "Profile")
             }
+            .plotLoomListRow()
+
+            Section {
+                CloudKitStatusCard()
+            } header: {
+                SectionTitle(title: "iCloud")
+            }
+            .plotLoomListRow()
+
+            Section {
+                VStack(spacing: 12) {
+                    LabeledContent("Version", value: appVersionString)
+                    LabeledContent("Build", value: appBuildString)
+                }
+                .plotLoomCard(padding: 16)
+            } header: {
+                SectionTitle(title: "About")
+            }
+            .plotLoomListRow()
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .plotLoomScreenBackground()
         .navigationTitle("Settings")
         .onAppear {
             draftName = memberIdentity.name
         }
     }
 
+    private var saveDisabled: Bool {
+        guard let trimmed = draftName.trimmedOrNil else { return true }
+        return trimmed == memberIdentity.name
+    }
+
+    private func saveName() {
+        guard let trimmed = draftName.trimmedOrNil else { return }
+        memberIdentity.name = trimmed
+        nameSaved = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            nameSaved = false
+        }
+    }
+
     private var appVersionString: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
     }
 
     private var appBuildString: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
+    }
+}
+
+private struct SettingsHeader: View {
+    let name: String
+
+    var body: some View {
+        HStack(spacing: 14) {
+            BrandBadge(size: 58)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(name.isEmpty ? "Reader" : name)
+                    .font(.title2.bold())
+                    .foregroundStyle(PlotLoomStyle.ink)
+                    .lineLimit(1)
+                Text("Submissions, ratings, and notes use this name.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .plotLoomCard(padding: 18)
+    }
+}
+
+private struct CloudKitStatusCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
+                Text(Features.cloudKitSharing ? "Group sharing is enabled" : "Group sharing is in setup")
+                    .font(.headline)
+                    .foregroundStyle(PlotLoomStyle.ink)
+            } icon: {
+                Image(systemName: Features.cloudKitSharing ? "icloud.fill" : "icloud")
+                    .foregroundStyle(Features.cloudKitSharing ? PlotLoomStyle.indigo : .secondary)
+            }
+
+            Text("If invites fail, confirm the device is signed into iCloud and iCloud Drive is on.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .plotLoomCard(padding: 16)
     }
 }
