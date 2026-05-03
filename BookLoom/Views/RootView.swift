@@ -20,6 +20,7 @@ struct RootView: View {
 private struct MainTabs: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(MemberIdentity.self) private var memberIdentity
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
     @State private var selectedTab = 0
     @State private var clubPath = NavigationPath()
@@ -71,7 +72,12 @@ private struct MainTabs: View {
     private func refreshSharedClubs() async {
         let targets = visibleClubs.filter(\.shareIsActive)
         guard !targets.isEmpty else { return }
-        await SharedClubSync.refreshIfNeeded(targets, context: context)
+        await SharedClubSync.refreshIfNeeded(
+            targets,
+            context: context,
+            localMemberID: memberIdentity.memberID,
+            localMemberName: memberIdentity.name
+        )
     }
 
     private func navigateToScreenshotRoute(_ route: String) {

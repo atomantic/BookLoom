@@ -68,7 +68,9 @@ struct BookLoomApp: App {
                     Task { @MainActor in
                         await ShareAcceptance.handleAccept(
                             metadata: metadata,
-                            context: sharedModelContainer.mainContext
+                            context: sharedModelContainer.mainContext,
+                            localMemberID: memberIdentity.memberID,
+                            localMemberName: memberIdentity.name
                         )
                     }
                 }
@@ -81,7 +83,11 @@ struct BookLoomApp: App {
                     CoverDataCleanup.clearPersistedCoverData(in: sharedModelContainer.mainContext)
                     await drainAcceptedShares()
                     await CloudKitChangeNotifications.configureIfNeeded()
-                    await SharedClubSync.synchronizeSharedClubs(in: sharedModelContainer.mainContext)
+                    await SharedClubSync.synchronizeSharedClubs(
+                        in: sharedModelContainer.mainContext,
+                        localMemberID: memberIdentity.memberID,
+                        localMemberName: memberIdentity.name
+                    )
                 }
                 .onChange(of: acceptedShareInbox.pending.count) { _, _ in
                     Task { @MainActor in
@@ -90,7 +96,11 @@ struct BookLoomApp: App {
                 }
                 .onChange(of: cloudKitChangeInbox.pendingChangeCount) { _, _ in
                     Task { @MainActor in
-                        await CloudKitChangeNotifications.refreshSharedClubs(in: sharedModelContainer.mainContext)
+                        await CloudKitChangeNotifications.refreshSharedClubs(
+                            in: sharedModelContainer.mainContext,
+                            localMemberID: memberIdentity.memberID,
+                            localMemberName: memberIdentity.name
+                        )
                     }
                 }
         }
@@ -108,7 +118,9 @@ struct BookLoomApp: App {
         for metadata in pending {
             await ShareAcceptance.handleAccept(
                 metadata: metadata,
-                context: sharedModelContainer.mainContext
+                context: sharedModelContainer.mainContext,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
             )
         }
     }

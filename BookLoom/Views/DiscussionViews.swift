@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DiscussionPromptCard: View {
     @Environment(\.modelContext) private var context
+    @Environment(MemberIdentity.self) private var memberIdentity
 
     @Bindable var submission: BookSubmission
     @Binding var draftPrompt: String
@@ -64,6 +65,7 @@ struct DiscussionPromptCard: View {
             source: .custom
         )
         prompt.submission = submission
+        prompt.createdByMemberID = memberIdentity.memberID
         context.insert(prompt)
         prompts.append(prompt)
         submission.discussionPrompts = prompts
@@ -75,7 +77,12 @@ struct DiscussionPromptCard: View {
         do {
             try context.save()
             if let club = submission.bookClub {
-                SharedClubSync.publishIfNeeded(club, context: context)
+                SharedClubSync.publishIfNeeded(
+                    club,
+                    context: context,
+                    localMemberID: memberIdentity.memberID,
+                    localMemberName: memberIdentity.name
+                )
             }
         } catch {
             assertionFailure("Failed to save discussion changes: \(error.localizedDescription)")

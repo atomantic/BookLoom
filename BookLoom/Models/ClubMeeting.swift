@@ -37,6 +37,9 @@ enum MeetingReminderOffset: Int, CaseIterable, Identifiable {
 
 @Model
 final class ClubMeeting {
+    /// Stable cross-account identifier. Generated at insert; preserved across
+    /// CKShare snapshot merges so two devices reconcile to one row.
+    var meetingID: String = UUID().uuidString
     var title: String = ""
     var scheduledAt: Date = Date.now
     var hostName: String = ""

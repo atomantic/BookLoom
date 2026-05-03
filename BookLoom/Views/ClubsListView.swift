@@ -3,6 +3,7 @@ import SwiftData
 
 struct ClubsListView: View {
     @Environment(\.modelContext) private var context
+    @Environment(MemberIdentity.self) private var memberIdentity
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
     @State private var showingNewClubForm = false
     @State private var pendingDeleteClubs: [BookClub] = []
@@ -64,7 +65,12 @@ struct ClubsListView: View {
             Text(deleteConfirmationMessage)
         }
         .task(id: clubsTaskSignature) {
-            await SharedClubSync.refreshIfNeeded(visibleClubs, context: context)
+            await SharedClubSync.refreshIfNeeded(
+                visibleClubs,
+                context: context,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
         }
     }
 
@@ -147,10 +153,16 @@ struct ClubsListView: View {
     }
 
     private func confirmDeleteClubs() {
-        for club in pendingDeleteClubs {
-            context.delete(club)
-        }
+        let clubs = pendingDeleteClubs
         pendingDeleteClubs = []
+        let memberID = memberIdentity.memberID
+        Task { @MainActor in
+            for club in clubs {
+                await SharedClubSync.cleanupBeforeDelete(club, localMemberID: memberID)
+                context.delete(club)
+            }
+            try? context.save()
+        }
     }
 }
 

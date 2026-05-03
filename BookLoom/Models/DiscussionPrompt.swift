@@ -10,11 +10,17 @@ enum DiscussionPromptSource: String, CaseIterable, Identifiable {
 
 @Model
 final class DiscussionPrompt {
+    /// Stable cross-account identifier. Generated at insert; preserved across
+    /// CKShare snapshot merges so two devices reconcile to one row.
+    var promptID: String = UUID().uuidString
     var question: String = ""
     var orderIndex: Int = 0
     var sourceRaw: String = DiscussionPromptSource.custom.rawValue
     var createdAt: Date = Date.now
     var isArchived: Bool = false
+    /// MemberIdentity of the user who created this prompt. Empty for starter
+    /// prompts and legacy rows; backfilled when published per-author.
+    var createdByMemberID: String = ""
 
     var submission: BookSubmission? = nil
 

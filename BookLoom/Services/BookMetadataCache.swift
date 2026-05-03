@@ -43,6 +43,10 @@ actor BookMetadataCache {
         try? data.write(to: searchURL(title: title, author: author), options: [.atomic])
     }
 
+    func purgeAll() {
+        try? fileManager.removeItem(at: rootURL)
+    }
+
     private func searchURL(title: String, author: String) -> URL {
         let key = ["search", normalized(title), normalized(author)].joined(separator: "|")
         return rootURL.appendingPathComponent("\(hash(key)).json", isDirectory: false)
@@ -101,6 +105,10 @@ actor BookCoverCache {
         try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         try? data.write(to: coverURL(for: url), options: [.atomic])
         return data
+    }
+
+    func purgeAll() {
+        try? fileManager.removeItem(at: rootURL)
     }
 
     private func coverURL(for url: URL) -> URL {

@@ -19,25 +19,31 @@ final class CloudKitSchemaPrimeTests: XCTestCase {
         let rootID = CKRecord.ID(recordName: "ShareRoot", zoneID: zone.zoneID)
         let root = CKRecord(recordType: "BookClubShareRoot", recordID: rootID)
         root["clubName"] = "Schema Prime" as CKRecordValue
-        let snapshot = SharedClubSnapshot(
-            club: .init(
+        root["clubCreatedAt"] = Date.now as CKRecordValue
+
+        let memberID = CKRecord.ID(recordName: "MemberSnapshot-schema-prime", zoneID: zone.zoneID)
+        let memberRecord = CKRecord(recordType: "MemberShareSnapshot", recordID: memberID)
+        memberRecord.parent = CKRecord.Reference(record: root, action: .none)
+        let snapshot = MemberShareSnapshot(
+            authorMemberID: "schema-prime",
+            authorName: "Schema Prime",
+            clubMeta: MemberShareSnapshot.ClubMeta(
                 name: "Schema Prime",
                 createdAt: .now,
                 cloudZoneName: zone.zoneID.zoneName,
                 shareParticipantCount: 1
-            ),
-            submissions: [],
-            meetings: [],
-            polls: []
+            )
         )
-        root["snapshotData"] = try JSONEncoder().encode(snapshot) as NSData
-        root["snapshotUpdatedAt"] = snapshot.capturedAt as CKRecordValue
+        memberRecord["snapshotData"] = try JSONEncoder().encode(snapshot) as NSData
+        memberRecord["snapshotUpdatedAt"] = snapshot.capturedAt as CKRecordValue
+        memberRecord["memberID"] = snapshot.authorMemberID as CKRecordValue
+        memberRecord["memberName"] = snapshot.authorName as CKRecordValue
 
         let share = CKShare(rootRecord: root)
         share[CKShare.SystemFieldKey.title] = "Book Club: Schema Prime" as CKRecordValue
-        share.publicPermission = .none
+        share.publicPermission = .readWrite
 
-        _ = try await db.modifyRecords(saving: [root, share], deleting: [])
+        _ = try await db.modifyRecords(saving: [root, memberRecord, share], deleting: [])
 
         // The schema is registered the moment CloudKit accepts the save above —
         // tear the zone back down so repeated priming runs don't accumulate

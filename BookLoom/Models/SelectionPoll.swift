@@ -19,6 +19,9 @@ enum SelectionPollStatus: String, CaseIterable, Identifiable {
 final class SelectionPoll {
     static let maxRanks = 3
 
+    /// Stable cross-account identifier. Generated at insert; preserved across
+    /// CKShare snapshot merges so two devices reconcile to one row.
+    var pollID: String = UUID().uuidString
     var title: String = ""
     var createdAt: Date = Date.now
     var closesAt: Date? = nil
@@ -26,6 +29,9 @@ final class SelectionPoll {
     var isAnonymousResults: Bool = true
     var candidateIDsRaw: String = ""
     var winnerSubmissionID: String = ""
+    /// MemberIdentity of the user who created this poll. Empty for legacy
+    /// rows; backfilled to the local member when first published.
+    var createdByMemberID: String = ""
 
     var bookClub: BookClub? = nil
 

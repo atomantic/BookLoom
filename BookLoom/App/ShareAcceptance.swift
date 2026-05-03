@@ -23,7 +23,12 @@ enum ShareAcceptance {
     /// represents the joined club. Idempotent — re-accepting the same share
     /// for an already-joined club won't duplicate the row.
     @MainActor
-    static func handleAccept(metadata: CKShare.Metadata, context: ModelContext) async {
+    static func handleAccept(
+        metadata: CKShare.Metadata,
+        context: ModelContext,
+        localMemberID: String,
+        localMemberName: String
+    ) async {
         guard Features.cloudKitSharing else {
             logger.info("⏭ Share accept ignored — Features.cloudKitSharing is off")
             return
@@ -50,21 +55,41 @@ enum ShareAcceptance {
             joined.shareIsActive = true
             joined.shareParticipantCount = max(1, info.participantCount)
 
-            if let snapshot = info.snapshot {
-                try SharedClubSnapshotStore.apply(snapshot, to: joined, context: context)
+            if !info.memberSnapshots.isEmpty {
+                try MemberShareSnapshotStore.merge(
+                    snapshots: info.memberSnapshots,
+                    into: joined,
+                    context: context,
+                    localMemberID: localMemberID
+                )
                 try context.save()
-                logger.info("✅ Accepted share — imported '\(joined.name, privacy: .public)' (zone \(info.zoneName, privacy: .public))")
+                logger.info("✅ Accepted share — imported '\(joined.name, privacy: .public)' from \(info.memberSnapshots.count) member snapshot(s)")
             } else {
                 try context.save()
                 logger.info("✅ Accepted share — joined '\(info.title, privacy: .public)' (zone \(info.zoneName, privacy: .public))")
                 // Owner published the share root *after* `acceptShare` returned —
                 // give CloudKit a beat to materialize the shared zone before
-                // `fetchSnapshot` makes its single-shot read. Without this, the
-                // first refresh returns nil and the joined club stays empty
-                // until the user pulls to refresh.
+                // `fetchMemberSnapshots` makes its query. Without this, the
+                // first refresh returns no results and the joined club stays
+                // empty until the user pulls to refresh.
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                await SharedClubSync.refreshIfNeeded(joined, context: context)
+                await SharedClubSync.refreshIfNeeded(
+                    joined,
+                    context: context,
+                    localMemberID: localMemberID,
+                    localMemberName: localMemberName
+                )
             }
+
+            // Publish the joining member's empty snapshot so the owner gets
+            // a push notification announcing the new participant and a
+            // record they can fetch.
+            SharedClubSync.publishIfNeeded(
+                joined,
+                context: context,
+                localMemberID: localMemberID,
+                localMemberName: localMemberName
+            )
         } catch {
             logger.error("⚠️ Share accept failed: \(error.localizedDescription, privacy: .public)")
         }

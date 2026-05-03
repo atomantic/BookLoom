@@ -26,9 +26,9 @@ final class CloudKitChangeInbox: ObservableObject {
 enum CloudKitChangeNotifications {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "CloudKitChangeNotifications")
     private static let containerID = "iCloud.net.shadowpuppet.PlotLoom"
-    private static let sharedSubscriptionID = "bookloom-shared-root-changes"
-    private static let didSaveSharedSubscriptionKey = "net.shadowpuppet.BookLoom.didSaveSharedRootSubscription"
-    private static let rootRecordType = "BookClubShareRoot"
+    private static let sharedSubscriptionID = "bookloom-member-snapshot-changes"
+    private static let didSaveSharedSubscriptionKey = "net.shadowpuppet.BookLoom.didSaveSharedRootSubscription.v2"
+    private static let memberSnapshotRecordType = "MemberShareSnapshot"
 
     static func configureIfNeeded() async {
         guard Features.cloudKitSharing, !AppLaunchOptions.isSampleDataEnabled, !isRunningTests else { return }
@@ -37,7 +37,7 @@ enum CloudKitChangeNotifications {
         guard !UserDefaults.standard.bool(forKey: didSaveSharedSubscriptionKey) else { return }
 
         let subscription = CKDatabaseSubscription(subscriptionID: sharedSubscriptionID)
-        subscription.recordType = rootRecordType
+        subscription.recordType = memberSnapshotRecordType
 
         let notificationInfo = CKSubscription.NotificationInfo()
         notificationInfo.shouldSendContentAvailable = true
@@ -54,10 +54,10 @@ enum CloudKitChangeNotifications {
         }
     }
 
-    static func refreshSharedClubs(in context: ModelContext) async {
+    static func refreshSharedClubs(in context: ModelContext, localMemberID: String, localMemberName: String) async {
         do {
             let clubs = try context.fetch(FetchDescriptor<BookClub>())
-            await SharedClubSync.refreshIfNeeded(clubs, context: context)
+            await SharedClubSync.refreshIfNeeded(clubs, context: context, localMemberID: localMemberID, localMemberName: localMemberName)
         } catch {
             logger.error("Failed to fetch clubs for CloudKit change refresh: \(error.localizedDescription, privacy: .public)")
         }

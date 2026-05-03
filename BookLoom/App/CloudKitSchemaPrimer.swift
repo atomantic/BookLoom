@@ -51,25 +51,31 @@ enum CloudKitSchemaPrimer {
         let rootID = CKRecord.ID(recordName: "ShareRoot", zoneID: zone.zoneID)
         let root = CKRecord(recordType: rootRecordType, recordID: rootID)
         root["clubName"] = SchemaPrimeIdentity.clubName as CKRecordValue
-        let snapshot = SharedClubSnapshot(
-            club: .init(
+        root["clubCreatedAt"] = Date.now as CKRecordValue
+
+        let memberRecordID = CKRecord.ID(recordName: "MemberSnapshot-schema-prime", zoneID: zone.zoneID)
+        let memberRecord = CKRecord(recordType: "MemberShareSnapshot", recordID: memberRecordID)
+        memberRecord.parent = CKRecord.Reference(record: root, action: .none)
+        let snapshot = MemberShareSnapshot(
+            authorMemberID: "schema-prime",
+            authorName: "Schema Prime",
+            clubMeta: MemberShareSnapshot.ClubMeta(
                 name: SchemaPrimeIdentity.clubName,
                 createdAt: .now,
                 cloudZoneName: zone.zoneID.zoneName,
                 shareParticipantCount: 1
-            ),
-            submissions: [],
-            meetings: [],
-            polls: []
+            )
         )
-        root["snapshotData"] = try JSONEncoder().encode(snapshot) as NSData
-        root["snapshotUpdatedAt"] = snapshot.capturedAt as CKRecordValue
+        memberRecord["snapshotData"] = try JSONEncoder().encode(snapshot) as NSData
+        memberRecord["snapshotUpdatedAt"] = snapshot.capturedAt as CKRecordValue
+        memberRecord["memberID"] = snapshot.authorMemberID as CKRecordValue
+        memberRecord["memberName"] = snapshot.authorName as CKRecordValue
 
         let share = CKShare(rootRecord: root)
         share[CKShare.SystemFieldKey.title] = "Book Club: \(SchemaPrimeIdentity.clubName)" as CKRecordValue
-        share.publicPermission = .none
+        share.publicPermission = .readWrite
 
-        _ = try await db.modifyRecords(saving: [root, share], deleting: [])
+        _ = try await db.modifyRecords(saving: [root, memberRecord, share], deleting: [])
         log("Saved CKShare schema-prime records in zone \(zone.zoneID.zoneName)")
     }
 

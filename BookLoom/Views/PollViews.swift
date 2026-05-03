@@ -48,6 +48,7 @@ struct SelectionPollRow: View {
 struct StartPollView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Environment(MemberIdentity.self) private var memberIdentity
 
     @Bindable var club: BookClub
     let candidates: [BookSubmission]
@@ -88,10 +89,16 @@ struct StartPollView: View {
             candidates: candidates,
             isAnonymousResults: hideVoterNames
         )
+        poll.createdByMemberID = memberIdentity.memberID
         context.insert(poll)
         club.addSelectionPoll(poll)
         do {
-            try SharedClubSync.saveAndPublish(context: context, club: club)
+            try SharedClubSync.saveAndPublish(
+                context: context,
+                club: club,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
         } catch {
             assertionFailure("Failed to save poll: \(error.localizedDescription)")
         }
@@ -255,7 +262,7 @@ struct SelectionPollDetailView: View {
               let club = poll.bookClub else {
             return
         }
-        SelectionPollCoordinator.promoteWinner(winner, in: club)
+        SelectionPollCoordinator.promoteWinner(winner, in: club, actorMemberID: memberIdentity.memberID)
         DiscussionPromptLibrary.ensureStarterPrompts(for: winner, context: context)
         poll.status = .closed
         poll.winnerSubmissionID = winner.selectionID
@@ -266,7 +273,12 @@ struct SelectionPollDetailView: View {
         do {
             try context.save()
             if let club = poll.bookClub {
-                SharedClubSync.publishIfNeeded(club, context: context)
+                SharedClubSync.publishIfNeeded(
+                    club,
+                    context: context,
+                    localMemberID: memberIdentity.memberID,
+                    localMemberName: memberIdentity.name
+                )
             }
         } catch {
             assertionFailure("Failed to save poll changes: \(error.localizedDescription)")

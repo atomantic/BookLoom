@@ -147,7 +147,12 @@ struct ScheduleMeetingView: View {
             DiscussionPromptLibrary.ensureStarterPrompts(for: currentSubmission, context: context)
         }
         do {
-            try SharedClubSync.saveAndPublish(context: context, club: club)
+            try SharedClubSync.saveAndPublish(
+                context: context,
+                club: club,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
         } catch {
             assertionFailure("Failed to save meeting: \(error.localizedDescription)")
         }
@@ -295,7 +300,12 @@ struct MeetingDetailView: View {
         do {
             try context.save()
             if let club = meeting.bookClub {
-                SharedClubSync.publishIfNeeded(club, context: context)
+                SharedClubSync.publishIfNeeded(
+                    club,
+                    context: context,
+                    localMemberID: memberIdentity.memberID,
+                    localMemberName: memberIdentity.name
+                )
             }
         } catch {
             assertionFailure("Failed to save meeting changes: \(error.localizedDescription)")

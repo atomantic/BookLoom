@@ -1,6 +1,8 @@
 import SwiftUI
+import SwiftData
 
 struct SettingsView: View {
+    @Environment(\.modelContext) private var context
     @Environment(MemberIdentity.self) private var memberIdentity
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
     @AppStorage(WelcomeReplay.storageKey) private var replayWelcome = false
@@ -9,6 +11,8 @@ struct SettingsView: View {
     @AppStorage(BookLoomNotificationPreferences.discussionKey) private var discussionNotifications = false
     @State private var draftName: String = ""
     @State private var nameSaved: Bool = false
+    @State private var showingResetConfirmation: Bool = false
+    @State private var isResetting: Bool = false
 
     var body: some View {
         List {
@@ -50,6 +54,16 @@ struct SettingsView: View {
             .bookLoomListRow()
 
             Section {
+                DataResetCard(
+                    isResetting: isResetting,
+                    onTapReset: { showingResetConfirmation = true }
+                )
+            } header: {
+                SectionTitle(title: "Data")
+            }
+            .bookLoomListRow()
+
+            Section {
                 VStack(spacing: 8) {
                     LabeledContent("Version", value: appVersionString)
                     LabeledContent("Build", value: appBuildString)
@@ -65,6 +79,18 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle("Settings")
+        .confirmationDialog(
+            "Delete all your BookLoom data?",
+            isPresented: $showingResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Everything", role: .destructive) {
+                runReset()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes every club, proposal, rating, note, meeting, and poll on this device. Owned clubs are deleted from iCloud; clubs you joined are left. This can't be undone.")
+        }
         .onAppear {
             draftName = memberIdentity.name
         }
@@ -88,6 +114,17 @@ struct SettingsView: View {
     private var saveDisabled: Bool {
         guard let trimmed = draftName.trimmedOrNil else { return true }
         return trimmed == memberIdentity.name
+    }
+
+    private func runReset() {
+        guard !isResetting else { return }
+        isResetting = true
+        Task { @MainActor in
+            await BookLoomDataReset.resetAllData(context: context, memberIdentity: memberIdentity)
+            draftName = ""
+            replayWelcome = true
+            isResetting = false
+        }
     }
 
     private func saveName() {
@@ -228,6 +265,35 @@ private struct NotificationPreferencesCard: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .font(.subheadline)
+        .bookLoomCard(padding: 12)
+    }
+}
+
+private struct DataResetCard: View {
+    let isResetting: Bool
+    let onTapReset: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Delete all of your local clubs and remove the matching iCloud data. The app returns to first-launch state.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(role: .destructive, action: onTapReset) {
+                HStack(spacing: 8) {
+                    if isResetting {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Label(isResetting ? "Resetting…" : "Delete All My Data", systemImage: "trash.fill")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .disabled(isResetting)
+        }
         .bookLoomCard(padding: 12)
     }
 }

@@ -9,6 +9,7 @@ import CloudKit
 struct InviteView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(MemberIdentity.self) private var memberIdentity
     @Bindable var club: BookClub
 
     @State private var share: CKShare? = nil
@@ -161,7 +162,12 @@ struct InviteView: View {
         }
         defer { isLoading = false }
         do {
-            let s = try await CloudKitSharingService.shared.createOrFetchShare(for: club, context: context)
+            let s = try await CloudKitSharingService.shared.createOrFetchShare(
+                for: club,
+                context: context,
+                ownerMemberID: memberIdentity.memberID,
+                ownerName: memberIdentity.name
+            )
             try? context.save()
             self.share = s
         } catch {

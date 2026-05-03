@@ -34,19 +34,30 @@ struct BookLoomNotificationEvent {
     let title: String
     let body: String
 
+    /// Diff a pre-merge view of the club against the post-merge canonical
+    /// payloads to detect surfaceable changes. Notifications fire only for
+    /// remote changes — additions authored by `localMemberID` are skipped so
+    /// you never get a push for your own action.
     @MainActor
-    static func events(before club: BookClub, applying snapshot: SharedClubSnapshot) -> [BookLoomNotificationEvent] {
+    static func events(
+        clubName: String,
+        previousSubmissions: [BookSubmission],
+        canonicalSubmissions: [MemberShareSnapshot.SubmissionPayload],
+        canonicalStatusOverrides: [MemberShareSnapshot.StatusOverride],
+        canonicalRatings: [MemberShareSnapshot.RatingPayload],
+        canonicalNotes: [MemberShareSnapshot.NotePayload],
+        localMemberID: String,
+        sinceCapturedAt: Date?
+    ) -> [BookLoomNotificationEvent] {
         guard BookLoomNotificationPreferences.anyEnabled else { return [] }
 
         var events: [BookLoomNotificationEvent] = []
-        let clubName = snapshot.club.name.trimmedOrNil ?? club.name
+        let oldSubmissionsByID = Dictionary(uniqueKeysWithValues: previousSubmissions.map { ($0.selectionID, $0) })
+        let oldCurrentID = previousSubmissions.first(where: { $0.status == .current })?.selectionID
 
-        let oldSubmissions = Dictionary(uniqueKeysWithValues: (club.submissions ?? []).map { ($0.selectionID, $0) })
-        let oldCurrentID = (club.submissions ?? []).first(where: { $0.status == .current })?.selectionID
-        let newCurrent = snapshot.submissions.first { BookSubmissionStatus(rawValue: $0.statusRaw) == .current }
-
-        for submission in snapshot.submissions where BookSubmissionStatus(rawValue: submission.statusRaw) == .proposed {
-            guard oldSubmissions[submission.selectionID] == nil else { continue }
+        for submission in canonicalSubmissions where BookSubmissionStatus(rawValue: submission.initialStatusRaw) == .proposed {
+            guard oldSubmissionsByID[submission.selectionID] == nil else { continue }
+            guard submission.submittedByMemberID != localMemberID else { continue }
             let title = submission.title.trimmedOrNil ?? "New book proposal"
             events.append(
                 BookLoomNotificationEvent(
@@ -57,7 +68,14 @@ struct BookLoomNotificationEvent {
             )
         }
 
-        if let newCurrent, newCurrent.selectionID != oldCurrentID {
+        let latestOverridesByID = Dictionary(grouping: canonicalStatusOverrides, by: \.submissionSelectionID)
+            .compactMapValues { $0.max(by: { $0.occurredAt < $1.occurredAt }) }
+        if let newCurrentID = latestOverridesByID
+            .filter({ _, override in override.statusRaw == BookSubmissionStatus.current.rawValue })
+            .max(by: { $0.value.occurredAt < $1.value.occurredAt })?
+            .key,
+           newCurrentID != oldCurrentID,
+           let newCurrent = canonicalSubmissions.first(where: { $0.selectionID == newCurrentID }) {
             let title = newCurrent.title.trimmedOrNil ?? "the next book"
             events.append(
                 BookLoomNotificationEvent(
@@ -68,15 +86,13 @@ struct BookLoomNotificationEvent {
             )
         }
 
-        for submission in snapshot.submissions {
-            guard let oldSubmission = oldSubmissions[submission.selectionID] else { continue }
-            let oldRatingCount = oldSubmission.ratings?.count ?? 0
-            let oldNoteCount = oldSubmission.notes?.count ?? 0
-            // Compare per-collection: a simultaneous add+remove across ratings/notes
-            // would cancel out if we summed them.
-            guard submission.ratings.count > oldRatingCount || submission.notes.count > oldNoteCount else { continue }
-
-            let title = submission.title.trimmedOrNil ?? "a book"
+        let baselineDate = sinceCapturedAt ?? .distantPast
+        let recentRatingsBySubmission = Dictionary(grouping: canonicalRatings.filter { $0.memberID != localMemberID && $0.createdAt > baselineDate }, by: \.submissionSelectionID)
+        let recentNotesBySubmission = Dictionary(grouping: canonicalNotes.filter { $0.memberID != localMemberID && $0.createdAt > baselineDate }, by: \.submissionSelectionID)
+        let active = Set(recentRatingsBySubmission.keys).union(recentNotesBySubmission.keys)
+        for submissionID in active {
+            let submission = canonicalSubmissions.first { $0.selectionID == submissionID }
+            let title = submission?.title.trimmedOrNil ?? "a book"
             events.append(
                 BookLoomNotificationEvent(
                     kind: .discussion,

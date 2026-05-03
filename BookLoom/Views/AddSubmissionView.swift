@@ -132,7 +132,12 @@ struct AddSubmissionView: View {
         club.addSubmission(submission)
         context.insert(submission)
         do {
-            try SharedClubSync.saveAndPublish(context: context, club: club)
+            try SharedClubSync.saveAndPublish(
+                context: context,
+                club: club,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
             dismiss()
         } catch {
             saveError = error.localizedDescription

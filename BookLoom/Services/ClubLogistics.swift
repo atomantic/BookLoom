@@ -63,14 +63,39 @@ enum SelectionPollScorer {
 }
 
 enum SelectionPollCoordinator {
-    static func promoteWinner(_ winner: BookSubmission, in club: BookClub, pickedAt: Date = .now) {
+    static func promoteWinner(
+        _ winner: BookSubmission,
+        in club: BookClub,
+        pickedAt: Date = .now,
+        actorMemberID: String = ""
+    ) {
         if let current = club.sections.current, current !== winner {
             current.status = .completed
             current.completedAt = pickedAt
+            club.recordStatusOverride(
+                StatusOverrideEntry(
+                    submissionSelectionID: current.selectionID,
+                    statusRaw: BookSubmissionStatus.completed.rawValue,
+                    pickedAt: current.pickedAt,
+                    completedAt: pickedAt,
+                    occurredAt: pickedAt,
+                    actorMemberID: actorMemberID
+                )
+            )
         }
         winner.status = .current
         winner.pickedAt = pickedAt
         winner.completedAt = nil
+        club.recordStatusOverride(
+            StatusOverrideEntry(
+                submissionSelectionID: winner.selectionID,
+                statusRaw: BookSubmissionStatus.current.rawValue,
+                pickedAt: pickedAt,
+                completedAt: nil,
+                occurredAt: pickedAt,
+                actorMemberID: actorMemberID
+            )
+        )
     }
 }
 

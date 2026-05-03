@@ -3,6 +3,7 @@ import SwiftData
 
 struct BookClubHomeView: View {
     @Environment(\.modelContext) private var context
+    @Environment(MemberIdentity.self) private var memberIdentity
     @Bindable var club: BookClub
     @Query(sort: \BookSubmission.submittedAt) private var submissions: [BookSubmission]
     @Query(sort: \ClubMeeting.scheduledAt) private var meetings: [ClubMeeting]
@@ -410,7 +411,12 @@ struct BookClubHomeView: View {
     }
 
     private func syncClubForCurrentRole() async {
-        await SharedClubSync.synchronizeIfNeeded(club, context: context)
+        await SharedClubSync.synchronizeIfNeeded(
+            club,
+            context: context,
+            localMemberID: memberIdentity.memberID,
+            localMemberName: memberIdentity.name
+        )
     }
 
     private func pickRandomNext() {
@@ -419,21 +425,43 @@ struct BookClubHomeView: View {
     }
 
     private func assignCurrent(_ submission: BookSubmission) {
-        SelectionPollCoordinator.promoteWinner(submission, in: club)
+        SelectionPollCoordinator.promoteWinner(submission, in: club, actorMemberID: memberIdentity.memberID)
         DiscussionPromptLibrary.ensureStarterPrompts(for: submission, context: context)
         saveClubChanges()
     }
 
     private func markComplete(_ submission: BookSubmission) {
+        let now = Date.now
         submission.status = .completed
-        submission.completedAt = .now
+        submission.completedAt = now
+        club.recordStatusOverride(
+            StatusOverrideEntry(
+                submissionSelectionID: submission.selectionID,
+                statusRaw: BookSubmissionStatus.completed.rawValue,
+                pickedAt: submission.pickedAt,
+                completedAt: now,
+                occurredAt: now,
+                actorMemberID: memberIdentity.memberID
+            )
+        )
         saveClubChanges()
     }
 
     private func moveCurrentToProposals(_ submission: BookSubmission) {
+        let now = Date.now
         submission.status = .proposed
         submission.pickedAt = nil
         submission.completedAt = nil
+        club.recordStatusOverride(
+            StatusOverrideEntry(
+                submissionSelectionID: submission.selectionID,
+                statusRaw: BookSubmissionStatus.proposed.rawValue,
+                pickedAt: nil,
+                completedAt: nil,
+                occurredAt: now,
+                actorMemberID: memberIdentity.memberID
+            )
+        )
         saveClubChanges()
     }
 
@@ -446,7 +474,12 @@ struct BookClubHomeView: View {
 
     private func saveClubChanges() {
         do {
-            try SharedClubSync.saveAndPublish(context: context, club: club)
+            try SharedClubSync.saveAndPublish(
+                context: context,
+                club: club,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
         } catch {
             assertionFailure("Failed to save club changes: \(error.localizedDescription)")
         }

@@ -85,10 +85,76 @@ echo "$MSG"
 ORIG_PROJECT_YML=$(mktemp)
 cp project.yml "$ORIG_PROJECT_YML"
 
-CURRENT_BUILD=$(grep -m1 'CURRENT_PROJECT_VERSION:' project.yml | awk '{print $2}')
+# Query App Store Connect for the highest existing build number for $1
+# (bundle ID). Echos the integer, or 0 on any failure so the caller can
+# fall back to the local project.yml value. ES256 JWT signed via openssl
+# + Python stdlib — no pip deps.
+fetch_remote_build() {
+    BUNDLE_ID="$1" KEY_ID="$APPSTORE_API_KEY_ID" \
+    ISSUER="$APPSTORE_ISSUER_ID" KEY_PATH_ENV="$KEY_PATH" \
+    python3 - <<'PYEOF' 2>/dev/null || echo 0
+import os, sys, json, time, base64, subprocess, urllib.request
+
+def fail(): print(0); sys.exit(0)
+
+try:
+    key_id   = os.environ['KEY_ID']
+    issuer   = os.environ['ISSUER']
+    key_path = os.environ['KEY_PATH_ENV']
+    bundle   = os.environ['BUNDLE_ID']
+
+    def b64url(d): return base64.urlsafe_b64encode(d).rstrip(b'=')
+
+    now = int(time.time())
+    header = b64url(json.dumps({'alg':'ES256','kid':key_id,'typ':'JWT'}, separators=(',',':')).encode())
+    claims = b64url(json.dumps({'iss':issuer,'iat':now,'exp':now+1200,'aud':'appstoreconnect-v1'}, separators=(',',':')).encode())
+    signing_input = header + b'.' + claims
+
+    der = subprocess.run(
+        ['openssl','dgst','-sha256','-sign',key_path],
+        input=signing_input, capture_output=True, check=True
+    ).stdout
+
+    # DER ECDSA sig -> JOSE raw r||s (32 bytes each).
+    if der[0] != 0x30: fail()
+    i = 2 if der[1] < 0x80 else 2 + (der[1] & 0x7F)
+    rl = der[i+1]; r = der[i+2:i+2+rl]; i += 2 + rl
+    sl = der[i+1]; s = der[i+2:i+2+sl]
+    r = r.lstrip(b'\x00').rjust(32, b'\x00')
+    s = s.lstrip(b'\x00').rjust(32, b'\x00')
+    token = (signing_input + b'.' + b64url(r + s)).decode()
+
+    def get(url):
+        req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'})
+        return json.loads(urllib.request.urlopen(req, timeout=20).read())
+
+    apps = get(f'https://api.appstoreconnect.apple.com/v1/apps?filter[bundleId]={bundle}').get('data', [])
+    if not apps: fail()
+    builds = get(
+        f'https://api.appstoreconnect.apple.com/v1/builds?filter[app]={apps[0]["id"]}'
+        '&sort=-uploadedDate&limit=200'
+    ).get('data', [])
+    versions = [int(b['attributes']['version']) for b in builds
+                if b.get('attributes', {}).get('version', '').isdigit()]
+    print(max(versions) if versions else 0)
+except Exception:
+    fail()
+PYEOF
+}
+
+LOCAL_BUILD=$(grep -m1 'CURRENT_PROJECT_VERSION:' project.yml | awk '{print $2}')
+echo "🔍 Checking TestFlight for highest existing build..."
+REMOTE_BUILD=$(fetch_remote_build "$IOS_BUNDLE_ID")
+REMOTE_BUILD=${REMOTE_BUILD:-0}
+if [ "$REMOTE_BUILD" -gt "$LOCAL_BUILD" ]; then
+    echo "ℹ️  TestFlight has build $REMOTE_BUILD; project.yml only at $LOCAL_BUILD — using remote as base."
+    CURRENT_BUILD=$REMOTE_BUILD
+else
+    CURRENT_BUILD=$LOCAL_BUILD
+fi
 NEW_BUILD=$((CURRENT_BUILD + 1))
 echo "📦 Build number: $CURRENT_BUILD → $NEW_BUILD"
-/usr/bin/sed -i '' "s/CURRENT_PROJECT_VERSION: ${CURRENT_BUILD}/CURRENT_PROJECT_VERSION: ${NEW_BUILD}/" project.yml
+/usr/bin/sed -i '' "s/CURRENT_PROJECT_VERSION: ${LOCAL_BUILD}/CURRENT_PROJECT_VERSION: ${NEW_BUILD}/" project.yml
 
 DEPLOY_SUCCESS=false
 rollback_build_bump() {
