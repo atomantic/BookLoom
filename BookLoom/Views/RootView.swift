@@ -21,20 +21,48 @@ private struct MainTabs: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @Environment(MemberIdentity.self) private var memberIdentity
+    @Environment(ActiveClubStore.self) private var activeClubStore
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
-    @State private var selectedTab = 0
-    @State private var clubPath = NavigationPath()
+    @State private var selectedTab = MainTab.books
+    @State private var booksPath = NavigationPath()
+    @State private var pollsPath = NavigationPath()
+    @State private var schedulePath = NavigationPath()
+    @State private var discussionsPath = NavigationPath()
     private let sharedSyncTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            NavigationStack(path: $clubPath) {
-                ClubsListView()
+            NavigationStack(path: $booksPath) {
+                BooksTabView()
             }
             .tabItem {
-                Label("Clubs", systemImage: "books.vertical.fill")
+                Label("Books", systemImage: "books.vertical.fill")
             }
-            .tag(0)
+            .tag(MainTab.books)
+
+            NavigationStack(path: $pollsPath) {
+                PollsTabView()
+            }
+            .tabItem {
+                Label("Polls", systemImage: "list.number")
+            }
+            .tag(MainTab.polls)
+
+            NavigationStack(path: $discussionsPath) {
+                DiscussionsTabView()
+            }
+            .tabItem {
+                Label("Discussions", systemImage: "text.bubble.fill")
+            }
+            .tag(MainTab.discussions)
+
+            NavigationStack(path: $schedulePath) {
+                ScheduleTabView()
+            }
+            .tabItem {
+                Label("Schedule", systemImage: "calendar")
+            }
+            .tag(MainTab.schedule)
 
             NavigationStack {
                 SettingsView()
@@ -42,9 +70,10 @@ private struct MainTabs: View {
             .tabItem {
                 Label("Settings", systemImage: "gearshape.fill")
             }
-            .tag(1)
+            .tag(MainTab.settings)
         }
         .task {
+            activeClubStore.reconcileWithVisibleClubs(visibleClubs)
             await refreshSharedClubs()
             guard let route = AppLaunchOptions.screenshotRoute else { return }
             try? await Task.sleep(nanoseconds: 350_000_000)
@@ -60,7 +89,7 @@ private struct MainTabs: View {
         }
         .onOpenURL { url in
             guard url.scheme == "bookloom", url.host() == "screenshot" else { return }
-            let route = url.pathComponents.filter { $0 != "/" }.first ?? "clubs"
+            let route = url.pathComponents.filter { $0 != "/" }.first ?? "books"
             navigateToScreenshotRoute(route)
         }
     }
@@ -81,29 +110,49 @@ private struct MainTabs: View {
     }
 
     private func navigateToScreenshotRoute(_ route: String) {
-        selectedTab = 0
-        clubPath = NavigationPath()
+        booksPath = NavigationPath()
+        pollsPath = NavigationPath()
+        schedulePath = NavigationPath()
+        discussionsPath = NavigationPath()
 
-        guard route != "clubs", let club = visibleClubs.first else { return }
-        clubPath.append(club)
-
-        switch route {
-        case "clubHome", "proposals":
-            return
-        case "currentRead":
-            if let current = club.sections.current {
-                clubPath.append(current)
-            }
-        case "poll":
-            if let poll = club.recentSelectionPolls.first {
-                clubPath.append(poll)
-            }
-        case "meeting":
-            if let meeting = club.upcomingMeetings.first ?? club.pastMeetings.first {
-                clubPath.append(meeting)
-            }
-        default:
+        guard let club = visibleClubs.first else {
+            selectedTab = .books
             return
         }
+        activeClubStore.setActiveClub(club)
+
+        switch route {
+        case "books", "clubs", "clubHome":
+            selectedTab = .books
+        case "currentRead":
+            selectedTab = .books
+            if let current = club.sections.current {
+                booksPath.append(current)
+            }
+        case "poll", "polls":
+            selectedTab = .polls
+            if let poll = club.recentSelectionPolls.first {
+                pollsPath.append(poll)
+            }
+        case "meeting", "meetings", "schedule":
+            selectedTab = .schedule
+            if let meeting = club.upcomingMeetings.first ?? club.pastMeetings.first {
+                schedulePath.append(meeting)
+            }
+        case "discussion", "discussions":
+            selectedTab = .discussions
+        case "settings":
+            selectedTab = .settings
+        default:
+            selectedTab = .books
+        }
     }
+}
+
+private enum MainTab: Hashable {
+    case books
+    case polls
+    case discussions
+    case schedule
+    case settings
 }
