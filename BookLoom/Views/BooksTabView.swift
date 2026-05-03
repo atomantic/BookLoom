@@ -44,9 +44,11 @@ private struct BooksTabContent: View {
 
             Section {
                 if let current = displayedSections.current {
-                    NavigationLink(value: current) {
-                        CurrentSubmissionRow(submission: current)
-                    }
+                    CurrentSubmissionRow(
+                        submission: current,
+                        onMarkRead: { showingCompleteConfirmation = true },
+                        onMoveBack: { showingMoveCurrentToProposalsConfirmation = true }
+                    )
                     .swipeActions(edge: .trailing) {
                         Button {
                             markComplete(current)
@@ -62,24 +64,6 @@ private struct BooksTabContent: View {
                             Label("Move Back", systemImage: "tray.full.fill")
                         }
                         .tint(BookLoomStyle.plum)
-                    }
-                    BooksActionCard(
-                        title: "Finished this book",
-                        message: "Move the current book to reading history.",
-                        buttonTitle: "Mark Read",
-                        systemImage: "checkmark.seal.fill",
-                        isDisabled: false
-                    ) {
-                        showingCompleteConfirmation = true
-                    }
-                    BooksActionCard(
-                        title: "Not reading this yet",
-                        message: "Return the current book to proposals without marking it read.",
-                        buttonTitle: "Move Back to Proposals",
-                        systemImage: "tray.full.fill",
-                        isDisabled: false
-                    ) {
-                        showingMoveCurrentToProposalsConfirmation = true
                     }
                 } else {
                     InlineEmptyState(
@@ -430,39 +414,85 @@ private struct BooksTabRow: View {
 
 private struct CurrentSubmissionRow: View {
     @Bindable var submission: BookSubmission
+    let onMarkRead: () -> Void
+    let onMoveBack: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
-            BookCoverTile(
-                title: submission.displayTitle,
-                author: submission.displayAuthor,
-                coverURL: submission.coverImageURL,
-                width: 72,
-                height: 98
-            )
+        VStack(alignment: .leading, spacing: 10) {
+            NavigationLink(value: submission) {
+                HStack(spacing: 14) {
+                    BookCoverTile(
+                        title: submission.displayTitle,
+                        author: submission.displayAuthor,
+                        coverURL: submission.coverImageURL,
+                        width: 72,
+                        height: 98
+                    )
 
-            VStack(alignment: .leading, spacing: 7) {
-                StatusPill(status: .current)
-                Text(submission.displayTitle)
-                    .font(.headline.bold())
-                    .foregroundStyle(BookLoomStyle.ink)
-                    .lineLimit(2)
-                if !submission.displayAuthor.isEmpty {
-                    Text(submission.displayAuthor)
-                        .font(.subheadline)
+                    VStack(alignment: .leading, spacing: 7) {
+                        StatusPill(status: .current)
+                        Text(submission.displayTitle)
+                            .font(.headline.bold())
+                            .foregroundStyle(BookLoomStyle.ink)
+                            .lineLimit(2)
+                        if !submission.displayAuthor.isEmpty {
+                            Text(submission.displayAuthor)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        HStack(spacing: 12) {
+                            Label(submission.ratingSummary.displayValue, systemImage: "star.fill")
+                            Label("\((submission.notes ?? []).count) notes", systemImage: "note.text")
+                        }
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
                 }
-                HStack(spacing: 12) {
-                    Label(submission.ratingSummary.displayValue, systemImage: "star.fill")
-                    Label("\((submission.notes ?? []).count) notes", systemImage: "note.text")
-                }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
+
+            HStack(spacing: 8) {
+                CurrentActionButton(
+                    title: "Mark Read",
+                    systemImage: "checkmark.seal.fill",
+                    tint: BookLoomStyle.sage,
+                    prominent: true,
+                    action: onMarkRead
+                )
+                CurrentActionButton(
+                    title: "Move Back",
+                    systemImage: "tray.full.fill",
+                    tint: BookLoomStyle.plum,
+                    prominent: false,
+                    action: onMoveBack
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .bookLoomCard(padding: 12)
+    }
+}
+
+private struct CurrentActionButton: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    let prominent: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.footnote.weight(.semibold))
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 40)
+                .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
+                .foregroundStyle(prominent ? Color.white : tint)
+        }
+        .buttonStyle(.plain)
     }
 }
 
