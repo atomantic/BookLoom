@@ -28,6 +28,7 @@ private struct MainTabs: View {
     @State private var pollsPath = NavigationPath()
     @State private var schedulePath = NavigationPath()
     @State private var discussionsPath = NavigationPath()
+    @State private var pendingImport: PendingGoodreadsImport?
     private let sharedSyncTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -75,6 +76,7 @@ private struct MainTabs: View {
         .task {
             activeClubStore.reconcileWithVisibleClubs(visibleClubs)
             await refreshSharedClubs()
+            consumePendingImport()
             guard let route = AppLaunchOptions.screenshotRoute else { return }
             try? await Task.sleep(nanoseconds: 350_000_000)
             navigateToScreenshotRoute(route)
@@ -82,16 +84,57 @@ private struct MainTabs: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task { await refreshSharedClubs() }
+            consumePendingImport()
         }
         .onReceive(sharedSyncTimer) { _ in
             guard scenePhase == .active else { return }
             Task { await refreshSharedClubs() }
         }
         .onOpenURL { url in
-            guard url.scheme == "bookloom", url.host() == "screenshot" else { return }
+            handleIncomingURL(url)
+        }
+        .sheet(item: $pendingImport) { item in
+            GoodreadsImportSheet(
+                goodreadsURL: item.url,
+                clubs: visibleClubs,
+                initiallyActiveClub: activeClubStore.resolveActiveClub(from: visibleClubs)
+            ) {
+                pendingImport = nil
+            }
+        }
+    }
+
+    private func handleIncomingURL(_ url: URL) {
+        guard url.scheme == "bookloom" else { return }
+        switch url.host() {
+        case "screenshot":
             let route = url.pathComponents.filter { $0 != "/" }.first ?? "books"
             navigateToScreenshotRoute(route)
+        case "import":
+            handleImportURL(url)
+        default:
+            break
         }
+    }
+
+    private func handleImportURL(_ url: URL) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let raw = components.queryItems?.first(where: { $0.name == "url" })?.value,
+              let goodreadsURL = URL(string: raw),
+              let canonical = GoodreadsLinkExtractor.extract(from: goodreadsURL) else {
+            return
+        }
+        selectedTab = .books
+        pendingImport = PendingGoodreadsImport(url: canonical)
+    }
+
+    private func consumePendingImport() {
+        guard let pending = SharedImportInbox.consumePendingGoodreadsURL(),
+              let canonical = GoodreadsLinkExtractor.extract(from: pending) else {
+            return
+        }
+        selectedTab = .books
+        pendingImport = PendingGoodreadsImport(url: canonical)
     }
 
     private var visibleClubs: [BookClub] {
@@ -147,6 +190,11 @@ private struct MainTabs: View {
             selectedTab = .books
         }
     }
+}
+
+private struct PendingGoodreadsImport: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
 }
 
 private enum MainTab: Hashable {

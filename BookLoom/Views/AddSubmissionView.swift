@@ -1,5 +1,10 @@
 import SwiftUI
 import SwiftData
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 struct AddSubmissionView: View {
     @Environment(\.modelContext) private var context
@@ -51,13 +56,26 @@ struct AddSubmissionView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(BookLoomStyle.ink)
 
-                    TextField("https://www.goodreads.com/book/show/...", text: $goodreadsURL)
-                        .textFieldStyle(.roundedBorder)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        #endif
+                    HStack(spacing: 8) {
+                        TextField("Paste Goodreads share link", text: $goodreadsURL, prompt: Text("Paste Goodreads share link").foregroundStyle(.tertiary))
+                            .textFieldStyle(.roundedBorder)
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.URL)
+                            .autocorrectionDisabled()
+                            #endif
+
+                        Button {
+                            pasteGoodreadsURL()
+                        } label: {
+                            Label("Paste", systemImage: "doc.on.clipboard")
+                                .labelStyle(.iconOnly)
+                                .frame(width: 28, height: 22)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                        .accessibilityLabel("Paste Goodreads link from clipboard")
+                    }
 
                     Button {
                         Task { await importFromGoodreads() }
@@ -222,6 +240,25 @@ struct AddSubmissionView: View {
         } catch {
             goodreadsError = error.localizedDescription
         }
+    }
+
+    private func pasteGoodreadsURL() {
+        guard let pasted = Self.clipboardString()?.trimmed, !pasted.isEmpty else { return }
+        goodreadsURL = pasted
+        goodreadsError = nil
+        if URL(string: pasted) != nil {
+            Task { await importFromGoodreads() }
+        }
+    }
+
+    private static func clipboardString() -> String? {
+        #if os(iOS)
+        UIPasteboard.general.string
+        #elseif os(macOS)
+        NSPasteboard.general.string(forType: .string)
+        #else
+        nil
+        #endif
     }
 }
 

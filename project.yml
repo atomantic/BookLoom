@@ -11,7 +11,7 @@ settings:
   base:
     DEVELOPMENT_TEAM: TYQ32QCF6K
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: 15
+    CURRENT_PROJECT_VERSION: 20
     SWIFT_VERSION: "6.0"
     DEAD_CODE_STRIPPING: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -22,6 +22,7 @@ schemes:
     build:
       targets:
         BookLoom_iOS: all
+        BookLoomShareExtension: all
     run:
       config: Debug
     test:
@@ -58,6 +59,7 @@ targets:
     platform: [iOS, macOS]
     sources:
       - BookLoom
+      - Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom
@@ -109,6 +111,13 @@ targets:
           - iCloud.net.shadowpuppet.PlotLoom
         com.apple.developer.icloud-services:
           - CloudKit
+        com.apple.security.application-groups:
+          - group.net.shadowpuppet.PlotLoom
+    dependencies:
+      - target: BookLoomShareExtension
+        embed: true
+        codeSign: true
+        platforms: [iOS]
 
   BookLoomTests_iOS:
     type: bundle.unit-test
@@ -145,3 +154,20 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.BookLoom.tests
         GENERATE_INFOPLIST_FILE: YES
+
+  BookLoomShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - BookLoomShareExtension
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.PlotLoom.ShareExtension
+        DEVELOPMENT_TEAM: TYQ32QCF6K
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: BookLoomShareExtension/BookLoomShareExtension.entitlements
+        INFOPLIST_FILE: BookLoomShareExtension/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: BookLoom
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        SKIP_INSTALL: YES
