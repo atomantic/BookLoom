@@ -36,6 +36,13 @@ struct ClubScopedScaffold<Content: View>: View {
                         ToolbarItem(placement: clubSwitcherPlacement) {
                             ClubSwitcherButton(club: club, action: { showingSwitcher = true })
                         }
+                        ToolbarItem(placement: .secondaryAction) {
+                            NavigationLink {
+                                ClubManagementView(club: club)
+                            } label: {
+                                Label("Manage Club", systemImage: "gearshape.fill")
+                            }
+                        }
                     }
             } else {
                 NoActiveClubView(onCreateClub: {

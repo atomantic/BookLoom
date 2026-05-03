@@ -21,7 +21,6 @@ private struct BooksTabContent: View {
     @ObservedObject private var syncStatus = SharedClubSyncStatus.shared
     @Query(sort: \BookSubmission.submittedAt) private var submissions: [BookSubmission]
 
-    @State private var activeSheet: BooksTabSheet?
     @State private var showingPickConfirmation: Bool = false
     @State private var showingManualPickDialog: Bool = false
     @State private var showingCompleteConfirmation: Bool = false
@@ -186,28 +185,6 @@ private struct BooksTabContent: View {
                 }
                 .disabled(displayedSections.proposed.isEmpty)
             }
-            ToolbarItem(placement: .secondaryAction) {
-                NavigationLink {
-                    ClubMembersView(club: club)
-                } label: {
-                    Label("Members", systemImage: "person.2.fill")
-                }
-            }
-            if club.isOwner {
-                ToolbarItem(placement: .secondaryAction) {
-                    Button {
-                        activeSheet = .invite
-                    } label: {
-                        Label("Invite Members", systemImage: "person.crop.circle.badge.plus")
-                    }
-                }
-            }
-        }
-        .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .invite:
-                InviteView(club: club)
-            }
         }
         .confirmationDialog(
             "Pick the next book?",
@@ -363,16 +340,6 @@ private struct BooksTabContent: View {
             )
         } catch {
             assertionFailure("Failed to save club changes: \(error.localizedDescription)")
-        }
-    }
-}
-
-private enum BooksTabSheet: Identifiable {
-    case invite
-
-    var id: Int {
-        switch self {
-        case .invite: 0
         }
     }
 }
