@@ -5,18 +5,16 @@ enum AppLaunchOptions {
     static let seedSampleDataArgument = "-SeedSampleData"
     static let screenshotRouteArgument = "-screenshotRoute"
 
-    static var isSampleDataEnabled: Bool {
-        ProcessInfo.processInfo.arguments.contains(seedSampleDataArgument)
-    }
+    static let isSampleDataEnabled: Bool = ProcessInfo.processInfo.arguments.contains(seedSampleDataArgument)
 
-    static var screenshotRoute: String? {
+    static let screenshotRoute: String? = {
         let args = ProcessInfo.processInfo.arguments
         guard let index = args.firstIndex(of: screenshotRouteArgument),
               index + 1 < args.count else {
             return nil
         }
         return args[index + 1]
-    }
+    }()
 }
 
 enum ScreenshotSampleData {
@@ -29,6 +27,8 @@ enum ScreenshotSampleData {
     }
 
     static func populate(context: ModelContext) {
+        seedBundledCovers()
+
         let calendar = Calendar.current
         let club = BookClub(
             name: "Riverside Reading Circle",
@@ -278,6 +278,28 @@ enum ScreenshotSampleData {
     private static func addRSVP(memberID: String, memberName: String, status: MeetingRSVPStatus, note: String, to meeting: ClubMeeting, context: ModelContext) {
         let rsvp = meeting.upsertRSVP(memberID: memberID, memberName: memberName, status: status, bringingNote: note)
         context.insert(rsvp)
+    }
+
+    private static let bundledCoverNames: [Int: String] = [
+        10226290: "piranesi",
+        15143022: "dungeon_crawler_carl",
+        284259: "accelerando",
+        11200092: "project_hail_mary",
+        12859975: "tomorrow",
+        10201431: "thursday_murder_club",
+        10648686: "klara_and_the_sun"
+    ]
+
+    private static func seedBundledCovers() {
+        let mappings: [(url: URL, data: Data)] = bundledCoverNames.compactMap { coverID, resourceName in
+            guard let url = BookMetadataProvider.openLibraryCoverURL(coverID: coverID),
+                  let path = Bundle.main.path(forResource: resourceName, ofType: "jpg"),
+                  let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+                return nil
+            }
+            return (url, data)
+        }
+        BookCoverCache.seedSync(mappings)
     }
 
     private static func addPoll(to club: BookClub, proposals: [BookSubmission], context: ModelContext) {

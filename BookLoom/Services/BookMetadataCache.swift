@@ -1,6 +1,12 @@
 import CryptoKit
 import Foundation
 
+private func sha256Hex(_ value: String) -> String {
+    SHA256.hash(data: Data(value.utf8))
+        .map { String(format: "%02x", $0) }
+        .joined()
+}
+
 actor BookMetadataCache {
     static let shared = BookMetadataCache()
 
@@ -49,7 +55,7 @@ actor BookMetadataCache {
 
     private func searchURL(title: String, author: String) -> URL {
         let key = ["search", normalized(title), normalized(author)].joined(separator: "|")
-        return rootURL.appendingPathComponent("\(hash(key)).json", isDirectory: false)
+        return rootURL.appendingPathComponent("\(sha256Hex(key)).json", isDirectory: false)
     }
 
     private func normalized(_ value: String) -> String {
@@ -58,12 +64,6 @@ actor BookMetadataCache {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
-    }
-
-    private func hash(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
     }
 }
 
@@ -76,14 +76,11 @@ actor BookCoverCache {
 
     init(rootURL: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        let baseURL = rootURL
-            ?? fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? fileManager.temporaryDirectory
-        self.rootURL = baseURL.appendingPathComponent("BookCoverCache", isDirectory: true)
+        self.rootURL = Self.defaultRootURL(rootURL: rootURL, fileManager: fileManager)
     }
 
     func cachedData(for url: URL) -> Data? {
-        guard let data = try? Data(contentsOf: coverURL(for: url)),
+        guard let data = try? Data(contentsOf: Self.cacheFileURL(for: url, in: rootURL)),
               data.count <= maxCoverBytes else {
             return nil
         }
@@ -103,7 +100,7 @@ actor BookCoverCache {
         }
 
         try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
-        try? data.write(to: coverURL(for: url), options: [.atomic])
+        try? data.write(to: Self.cacheFileURL(for: url, in: rootURL), options: [.atomic])
         return data
     }
 
@@ -111,13 +108,26 @@ actor BookCoverCache {
         try? fileManager.removeItem(at: rootURL)
     }
 
-    private func coverURL(for url: URL) -> URL {
-        rootURL.appendingPathComponent("\(hash(url.absoluteString)).data", isDirectory: false)
+    /// Seed the on-disk cache synchronously. MUST be called before any
+    /// `BookCoverCache.shared` access — there is no internal locking, so callers
+    /// rely on a happens-before ordering with the first actor read.
+    nonisolated static func seedSync(_ mappings: [(url: URL, data: Data)], fileManager: FileManager = .default) {
+        let rootURL = defaultRootURL(rootURL: nil, fileManager: fileManager)
+        try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        for (url, data) in mappings {
+            let fileURL = cacheFileURL(for: url, in: rootURL)
+            try? data.write(to: fileURL, options: [.atomic])
+        }
     }
 
-    private func hash(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
+    private static func defaultRootURL(rootURL: URL?, fileManager: FileManager) -> URL {
+        let baseURL = rootURL
+            ?? fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        return baseURL.appendingPathComponent("BookCoverCache", isDirectory: true)
+    }
+
+    private static func cacheFileURL(for url: URL, in rootURL: URL) -> URL {
+        rootURL.appendingPathComponent("\(sha256Hex(url.absoluteString)).data", isDirectory: false)
     }
 }

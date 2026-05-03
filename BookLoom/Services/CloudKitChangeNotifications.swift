@@ -32,7 +32,7 @@ enum CloudKitChangeNotifications {
     private static let didSaveSharedSubscriptionKey = "net.shadowpuppet.BookLoom.didSaveSharedMemberSubscription.v3"
 
     static func configureIfNeeded() async {
-        guard Features.cloudKitSharing, !AppLaunchOptions.isSampleDataEnabled, !isRunningTests else { return }
+        guard Features.cloudKitSharing else { return }
         registerForRemoteNotifications()
 
         let container = CKContainer(identifier: containerID)
@@ -90,9 +90,5 @@ enum CloudKitChangeNotifications {
         #elseif os(macOS)
         NSApplication.shared.registerForRemoteNotifications(matching: [])
         #endif
-    }
-
-    private static var isRunningTests: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 }

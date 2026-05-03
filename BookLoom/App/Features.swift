@@ -22,5 +22,11 @@ enum Features {
     ///   3. Re-archive (automatic signing refreshes the provisioning profile
     ///      with the new entitlement).
     ///   4. Smoke-test in TestFlight on two different Apple IDs.
-    static let cloudKitSharing: Bool = true
+    /// Disabled in screenshot / XCTest contexts so `CKContainer(identifier:)` never
+    /// traps when entitlements aren't satisfied by the test runner.
+    static var cloudKitSharing: Bool {
+        !AppLaunchOptions.isSampleDataEnabled && !isRunningTests
+    }
+
+    static let isRunningTests: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 }

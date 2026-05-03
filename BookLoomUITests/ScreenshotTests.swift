@@ -87,7 +87,13 @@ final class ScreenshotTests: XCTestCase {
         guard shouldCapture(name) else { return }
         launch(route: "clubHome")
         waitForText("Proposed")
-        app.swipeUp()
+
+        let lastProposal = app.staticTexts["Tomorrow, and Tomorrow, and Tomorrow"]
+        var attempts = 0
+        while !lastProposal.isHittable && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
         sleep(1)
         saveScreenshot(name)
     }
