@@ -168,6 +168,10 @@ enum ClubMemberCollector {
             }
         }
 
+        for (memberID, name) in club.knownMemberRoster {
+            insert(memberID: memberID, memberName: name, activity: 0)
+        }
+
         return members
             .map { ClubMemberDigest(id: $0.key, name: $0.value.name, activityCount: $0.value.activityCount) }
             .sorted {

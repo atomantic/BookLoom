@@ -28,6 +28,11 @@ final class BookClub {
     /// view refresh.
     var lastSharedSnapshotAt: Date? = nil
 
+    /// JSON-encoded `[memberID: name]` of every participant we've seen in a
+    /// member-share snapshot. Lets the Members view surface joined participants
+    /// before they have any club activity.
+    var knownMemberRosterJSON: String = "{}"
+
     @Relationship(deleteRule: .cascade, inverse: \BookSubmission.bookClub)
     var submissions: [BookSubmission]? = nil
 
@@ -70,5 +75,20 @@ final class BookClub {
         }
         selectionPolls = updatedPolls
         poll.bookClub = self
+    }
+
+    var knownMemberRoster: [String: String] {
+        get {
+            guard let data = knownMemberRosterJSON.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([String: String].self, from: data) else {
+                return [:]
+            }
+            return decoded
+        }
+        set {
+            guard let data = try? JSONEncoder().encode(newValue),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            knownMemberRosterJSON = json
+        }
     }
 }

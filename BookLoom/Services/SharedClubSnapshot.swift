@@ -601,6 +601,15 @@ enum MemberShareSnapshotStore {
         let latestCaptureAt = snapshots.map(\.capturedAt).max() ?? .now
         club.lastSharedSnapshotAt = latestCaptureAt
 
+        var roster = club.knownMemberRoster
+        for snap in snapshots {
+            let trimmedID = snap.authorMemberID.trimmedOrNil
+            let trimmedName = snap.authorName.trimmedOrNil
+            guard let id = trimmedID, let name = trimmedName else { continue }
+            roster[id] = name
+        }
+        club.knownMemberRoster = roster
+
         // Once a status override has appeared in a remote snapshot, we no
         // longer need to keep echoing it from local cache.
         let allOverrides = statusOverridesByID.values.flatMap { $0 }

@@ -7,11 +7,22 @@ enum BookLoomNotificationPreferences {
     static let discussionKey = BookLoomNotificationEvent.Kind.discussion.defaultsKey
 
     static func isEnabled(_ kind: BookLoomNotificationEvent.Kind) -> Bool {
-        UserDefaults.standard.bool(forKey: kind.defaultsKey)
+        let defaults = UserDefaults.standard
+        // Default ON for fresh installs — onboarding requests system
+        // authorization, and Settings lets the user opt out per-kind.
+        guard defaults.object(forKey: kind.defaultsKey) != nil else { return true }
+        return defaults.bool(forKey: kind.defaultsKey)
     }
 
     static var anyEnabled: Bool {
         BookLoomNotificationEvent.Kind.allCases.contains { isEnabled($0) }
+    }
+
+    static func writeAll(enabled: Bool) {
+        let defaults = UserDefaults.standard
+        for kind in BookLoomNotificationEvent.Kind.allCases {
+            defaults.set(enabled, forKey: kind.defaultsKey)
+        }
     }
 }
 

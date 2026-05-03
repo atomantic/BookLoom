@@ -6,9 +6,9 @@ struct SettingsView: View {
     @Environment(MemberIdentity.self) private var memberIdentity
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
     @AppStorage(WelcomeReplay.storageKey) private var replayWelcome = false
-    @AppStorage(BookLoomNotificationPreferences.proposalKey) private var proposalNotifications = false
-    @AppStorage(BookLoomNotificationPreferences.selectionKey) private var selectionNotifications = false
-    @AppStorage(BookLoomNotificationPreferences.discussionKey) private var discussionNotifications = false
+    @AppStorage(BookLoomNotificationPreferences.proposalKey) private var proposalNotifications = true
+    @AppStorage(BookLoomNotificationPreferences.selectionKey) private var selectionNotifications = true
+    @AppStorage(BookLoomNotificationPreferences.discussionKey) private var discussionNotifications = true
     @State private var draftName: String = ""
     @State private var nameSaved: Bool = false
     @State private var showingResetConfirmation: Bool = false

@@ -5,17 +5,16 @@ struct BookClubHomeView: View {
     @Environment(\.modelContext) private var context
     @Environment(MemberIdentity.self) private var memberIdentity
     @Bindable var club: BookClub
+    @ObservedObject private var syncStatus = SharedClubSyncStatus.shared
     @Query(sort: \BookSubmission.submittedAt) private var submissions: [BookSubmission]
     @Query(sort: \ClubMeeting.scheduledAt) private var meetings: [ClubMeeting]
     @Query(sort: \SelectionPoll.createdAt, order: .reverse) private var polls: [SelectionPoll]
 
-    @State private var showingInvite: Bool = false
+    @State private var activeSheet: BookClubSheet?
     @State private var showingPickConfirmation: Bool = false
     @State private var showingManualPickDialog: Bool = false
     @State private var showingCompleteConfirmation: Bool = false
     @State private var showingMoveCurrentToProposalsConfirmation: Bool = false
-    @State private var showingMeetingForm: Bool = false
-    @State private var showingPollForm: Bool = false
 
     var body: some View {
         let displayedSections = sections
@@ -26,6 +25,13 @@ struct BookClubHomeView: View {
             Section {
                 ClubHomeHeader(club: club, sections: displayedSections)
                     .bookLoomListRow(top: 6, bottom: 8)
+            }
+
+            if let syncError = syncStatus.errorMessage(for: club) {
+                Section {
+                    SyncErrorBanner(message: syncError)
+                        .bookLoomListRow(top: 4, bottom: 8)
+                }
             }
 
             Section {
@@ -100,7 +106,7 @@ struct BookClubHomeView: View {
                         systemImage: "calendar.badge.plus",
                         isDisabled: displayedSections.current == nil
                     ) {
-                        showingMeetingForm = true
+                        activeSheet = .meeting
                     }
                 } else {
                     ForEach(upcoming.prefix(2)) { meeting in
@@ -116,7 +122,7 @@ struct BookClubHomeView: View {
                         systemImage: "calendar.badge.plus",
                         isDisabled: displayedSections.current == nil
                     ) {
-                        showingMeetingForm = true
+                        activeSheet = .meeting
                     }
                 }
             } header: {
@@ -133,7 +139,7 @@ struct BookClubHomeView: View {
                         systemImage: "list.number",
                         isDisabled: displayedSections.proposed.count < 2
                     ) {
-                        showingPollForm = true
+                        activeSheet = .poll
                     }
                 } else {
                     ForEach(recentPolls.prefix(2)) { poll in
@@ -149,7 +155,7 @@ struct BookClubHomeView: View {
                         systemImage: "list.number",
                         isDisabled: displayedSections.proposed.count < 2
                     ) {
-                        showingPollForm = true
+                        activeSheet = .poll
                     }
                 }
             } header: {
@@ -280,21 +286,22 @@ struct BookClubHomeView: View {
             if club.isOwner {
                 ToolbarItem(placement: .secondaryAction) {
                     Button {
-                        showingInvite = true
+                        activeSheet = .invite
                     } label: {
                         Label("Invite Members", systemImage: "person.crop.circle.badge.plus")
                     }
                 }
             }
         }
-        .sheet(isPresented: $showingInvite) {
-            InviteView(club: club)
-        }
-        .sheet(isPresented: $showingMeetingForm) {
-            ScheduleMeetingView(club: club, currentSubmission: displayedSections.current)
-        }
-        .sheet(isPresented: $showingPollForm) {
-            StartPollView(club: club, candidates: displayedSections.proposed)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .invite:
+                InviteView(club: club)
+            case .meeting:
+                ScheduleMeetingView(club: club, currentSubmission: displayedSections.current)
+            case .poll:
+                StartPollView(club: club, candidates: displayedSections.proposed)
+            }
         }
         .confirmationDialog(
             "Pick the next book?",
@@ -647,5 +654,42 @@ private struct ClubHomeHeader: View {
         return club.shareIsActive
             ? ("Sharing enabled", "icloud.fill")
             : ("Owner", "person.crop.circle.fill")
+    }
+}
+
+private struct SyncErrorBanner: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("CloudKit sync error")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BookLoomStyle.ink)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .bookLoomCard(padding: 10)
+    }
+}
+
+private enum BookClubSheet: Identifiable {
+    case invite
+    case meeting
+    case poll
+
+    var id: Int {
+        switch self {
+        case .invite: 0
+        case .meeting: 1
+        case .poll: 2
+        }
     }
 }

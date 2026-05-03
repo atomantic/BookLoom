@@ -3,6 +3,30 @@ import Foundation
 import os
 import SwiftData
 
+/// Tracks the most recent CloudKit sync failure per club zone so the UI can
+/// surface it to the user. CloudKit publish/fetch failures used to vanish into
+/// `os_log` only.
+@MainActor
+final class SharedClubSyncStatus: ObservableObject {
+    static let shared = SharedClubSyncStatus()
+
+    @Published private(set) var lastErrorByZone: [String: String] = [:]
+
+    private init() {}
+
+    func recordFailure(zoneName: String, message: String) {
+        lastErrorByZone[zoneName] = message
+    }
+
+    func clearFailure(zoneName: String) {
+        lastErrorByZone[zoneName] = nil
+    }
+
+    func errorMessage(for club: BookClub) -> String? {
+        lastErrorByZone[club.cloudZoneName]
+    }
+}
+
 @MainActor
 enum SharedClubSync {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "SharedClubSync")
@@ -50,9 +74,12 @@ enum SharedClubSync {
                 club.lastSharedSnapshotAt = snapshot.capturedAt
                 try? context.save()
                 try await CloudKitSharingService.shared.publishMemberSnapshot(snapshot, for: club, localMemberID: localMemberID)
+                SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
                 logger.info("Published member snapshot for \(club.name, privacy: .public) by \(localMemberName, privacy: .public)")
             } catch {
-                logger.error("Member snapshot publish failed: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+                let description = CloudKitErrorDescriber.describe(error)
+                SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, message: "Publish failed: \(description)")
+                logger.error("Member snapshot publish failed: \(description, privacy: .public)")
             }
         }
     }
@@ -76,10 +103,13 @@ enum SharedClubSync {
                 context.delete(club)
                 try? context.save()
             } else {
-                logger.error("Member snapshot refresh failed: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+                let description = CloudKitErrorDescriber.describe(error)
+                SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, message: "Refresh failed: \(description)")
+                logger.error("Member snapshot refresh failed: \(description, privacy: .public)")
             }
             return
         }
+        SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
 
         do {
             // Always include the local member's freshly-built snapshot in the

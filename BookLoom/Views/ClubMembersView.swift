@@ -11,8 +11,6 @@ struct ClubMembersView: View {
 
         List {
             Section {
-                MemberCountOverview(club: club)
-
                 if members.isEmpty && unnamedCount == 0 {
                     InlineEmptyState(
                         systemImage: "person.2.fill",
@@ -92,25 +90,6 @@ private struct MembersIconRow: View {
     }
 }
 
-private struct MemberCountOverview: View {
-    let club: BookClub
-
-    var body: some View {
-        MembersIconRow(
-            icon: "person.2.fill",
-            iconTint: BookLoomStyle.sage,
-            iconWeighted: true,
-            title: memberCountLabel,
-            subtitle: club.isOwner ? "Owner" : "Shared member",
-            subtitleWeighted: true
-        )
-    }
-
-    private var memberCountLabel: String {
-        club.displayedMemberCount == 1 ? "1 accepted member" : "\(club.displayedMemberCount) accepted members"
-    }
-}
-
 private struct ClubMemberRow: View {
     let member: ClubMemberDigest
 
@@ -126,7 +105,11 @@ private struct ClubMemberRow: View {
     }
 
     private var activityLabel: String {
-        member.activityCount == 1 ? "1 club activity" : "\(member.activityCount) club activities"
+        switch member.activityCount {
+        case 0: return "Joined"
+        case 1: return "1 club activity"
+        default: return "\(member.activityCount) club activities"
+        }
     }
 }
 
