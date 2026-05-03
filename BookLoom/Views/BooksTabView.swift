@@ -22,7 +22,6 @@ private struct BooksTabContent: View {
     @Query(sort: \BookSubmission.submittedAt) private var submissions: [BookSubmission]
 
     @State private var showingPickConfirmation: Bool = false
-    @State private var showingManualPickDialog: Bool = false
     @State private var showingCompleteConfirmation: Bool = false
     @State private var showingMoveCurrentToProposalsConfirmation: Bool = false
 
@@ -78,25 +77,21 @@ private struct BooksTabContent: View {
             .bookLoomListRow()
 
             Section {
+                ProposedActionBar(
+                    club: club,
+                    canPickRandom: !displayedSections.proposed.isEmpty,
+                    onPickRandom: { showingPickConfirmation = true }
+                )
+                .bookLoomListRow(top: 4, bottom: 6)
+
                 if displayedSections.proposed.isEmpty {
                     InlineEmptyState(
                         systemImage: "tray.full",
                         title: "No Proposals",
-                        message: "Add a book to build the next pick list."
+                        message: "Tap Add Book to build the next pick list."
                     )
+                    .bookLoomListRow()
                 } else {
-                    BooksActionCard(
-                        title: "Choose current book",
-                        message: displayedSections.current == nil
-                            ? "Set one proposal as the club's current read."
-                            : "Set one proposal as current and move the existing current book to reading history.",
-                        buttonTitle: "Choose Book",
-                        systemImage: "book.closed.fill",
-                        isDisabled: false
-                    ) {
-                        showingManualPickDialog = true
-                    }
-
                     ForEach(displayedSections.proposed) { submission in
                         NavigationLink(value: submission) {
                             BooksTabRow(submission: submission)
@@ -118,7 +113,6 @@ private struct BooksTabContent: View {
             } header: {
                 SectionTitle(title: "Proposed", detail: "\(displayedSections.proposed.count)")
             }
-            .bookLoomListRow()
 
             if !displayedSections.completed.isEmpty {
                 Section {
@@ -155,21 +149,6 @@ private struct BooksTabContent: View {
                     }
                 }
             }
-            ToolbarItem {
-                NavigationLink {
-                    AddSubmissionView(club: club)
-                } label: {
-                    Label("Add Book", systemImage: "plus")
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingPickConfirmation = true
-                } label: {
-                    Label("Pick Random", systemImage: "shuffle")
-                }
-                .disabled(displayedSections.proposed.isEmpty)
-            }
         }
         .confirmationDialog(
             "Pick the next book?",
@@ -185,24 +164,6 @@ private struct BooksTabContent: View {
                 Text("This will mark the current book as completed and pick a random proposal as the next read.")
             } else {
                 Text("This will pick a random proposal as the current read.")
-            }
-        }
-        .confirmationDialog(
-            "Choose the current book",
-            isPresented: $showingManualPickDialog,
-            titleVisibility: .visible
-        ) {
-            ForEach(sections.proposed) { submission in
-                Button(submission.displayTitle) {
-                    assignCurrent(submission)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if sections.current != nil {
-                Text("The current book will move to reading history.")
-            } else {
-                Text("Select a proposal to set as the club's current read.")
             }
         }
         .confirmationDialog(
@@ -496,31 +457,41 @@ private struct CurrentActionButton: View {
     }
 }
 
-private struct BooksActionCard: View {
-    let title: String
-    let message: String
-    let buttonTitle: String
-    let systemImage: String
-    let isDisabled: Bool
-    let action: () -> Void
+private struct ProposedActionBar: View {
+    let club: BookClub
+    let canPickRandom: Bool
+    let onPickRandom: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(BookLoomStyle.ink)
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button(action: action) {
-                Label(buttonTitle, systemImage: systemImage)
-                    .frame(maxWidth: .infinity)
+        HStack(spacing: 8) {
+            NavigationLink {
+                AddSubmissionView(club: club)
+            } label: {
+                Label("Add Book", systemImage: "plus")
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .background(BookLoomStyle.indigo, in: Capsule())
+                    .foregroundStyle(Color.white)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isDisabled)
+            .buttonStyle(.plain)
+
+            Button(action: onPickRandom) {
+                Label("Pick Random", systemImage: "shuffle")
+                    .font(.footnote.weight(.semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .background(
+                        canPickRandom ? BookLoomStyle.plum.opacity(0.16) : Color.secondary.opacity(0.10),
+                        in: Capsule()
+                    )
+                    .foregroundStyle(canPickRandom ? BookLoomStyle.plum : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canPickRandom)
         }
-        .bookLoomCard(padding: 10)
     }
 }
 
