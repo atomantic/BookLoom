@@ -96,6 +96,17 @@
 - [x] Enter App Store Connect metadata for iOS/macOS
 - [x] App Store submission (previous iOS 1.0 and macOS 1.0 builds were submitted; next build should include the v1 club snapshot fix before release)
 
+## v1.x — Comparison-page gaps (from /vs/* SEO build, 2026-05-02)
+
+Discovered while building marketing comparison pages at `bookloom.shadowpuppet.net/vs/{bookclubs,goodreads,fable,storygraph}/`. Each item is something at least one competitor ships that BookLoom does not, and where the gap measurably weakens the "BookLoom can replace X" pitch. Recommendations, not commitments — `/vs/*` pages already ship today with these cells marked "Planned" or "—" honestly.
+
+- [ ] **Reading progress per member** (page or %) — Fable, StoryGraph, and Bookclubs all show this; without it our "currently reading" row is binary, which is the single biggest gap on the StoryGraph and Fable comparison pages. Smallest viable surface: a per-member progress slider (0/25/50/75/100 or page count) on the current submission, with optional CloudKit sync to the club share root.
+- [ ] **Calendar export (.ics)** for scheduled meetings — Bookclubs gates this behind their $60/yr Premium; shipping it free strengthens the Bookclubs comparison and removes a regular friction point ("did anyone actually add this to their calendar?"). One-tap "Add to Calendar" share sheet that emits an `.ics` payload from `ClubMeeting` fields.
+- [ ] **Threaded discussion on a book** (not just prompts) — Goodreads and Fable both ship this. Discussion Mode today is one-way (prompts surfaced for the meeting); a club may want async commentary between meetings. Could ride on top of the existing CKShare snapshot using a per-book comment thread.
+- [ ] **Manual cover image upload as fallback** (already in PLAN above; bumped here because every comparison cell hits "no cover for self-published / obscure books" if ISBN lookup misses).
+- [ ] **Export / import club history** (already in PLAN above; comparison pages explicitly call out "your data, exportable" as a BookLoom win — needs to actually exist before the messaging is honest).
+- [ ] **Audiobook / Kindle / e-reader compatibility note** — no integration needed; just messaging on the marketing site (and possibly an in-app onboarding line) that BookLoom is format-agnostic. Some of the comparison-table rows around progress assume page-count tracking, which excludes audiobook listeners; explicit "any format works" copy fixes that.
+
 ## Notes
 
 - Use existing Claudeception skills when implementing:
