@@ -354,21 +354,25 @@ enum MemberShareSnapshotStore {
         for sub in localSubmissions where sub.bookClub?.persistentModelID == clubID && !sub.selectionID.isEmpty {
             submissionsByID[sub.selectionID] = sub
         }
+        let preMergeSubmissions = Array(submissionsByID.values)
         let localPrompts = (try? context.fetch(FetchDescriptor<DiscussionPrompt>())) ?? []
         var promptsByID: [String: DiscussionPrompt] = [:]
         for prompt in localPrompts where prompt.submission?.bookClub?.persistentModelID == clubID && !prompt.promptID.isEmpty {
             promptsByID[prompt.promptID] = prompt
         }
+        let preMergePromptIDs = Set(promptsByID.keys)
         let localPolls = (try? context.fetch(FetchDescriptor<SelectionPoll>())) ?? []
         var pollsByID: [String: SelectionPoll] = [:]
         for poll in localPolls where poll.bookClub?.persistentModelID == clubID && !poll.pollID.isEmpty {
             pollsByID[poll.pollID] = poll
         }
+        let preMergePollIDs = Set(pollsByID.keys)
         let localMeetings = (try? context.fetch(FetchDescriptor<ClubMeeting>())) ?? []
         var meetingsByID: [String: ClubMeeting] = [:]
         for meeting in localMeetings where meeting.bookClub?.persistentModelID == clubID && !meeting.meetingID.isEmpty {
             meetingsByID[meeting.meetingID] = meeting
         }
+        let preMergeMeetingIDs = Set(meetingsByID.keys)
 
         // 3. Compute canonical sets from snapshots.
         var canonicalSubmissions: [String: MemberShareSnapshot.SubmissionPayload] = [:]
@@ -576,11 +580,17 @@ enum MemberShareSnapshotStore {
         if let baseline = club.lastSharedSnapshotAt {
             notificationEvents = BookLoomNotificationEvent.events(
                 clubName: club.name,
-                previousSubmissions: Array(submissionsByID.values),
+                previousSubmissions: preMergeSubmissions,
+                previousPromptIDs: preMergePromptIDs,
+                previousPollIDs: preMergePollIDs,
+                previousMeetingIDs: preMergeMeetingIDs,
                 canonicalSubmissions: Array(canonicalSubmissions.values),
                 canonicalStatusOverrides: statusOverridesByID.values.flatMap { $0 },
                 canonicalRatings: Array(ratingsByKey.values),
                 canonicalNotes: Array(notesByKey.values),
+                canonicalPrompts: Array(canonicalPrompts.values),
+                canonicalPolls: Array(canonicalPolls.values),
+                canonicalMeetings: Array(canonicalMeetings.values),
                 localMemberID: localMemberID,
                 sinceCapturedAt: baseline
             )

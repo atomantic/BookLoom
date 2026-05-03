@@ -15,68 +15,56 @@ struct SettingsView: View {
     @State private var isResetting: Bool = false
 
     var body: some View {
-        List {
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
                 SettingsHeader(name: memberIdentity.name)
-                    .bookLoomListRow(top: 6, bottom: 8)
-            }
+                    .frame(maxWidth: .infinity)
 
-            Section {
-                SettingsPreferencesCard(
-                    draftName: $draftName,
-                    appAppearanceRaw: $appAppearanceRaw,
-                    replayWelcome: $replayWelcome,
-                    nameSaved: nameSaved,
-                    saveDisabled: saveDisabled,
-                    onSaveName: saveName
-                )
-            } header: {
-                SectionTitle(title: "Preferences")
-            }
-            .bookLoomListRow()
-
-            Section {
-                NotificationPreferencesCard(
-                    proposalNotifications: $proposalNotifications,
-                    selectionNotifications: $selectionNotifications,
-                    discussionNotifications: $discussionNotifications
-                )
-            } header: {
-                SectionTitle(title: "Notifications")
-            }
-            .bookLoomListRow()
-
-            Section {
-                CloudKitStatusCard()
-            } header: {
-                SectionTitle(title: "Sync")
-            }
-            .bookLoomListRow()
-
-            Section {
-                DataResetCard(
-                    isResetting: isResetting,
-                    onTapReset: { showingResetConfirmation = true }
-                )
-            } header: {
-                SectionTitle(title: "Data")
-            }
-            .bookLoomListRow()
-
-            Section {
-                VStack(spacing: 8) {
-                    LabeledContent("Version", value: appVersionString)
-                    LabeledContent("Build", value: appBuildString)
+                SettingsSection("Preferences") {
+                    SettingsPreferencesCard(
+                        draftName: $draftName,
+                        appAppearanceRaw: $appAppearanceRaw,
+                        replayWelcome: $replayWelcome,
+                        nameSaved: nameSaved,
+                        saveDisabled: saveDisabled,
+                        onSaveName: saveName
+                    )
                 }
-                .font(.subheadline)
-                .bookLoomCard(padding: 12)
-            } header: {
-                SectionTitle(title: "About")
+
+                SettingsSection("Notifications") {
+                    NotificationPreferencesCard(
+                        proposalNotifications: $proposalNotifications,
+                        selectionNotifications: $selectionNotifications,
+                        discussionNotifications: $discussionNotifications
+                    )
+                }
+
+                SettingsSection("Sync") {
+                    CloudKitStatusCard()
+                }
+
+                SettingsSection("Data") {
+                    DataResetCard(
+                        isResetting: isResetting,
+                        onTapReset: { showingResetConfirmation = true }
+                    )
+                }
+
+                SettingsSection("About") {
+                    VStack(spacing: 8) {
+                        LabeledContent("Version", value: appVersionString)
+                        LabeledContent("Build", value: appBuildString)
+                    }
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .bookLoomCard(padding: 12)
+                }
             }
-            .bookLoomListRow()
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle("Settings")
         .confirmationDialog(
@@ -158,6 +146,25 @@ struct SettingsView: View {
     }
 }
 
+private struct SettingsSection<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionTitle(title: title)
+            content
+                .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct SettingsHeader: View {
     let name: String
 
@@ -176,6 +183,7 @@ private struct SettingsHeader: View {
             }
             Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .bookLoomCard(padding: 12)
     }
 }
@@ -226,6 +234,7 @@ private struct SettingsPreferencesCard: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
             }
 
             Divider()
@@ -238,6 +247,7 @@ private struct SettingsPreferencesCard: View {
             }
             .buttonStyle(.bordered)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .bookLoomCard(padding: 12)
     }
 }
@@ -253,10 +263,10 @@ private struct NotificationPreferencesCard: View {
                 Label("Book proposals", systemImage: "plus.circle")
             }
             Toggle(isOn: $selectionNotifications) {
-                Label("Current book picks", systemImage: "book.closed")
+                Label("Picks and polls", systemImage: "book.closed")
             }
             Toggle(isOn: $discussionNotifications) {
-                Label("Ratings and notes", systemImage: "text.bubble")
+                Label("Discussion, prompts, and meetings", systemImage: "text.bubble")
             }
 
             Text("Notifications are sent from this device after BookLoom receives shared iCloud updates.")
@@ -265,6 +275,7 @@ private struct NotificationPreferencesCard: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .font(.subheadline)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .bookLoomCard(padding: 12)
     }
 }
@@ -294,6 +305,7 @@ private struct DataResetCard: View {
             .tint(.red)
             .disabled(isResetting)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .bookLoomCard(padding: 12)
     }
 }
@@ -315,6 +327,7 @@ private struct CloudKitStatusCard: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .bookLoomCard(padding: 12)
     }
 }

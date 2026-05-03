@@ -28,9 +28,6 @@ struct MemberOnboardingView: View {
                         .padding(.top, 2)
                 }
 
-                OnboardingPrivacyNote()
-                    .frame(maxWidth: 420)
-
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Your Name")
                         .font(.headline)
@@ -71,22 +68,5 @@ struct MemberOnboardingView: View {
         guard let name = draftName.trimmedOrNil else { return }
         memberIdentity.name = name
         replayWelcome = false
-    }
-}
-
-private struct OnboardingPrivacyNote: View {
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "lock.icloud.fill")
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(BookLoomStyle.indigo)
-                .symbolRenderingMode(.hierarchical)
-
-            Text("BookLoom does not store club data on third-party servers. Clubs live in your private iCloud data or in shared iCloud data when a club owner invites members.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .bookLoomCard(padding: 10)
     }
 }

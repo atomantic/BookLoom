@@ -137,9 +137,8 @@ struct ClubsListView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                Label("No club needed until you create one or open an invite.", systemImage: "envelope.badge")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.secondary)
+                ClubDataPrivacyNote()
+                    .frame(maxWidth: 420)
             }
             .padding(18)
             .frame(maxWidth: 620)
@@ -163,6 +162,23 @@ struct ClubsListView: View {
             }
             try? context.save()
         }
+    }
+}
+
+private struct ClubDataPrivacyNote: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "lock.icloud.fill")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(BookLoomStyle.indigo)
+                .symbolRenderingMode(.hierarchical)
+
+            Text("BookLoom does not store club data on third-party servers. Clubs live in your private iCloud data or in shared iCloud data when a club owner invites members.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .bookLoomCard(padding: 10)
     }
 }
 

@@ -167,8 +167,8 @@ final class CloudKitSharingService {
         }
         let database = try database(for: club)
         let zoneID = try zoneID(for: club)
-        let rootRecord = try? await rootRecord(zoneID: zoneID, in: database)
-        if club.isOwner, let rootRecord {
+        let rootRecord = try await rootRecord(zoneID: zoneID, in: database)
+        if club.isOwner {
             applyClubMeta(to: rootRecord, club: club)
             try await saveRootRecord(rootRecord, in: database)
         }
@@ -179,9 +179,7 @@ final class CloudKitSharingService {
         } else {
             record = CKRecord(recordType: Self.memberSnapshotRecordType, recordID: recordID)
         }
-        if let rootRecord {
-            record.parent = CKRecord.Reference(record: rootRecord, action: .none)
-        }
+        record.parent = CKRecord.Reference(record: rootRecord, action: .none)
         try applyMemberSnapshot(snapshot, to: record)
         try await saveRootRecord(record, in: database)
     }

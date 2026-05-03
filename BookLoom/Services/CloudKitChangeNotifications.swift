@@ -26,31 +26,52 @@ final class CloudKitChangeInbox: ObservableObject {
 enum CloudKitChangeNotifications {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "CloudKitChangeNotifications")
     private static let containerID = "iCloud.net.shadowpuppet.PlotLoom"
+    private static let privateSubscriptionID = "bookloom-private-member-snapshot-changes"
     private static let sharedSubscriptionID = "bookloom-member-snapshot-changes"
-    private static let didSaveSharedSubscriptionKey = "net.shadowpuppet.BookLoom.didSaveSharedRootSubscription.v2"
-    private static let memberSnapshotRecordType = "MemberShareSnapshot"
+    private static let didSavePrivateSubscriptionKey = "net.shadowpuppet.BookLoom.didSavePrivateMemberSubscription.v3"
+    private static let didSaveSharedSubscriptionKey = "net.shadowpuppet.BookLoom.didSaveSharedMemberSubscription.v3"
 
     static func configureIfNeeded() async {
         guard Features.cloudKitSharing, !AppLaunchOptions.isSampleDataEnabled, !isRunningTests else { return }
         registerForRemoteNotifications()
 
-        guard !UserDefaults.standard.bool(forKey: didSaveSharedSubscriptionKey) else { return }
+        let container = CKContainer(identifier: containerID)
+        async let privateSave: Void = saveSubscriptionIfNeeded(
+            subscriptionID: privateSubscriptionID,
+            defaultsKey: didSavePrivateSubscriptionKey,
+            databaseName: "private",
+            database: container.privateCloudDatabase
+        )
+        async let sharedSave: Void = saveSubscriptionIfNeeded(
+            subscriptionID: sharedSubscriptionID,
+            defaultsKey: didSaveSharedSubscriptionKey,
+            databaseName: "shared",
+            database: container.sharedCloudDatabase
+        )
+        _ = await (privateSave, sharedSave)
+    }
 
-        let subscription = CKDatabaseSubscription(subscriptionID: sharedSubscriptionID)
-        subscription.recordType = memberSnapshotRecordType
+    private static func saveSubscriptionIfNeeded(
+        subscriptionID: String,
+        defaultsKey: String,
+        databaseName: String,
+        database: CKDatabase
+    ) async {
+        guard !UserDefaults.standard.bool(forKey: defaultsKey) else { return }
+
+        let subscription = CKDatabaseSubscription(subscriptionID: subscriptionID)
+        subscription.recordType = CloudKitSharingService.memberSnapshotRecordType
 
         let notificationInfo = CKSubscription.NotificationInfo()
         notificationInfo.shouldSendContentAvailable = true
         subscription.notificationInfo = notificationInfo
 
         do {
-            _ = try await CKContainer(identifier: containerID)
-                .sharedCloudDatabase
-                .modifySubscriptions(saving: [subscription], deleting: [])
-            UserDefaults.standard.set(true, forKey: didSaveSharedSubscriptionKey)
-            logger.info("Saved shared CloudKit change subscription")
+            _ = try await database.modifySubscriptions(saving: [subscription], deleting: [])
+            UserDefaults.standard.set(true, forKey: defaultsKey)
+            logger.info("Saved \(databaseName, privacy: .public) CloudKit member snapshot subscription")
         } catch {
-            logger.error("Failed to save shared CloudKit change subscription: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+            logger.error("Failed to save \(databaseName, privacy: .public) CloudKit member snapshot subscription: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
         }
     }
 

@@ -5,6 +5,10 @@ enum BookMetadataProvider: String, Sendable, Equatable, Hashable, Codable {
     case googleBooks = "Google Books"
 
     var displayName: String { rawValue }
+
+    static func openLibraryCoverURL(coverID: Int) -> URL? {
+        URL(string: "https://covers.openlibrary.org/b/id/\(coverID)-L.jpg?default=false")
+    }
 }
 
 struct BookMetadataCandidate: Identifiable, Equatable, Hashable, Codable, Sendable {
@@ -107,9 +111,7 @@ struct BookMetadataService: Sendable {
         let response: OpenLibrarySearchResponse = try await fetch(components.url!)
         return response.docs.compactMap { doc in
             guard let key = doc.key, let title = doc.title?.trimmedOrNil else { return nil }
-            let coverURL = doc.coverI.map {
-                URL(string: "https://covers.openlibrary.org/b/id/\($0)-L.jpg?default=false")
-            } ?? nil
+            let coverURL = doc.coverI.flatMap { BookMetadataProvider.openLibraryCoverURL(coverID: $0) }
             let workID = key.replacingOccurrences(of: "/works/", with: "")
             return BookMetadataCandidate(
                 provider: .openLibrary,
@@ -143,7 +145,7 @@ struct BookMetadataService: Sendable {
         let enriched = zip(head, details).map { candidate, detail in
             candidate.merging(
                 description: detail?.description?.cleanedBookDescription,
-                coverURL: detail?.covers?.first.flatMap { URL(string: "https://covers.openlibrary.org/b/id/\($0)-L.jpg?default=false") }
+                coverURL: detail?.covers?.first.flatMap { BookMetadataProvider.openLibraryCoverURL(coverID: $0) }
             )
         }
         return enriched + candidates.dropFirst(5)

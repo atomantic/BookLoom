@@ -42,10 +42,16 @@ struct BookLoomNotificationEvent {
     static func events(
         clubName: String,
         previousSubmissions: [BookSubmission],
+        previousPromptIDs: Set<String>,
+        previousPollIDs: Set<String>,
+        previousMeetingIDs: Set<String>,
         canonicalSubmissions: [MemberShareSnapshot.SubmissionPayload],
         canonicalStatusOverrides: [MemberShareSnapshot.StatusOverride],
         canonicalRatings: [MemberShareSnapshot.RatingPayload],
         canonicalNotes: [MemberShareSnapshot.NotePayload],
+        canonicalPrompts: [MemberShareSnapshot.PromptPayload],
+        canonicalPolls: [MemberShareSnapshot.PollPayload],
+        canonicalMeetings: [MemberShareSnapshot.MeetingPayload],
         localMemberID: String,
         sinceCapturedAt: Date?
     ) -> [BookLoomNotificationEvent] {
@@ -86,6 +92,30 @@ struct BookLoomNotificationEvent {
             )
         }
 
+        for poll in canonicalPolls
+        where !previousPollIDs.contains(poll.pollID) && poll.createdByMemberID != localMemberID {
+            let title = poll.title.trimmedOrNil ?? "A new pick poll"
+            events.append(
+                BookLoomNotificationEvent(
+                    kind: .selection,
+                    title: "New poll in \(clubName)",
+                    body: "\(title) is open for voting."
+                )
+            )
+        }
+
+        for meeting in canonicalMeetings
+        where !previousMeetingIDs.contains(meeting.meetingID) && meeting.hostMemberID != localMemberID {
+            let title = meeting.title.trimmedOrNil ?? "A meeting"
+            events.append(
+                BookLoomNotificationEvent(
+                    kind: .discussion,
+                    title: "Meeting scheduled in \(clubName)",
+                    body: "\(title) is on the calendar."
+                )
+            )
+        }
+
         let baselineDate = sinceCapturedAt ?? .distantPast
         let recentRatingsBySubmission = Dictionary(grouping: canonicalRatings.filter { $0.memberID != localMemberID && $0.createdAt > baselineDate }, by: \.submissionSelectionID)
         let recentNotesBySubmission = Dictionary(grouping: canonicalNotes.filter { $0.memberID != localMemberID && $0.createdAt > baselineDate }, by: \.submissionSelectionID)
@@ -98,6 +128,25 @@ struct BookLoomNotificationEvent {
                     kind: .discussion,
                     title: "New activity in \(clubName)",
                     body: "\(title) has new ratings or notes."
+                )
+            )
+        }
+
+        let newPrompts = canonicalPrompts.filter {
+            !previousPromptIDs.contains($0.promptID) && $0.createdByMemberID != localMemberID && !$0.createdByMemberID.isEmpty
+        }
+        if !newPrompts.isEmpty {
+            let body: String
+            if newPrompts.count == 1, let only = newPrompts.first?.question.trimmedOrNil {
+                body = only
+            } else {
+                body = "\(newPrompts.count) new discussion prompts were added."
+            }
+            events.append(
+                BookLoomNotificationEvent(
+                    kind: .discussion,
+                    title: "New prompt in \(clubName)",
+                    body: body
                 )
             )
         }

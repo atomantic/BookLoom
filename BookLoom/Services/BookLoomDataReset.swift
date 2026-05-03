@@ -21,7 +21,9 @@ enum BookLoomDataReset {
         "net.shadowpuppet.BookLoom.notifications.selection",
         "net.shadowpuppet.BookLoom.notifications.discussion",
         "net.shadowpuppet.BookLoom.didSaveSharedRootSubscription",
-        "net.shadowpuppet.BookLoom.didSaveSharedRootSubscription.v2"
+        "net.shadowpuppet.BookLoom.didSaveSharedRootSubscription.v2",
+        "net.shadowpuppet.BookLoom.didSavePrivateMemberSubscription.v3",
+        "net.shadowpuppet.BookLoom.didSaveSharedMemberSubscription.v3"
     ]
 
     /// Run the full reset. Best-effort throughout: a single failed step
