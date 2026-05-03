@@ -78,14 +78,14 @@ struct ClubManagementView: View {
                     Button {
                         showingInvite = true
                     } label: {
-                        Label(club.isOwner ? "Manage Sharing" : "Copy Invite Link", systemImage: "person.2.fill")
+                        Label("Invite Members", systemImage: "person.2.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
 
                     PermissionsHelpRow(
                         message: canManageAdmins
-                            ? "Toggle admin to grant a member the same management abilities you have. The club creator is always admin and cannot be demoted. Remove a member to drop their books, ratings, and notes from the club."
+                            ? "Toggle admin to grant a member the same management abilities you have. The club creator is always admin and cannot be demoted. Remove a member to drop their books, ratings, and notes from the club and revoke their iCloud access."
                             : "You're an admin: you can rename the club and share the invite link. Only the creator can promote other admins, remove members, or delete the club."
                     )
                 } else {
@@ -150,7 +150,7 @@ struct ClubManagementView: View {
                 Button("Cancel", role: .cancel) {}
             },
             message: { _ in
-                Text("Their books, ratings, notes, votes, and RSVPs will be cleared from the club for everyone. They keep their own iCloud share access — to fully revoke that, open Manage Sharing and remove them there.")
+                Text("Their books, ratings, notes, votes, and RSVPs will be cleared from the club for everyone, and their iCloud sharing access will be revoked.")
             }
         )
         .onAppear {

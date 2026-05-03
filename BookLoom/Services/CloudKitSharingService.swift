@@ -229,10 +229,11 @@ final class CloudKitSharingService {
     }
 
     /// Owner-side: delete a specific participant's `MemberShareSnapshot`
-    /// record from the shared zone. Their CKShare access remains, but their
-    /// content is gone for everyone and the owner's `removedMemberIDs` list
+    /// record from the shared zone AND revoke their CKShare access so removal
+    /// is a single atomic-feeling action from the user's perspective. Their
+    /// content is gone for everyone, the owner's `removedMemberIDs` list
     /// (synced via `ClubMeta`) prevents any re-published snapshot from being
-    /// applied.
+    /// applied, and they're dropped from the share's participant list.
     func removeMemberSnapshot(for club: BookClub, memberID: String) async throws {
         guard Features.cloudKitSharing else { return }
         guard club.isOwner else {
@@ -243,12 +244,55 @@ final class CloudKitSharingService {
         }
         let zoneID = try zoneID(for: club)
         let recordID = CKRecord.ID(recordName: Self.memberRecordPrefix + memberID, zoneID: zoneID)
-        // Best-effort: their record may already be gone if they leftShare.
+        // Capture the participant's CloudKit user identity from the snapshot
+        // record's system field BEFORE deletion, so we can revoke share access
+        // afterward. Best-effort — the record may already be gone if they
+        // leftShare on their device.
+        let participantUserRecordID = (try? await privateDB.record(for: recordID))?.creatorUserRecordID
         do {
             _ = try await privateDB.modifyRecords(saving: [], deleting: [recordID])
             Self.logger.info("✂️ Removed member snapshot \(memberID, privacy: .public) from \(club.cloudZoneName, privacy: .public)")
         } catch {
             Self.logger.warning("⚠️ Best-effort removeMemberSnapshot failed for \(memberID, privacy: .public): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+        }
+        if let participantUserRecordID {
+            await revokeShareParticipant(for: club, userRecordID: participantUserRecordID, memberID: memberID)
+        }
+    }
+
+    /// Best-effort revoke of a participant's CKShare access. Looks up the
+    /// share, removes the participant matching `userRecordID`, and saves.
+    /// Failures are logged but not thrown — the snapshot has already been
+    /// removed, so the member's content is gone either way; share-list cleanup
+    /// is the secondary effect.
+    private func revokeShareParticipant(for club: BookClub, userRecordID: CKRecord.ID, memberID: String) async {
+        guard let zoneID = try? zoneID(for: club) else { return }
+        let rootID = CKRecord.ID(recordName: Self.rootRecordName, zoneID: zoneID)
+        guard let rootRecord = try? await privateDB.record(for: rootID),
+              let shareReference = rootRecord.share,
+              let share = try? await privateDB.record(for: shareReference.recordID) as? CKShare else {
+            Self.logger.warning("⚠️ Could not load CKShare to revoke participant for \(memberID, privacy: .public)")
+            return
+        }
+        guard let target = share.participants.first(where: { $0.userIdentity.userRecordID == userRecordID }) else {
+            // No matching participant — likely already left the share or never
+            // accepted on this Apple ID. Nothing to revoke.
+            return
+        }
+        guard target.role != .owner else {
+            Self.logger.warning("⚠️ Refusing to revoke owner participant for club \(club.cloudZoneName, privacy: .public)")
+            return
+        }
+        share.removeParticipant(target)
+        do {
+            _ = try await privateDB.modifyRecords(saving: [share], deleting: [])
+            Self.logger.info("🚫 Revoked share access for member \(memberID, privacy: .public) in \(club.cloudZoneName, privacy: .public)")
+            let count = Self.acceptedParticipantCount(in: share)
+            if club.shareParticipantCount != count {
+                club.shareParticipantCount = count
+            }
+        } catch {
+            Self.logger.warning("⚠️ Failed to save share after removing participant \(memberID, privacy: .public): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
         }
     }
 

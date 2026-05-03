@@ -61,7 +61,7 @@ struct InviteView: View {
             InviteStatusView(
                 systemImage: "link",
                 title: "Invite link not available yet",
-                message: "The creator hasn't published a shareable link yet. Once they open Manage Sharing in this club, the link appears here so you can invite others."
+                message: "The creator hasn't published a shareable link yet. Once they open Invite Members in this club, the link appears here so you can invite others."
             )
         } else {
             InviteStatusView(
