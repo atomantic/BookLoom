@@ -28,7 +28,7 @@ struct AddSubmissionView: View {
                         height: 88
                     )
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Add a Proposal")
+                        Text("Add a Book")
                             .font(.title3.bold())
                             .foregroundStyle(BookLoomStyle.ink)
                         Text(club.name)
@@ -67,12 +67,22 @@ struct AddSubmissionView: View {
                     }
 
                     Button {
-                        Task { await addSubmission() }
+                        Task { await addSubmission(asRead: false) }
                     } label: {
                         Label(isSaving ? "Adding..." : "Add to Proposals", systemImage: "plus.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(trimmedTitle.isEmpty || isSaving)
+
+                    Button {
+                        Task { await addSubmission(asRead: true) }
+                    } label: {
+                        Label(isSaving ? "Saving..." : "Save to Read", systemImage: "checkmark.seal.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
                     .controlSize(.large)
                     .disabled(trimmedTitle.isEmpty || isSaving)
                 }
@@ -112,11 +122,12 @@ struct AddSubmissionView: View {
         )
     }
 
-    private func addSubmission() async {
+    private func addSubmission(asRead: Bool) async {
         guard let title = title.trimmedOrNil else { return }
         isSaving = true
         defer { isSaving = false }
 
+        let now = Date.now
         let submission = BookSubmission(
             title: title,
             author: author.trimmed,
@@ -127,8 +138,13 @@ struct AddSubmissionView: View {
             externalProvider: selectedMetadata?.provider.rawValue ?? "",
             externalID: selectedMetadata?.externalID ?? "",
             submittedBy: memberIdentity.name,
-            submittedByMemberID: memberIdentity.memberID
+            submittedByMemberID: memberIdentity.memberID,
+            submittedAt: now,
+            status: asRead ? .completed : .proposed
         )
+        if asRead {
+            submission.completedAt = now
+        }
         club.addSubmission(submission)
         context.insert(submission)
         do {
