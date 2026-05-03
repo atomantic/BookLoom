@@ -10,6 +10,9 @@ struct SubmissionDetailView: View {
     @State private var draftNote: String = ""
     @State private var draftPrompt: String = ""
     @State private var showingDiscussionMode: Bool = false
+    @State private var showingSetCurrentConfirmation: Bool = false
+    @State private var showingMarkReadConfirmation: Bool = false
+    @State private var showingMoveToProposalsConfirmation: Bool = false
 
     var body: some View {
         let summary = submission.ratingSummary
@@ -17,6 +20,7 @@ struct SubmissionDetailView: View {
         let allRatings = (submission.ratings ?? []).sorted { $0.createdAt < $1.createdAt }
         let allNotes = (submission.notes ?? []).sorted { $0.createdAt > $1.createdAt }
         let prompts = submission.activeDiscussionPrompts
+        let willReplaceCurrent = submission.bookClub?.sections.current.map { $0 !== submission } ?? false
 
         List {
             Section {
@@ -25,11 +29,25 @@ struct SubmissionDetailView: View {
             }
 
             Section {
-                BookDetailsCard(submission: submission)
+                StatusActionsCard(
+                    submission: submission,
+                    onSetCurrent: { showingSetCurrentConfirmation = true },
+                    onMarkRead: { showingMarkReadConfirmation = true },
+                    onMoveToProposals: { showingMoveToProposalsConfirmation = true }
+                )
             } header: {
-                SectionTitle(title: "Details")
+                SectionTitle(title: "Status")
             }
             .bookLoomListRow()
+
+            if hasDisplayableDetails {
+                Section {
+                    BookDetailsCard(submission: submission)
+                } header: {
+                    SectionTitle(title: "Details")
+                }
+                .bookLoomListRow()
+            }
 
             Section {
                 RatingsCard(stars: bindingForOwnRating(), summary: summary, ratings: allRatings)
@@ -63,6 +81,61 @@ struct SubmissionDetailView: View {
         .sheet(isPresented: $showingDiscussionMode) {
             DiscussionModeView(submissionTitle: submission.displayTitle, prompts: prompts)
         }
+        .confirmationDialog(
+            willReplaceCurrent ? "Replace the current book?" : "Set as the current book?",
+            isPresented: $showingSetCurrentConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Set as Current Read") { setAsCurrent() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(willReplaceCurrent
+                 ? "This marks the existing current book as completed and promotes this one in its place."
+                 : "This sets the book as the club's current read.")
+        }
+        .confirmationDialog(
+            "Mark this book as read?",
+            isPresented: $showingMarkReadConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Mark Read") { markComplete() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This moves the book into reading history and clears the current slot.")
+        }
+        .confirmationDialog(
+            "Move this book back to proposals?",
+            isPresented: $showingMoveToProposalsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Move to Proposals") { moveToProposals() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This returns the book to the proposal list without recording a read.")
+        }
+    }
+
+    private var hasDisplayableDetails: Bool {
+        !submission.isbn.isEmpty || submission.publishedYear != nil || !submission.displayDescription.isEmpty
+    }
+
+    private func setAsCurrent() {
+        guard let club = submission.bookClub else { return }
+        SelectionPollCoordinator.promoteWinner(submission, in: club, actorMemberID: memberIdentity.memberID)
+        DiscussionPromptLibrary.ensureStarterPrompts(for: submission, context: context)
+        saveSubmissionChanges()
+    }
+
+    private func markComplete() {
+        guard let club = submission.bookClub else { return }
+        BookSubmissionStatusEditor.markComplete(submission, in: club, actorMemberID: memberIdentity.memberID)
+        saveSubmissionChanges()
+    }
+
+    private func moveToProposals() {
+        guard let club = submission.bookClub else { return }
+        BookSubmissionStatusEditor.moveToProposals(submission, in: club, actorMemberID: memberIdentity.memberID)
+        saveSubmissionChanges()
     }
 
     private func bindingForOwnRating() -> Binding<Int> {
@@ -143,7 +216,6 @@ private struct BookDetailsCard: View {
             if let publishedYear = submission.publishedYear {
                 InfoLine(label: "Published", value: "\(publishedYear)")
             }
-            InfoLine(label: "Submitted by", value: submission.displaySubmitter)
 
             if !submission.displayDescription.isEmpty {
                 Divider()
@@ -258,7 +330,6 @@ private struct SubmissionHero: View {
                 height: 108
             )
             VStack(alignment: .leading, spacing: 8) {
-                StatusPill(status: submission.status)
                 Text(submission.displayTitle)
                     .font(.title3.bold())
                     .foregroundStyle(BookLoomStyle.ink)
@@ -273,6 +344,55 @@ private struct SubmissionHero: View {
             Spacer(minLength: 0)
         }
         .bookLoomCard(padding: 12)
+    }
+}
+
+private struct StatusActionsCard: View {
+    let submission: BookSubmission
+    let onSetCurrent: () -> Void
+    let onMarkRead: () -> Void
+    let onMoveToProposals: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                StatusPill(status: submission.status)
+                Spacer(minLength: 12)
+                Text("Submitted by \(submission.displaySubmitter)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+            }
+
+            VStack(spacing: 8) {
+                switch submission.status {
+                case .proposed:
+                    actionButton("Set as Current Read", systemImage: "book.fill", prominent: true, action: onSetCurrent)
+                case .current:
+                    actionButton("Mark Read", systemImage: "checkmark.seal.fill", prominent: true, action: onMarkRead)
+                    actionButton("Move Back to Proposals", systemImage: "tray.full.fill", prominent: false, action: onMoveToProposals)
+                case .completed:
+                    actionButton("Move Back to Proposals", systemImage: "tray.full.fill", prominent: true, action: onMoveToProposals)
+                case .skipped:
+                    actionButton("Restore to Proposals", systemImage: "tray.full.fill", prominent: true, action: onMoveToProposals)
+                }
+            }
+        }
+        .bookLoomCard(padding: 12)
+    }
+
+    @ViewBuilder
+    private func actionButton(_ title: String, systemImage: String, prominent: Bool, action: @escaping () -> Void) -> some View {
+        let button = Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity)
+        }
+        if prominent {
+            button.buttonStyle(.borderedProminent)
+        } else {
+            button.buttonStyle(.bordered)
+        }
     }
 }
 

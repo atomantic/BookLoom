@@ -99,6 +99,49 @@ enum SelectionPollCoordinator {
     }
 }
 
+enum BookSubmissionStatusEditor {
+    static func markComplete(
+        _ submission: BookSubmission,
+        in club: BookClub,
+        actorMemberID: String = "",
+        now: Date = .now
+    ) {
+        submission.status = .completed
+        submission.completedAt = now
+        club.recordStatusOverride(
+            StatusOverrideEntry(
+                submissionSelectionID: submission.selectionID,
+                statusRaw: BookSubmissionStatus.completed.rawValue,
+                pickedAt: submission.pickedAt,
+                completedAt: now,
+                occurredAt: now,
+                actorMemberID: actorMemberID
+            )
+        )
+    }
+
+    static func moveToProposals(
+        _ submission: BookSubmission,
+        in club: BookClub,
+        actorMemberID: String = "",
+        now: Date = .now
+    ) {
+        submission.status = .proposed
+        submission.pickedAt = nil
+        submission.completedAt = nil
+        club.recordStatusOverride(
+            StatusOverrideEntry(
+                submissionSelectionID: submission.selectionID,
+                statusRaw: BookSubmissionStatus.proposed.rawValue,
+                pickedAt: nil,
+                completedAt: nil,
+                occurredAt: now,
+                actorMemberID: actorMemberID
+            )
+        )
+    }
+}
+
 enum DiscussionPromptLibrary {
     static let starterQuestions: [String] = [
         "What scene or idea stayed with you after finishing?",
