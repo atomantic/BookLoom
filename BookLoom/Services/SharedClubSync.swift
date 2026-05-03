@@ -308,8 +308,11 @@ enum SharedClubSync {
     /// user has asked for it to go away, and the most common failure mode
     /// here is "zone already deleted" which is the desired end state anyway.
     static func cleanupBeforeDelete(_ club: BookClub, localMemberID: String) async {
+        let zoneName = club.cloudZoneName
+        SharedClubSyncStatus.shared.clearFailure(zoneName: zoneName)
+        StatusOverrideStore.clear(forZone: zoneName)
+
         guard Features.cloudKitSharing, club.shareIsActive else { return }
-        SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
         do {
             if club.isOwner {
                 try await CloudKitSharingService.shared.deleteSharedZone(for: club)

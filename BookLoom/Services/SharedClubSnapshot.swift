@@ -10,7 +10,7 @@ import SwiftData
 /// supported owner-broadcast and silently dropped any contributions from
 /// non-owner participants.
 struct MemberShareSnapshot: Codable, Equatable, Sendable {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
 
     let schemaVersion: Int
     let capturedAt: Date
@@ -19,6 +19,9 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
     /// Owner-only: canonical club metadata (name, createdAt). Members publish
     /// nil and rely on the owner's snapshot for these fields.
     let clubMeta: ClubMeta?
+    /// Rename pushed by an admin who isn't the CKShare owner. Owners adopt
+    /// it through `clubMeta` on next publish.
+    let nameProposal: NameProposal?
     let submissions: [SubmissionPayload]
     let statusOverrides: [StatusOverride]
     let ratings: [RatingPayload]
@@ -35,6 +38,7 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
         authorMemberID: String,
         authorName: String,
         clubMeta: ClubMeta? = nil,
+        nameProposal: NameProposal? = nil,
         submissions: [SubmissionPayload] = [],
         statusOverrides: [StatusOverride] = [],
         ratings: [RatingPayload] = [],
@@ -50,6 +54,7 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
         self.authorMemberID = authorMemberID
         self.authorName = authorName
         self.clubMeta = clubMeta
+        self.nameProposal = nameProposal
         self.submissions = submissions
         self.statusOverrides = statusOverrides
         self.ratings = ratings
@@ -76,6 +81,14 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
         /// Other devices use this to ignore re-published snapshots from a
         /// removed member. Optional for backward compatibility.
         let removedMemberIDs: [String]?
+        let inviteURLString: String?
+        let nameUpdatedAt: Date?
+    }
+
+    struct NameProposal: Codable, Equatable, Sendable {
+        let name: String
+        let updatedAt: Date
+        let proposerMemberID: String
     }
 
     struct SubmissionPayload: Codable, Equatable, Sendable {
@@ -307,9 +320,22 @@ enum MemberShareSnapshotStore {
                 shareParticipantCount: club.shareParticipantCount,
                 creatorMemberID: club.creatorMemberID.trimmedOrNil,
                 adminMemberIDs: club.adminMemberIDs.sorted(),
-                removedMemberIDs: club.removedMemberIDs.sorted()
+                removedMemberIDs: club.removedMemberIDs.sorted(),
+                inviteURLString: club.inviteURLString.trimmedOrNil,
+                nameUpdatedAt: club.nameUpdatedAt > .distantPast ? club.nameUpdatedAt : nil
             )
             : nil
+
+        let nameProposal: MemberShareSnapshot.NameProposal? = {
+            guard !includeClubMeta else { return nil }
+            guard club.isAdmin(memberID: authorMemberID) else { return nil }
+            guard club.nameUpdatedAt > .distantPast, !club.name.isEmpty else { return nil }
+            return MemberShareSnapshot.NameProposal(
+                name: club.name,
+                updatedAt: club.nameUpdatedAt,
+                proposerMemberID: authorMemberID
+            )
+        }()
 
         let statusOverrides = club.statusOverrideLog
             .filter { isAuthor(authorMemberID, of: $0.actorMemberID) }
@@ -328,6 +354,7 @@ enum MemberShareSnapshotStore {
             authorMemberID: authorMemberID,
             authorName: authorName,
             clubMeta: clubMeta,
+            nameProposal: nameProposal,
             submissions: submissionPayloads,
             statusOverrides: statusOverrides,
             ratings: ratingPayloads,
@@ -351,21 +378,41 @@ enum MemberShareSnapshotStore {
     ) throws {
         // 1. Apply club meta from the snapshot that carries it (the owner's).
         if let meta = snapshots.compactMap(\.clubMeta).max(by: { $0.shareParticipantCount < $1.shareParticipantCount }) {
-            club.name = meta.name
-            club.createdAt = meta.createdAt
+            if club.name != meta.name { club.name = meta.name }
+            let nextNameUpdatedAt = meta.nameUpdatedAt ?? club.nameUpdatedAt
+            if club.nameUpdatedAt != nextNameUpdatedAt { club.nameUpdatedAt = nextNameUpdatedAt }
+            if club.createdAt != meta.createdAt { club.createdAt = meta.createdAt }
             if club.cloudZoneName.isEmpty {
                 club.cloudZoneName = meta.cloudZoneName
             }
-            club.shareParticipantCount = max(1, meta.shareParticipantCount)
-            if let creator = meta.creatorMemberID?.trimmedOrNil {
+            let participants = max(1, meta.shareParticipantCount)
+            if club.shareParticipantCount != participants { club.shareParticipantCount = participants }
+            if let creator = meta.creatorMemberID?.trimmedOrNil, club.creatorMemberID != creator {
                 club.creatorMemberID = creator
             }
             if let admins = meta.adminMemberIDs {
-                club.adminMemberIDs = Set(admins.filter { !$0.isEmpty })
+                let nextAdmins = Set(admins.filter { !$0.isEmpty })
+                if club.adminMemberIDs != nextAdmins { club.adminMemberIDs = nextAdmins }
             }
             if let removed = meta.removedMemberIDs {
-                club.removedMemberIDs = Set(removed.filter { !$0.isEmpty })
+                let nextRemoved = Set(removed.filter { !$0.isEmpty })
+                if club.removedMemberIDs != nextRemoved { club.removedMemberIDs = nextRemoved }
             }
+            if let url = meta.inviteURLString?.trimmedOrNil, club.inviteURLString != url {
+                club.inviteURLString = url
+            }
+        }
+
+        let validProposers = club.adminMemberIDs.union(
+            club.creatorMemberID.isEmpty ? [] : [club.creatorMemberID]
+        )
+        let latestProposal = snapshots.lazy
+            .compactMap(\.nameProposal)
+            .filter { validProposers.contains($0.proposerMemberID) && !$0.name.isEmpty }
+            .max(by: { $0.updatedAt < $1.updatedAt })
+        if let latestProposal, latestProposal.updatedAt > club.nameUpdatedAt {
+            club.name = latestProposal.name
+            club.nameUpdatedAt = latestProposal.updatedAt
         }
         club.shareIsActive = true
 
@@ -977,7 +1024,7 @@ extension BookClub {
     }
 }
 
-private enum StatusOverrideStore {
+enum StatusOverrideStore {
     private static let prefix = "net.shadowpuppet.BookLoom.statusOverrides."
 
     static func entries(forZone zone: String) -> [StatusOverrideEntry] {
@@ -1005,5 +1052,10 @@ private enum StatusOverrideStore {
         if let data = try? JSONEncoder().encode(kept) {
             UserDefaults.standard.set(data, forKey: prefix + zone)
         }
+    }
+
+    static func clear(forZone zone: String) {
+        guard !zone.isEmpty else { return }
+        UserDefaults.standard.removeObject(forKey: prefix + zone)
     }
 }

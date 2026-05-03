@@ -37,12 +37,38 @@ struct InviteView: View {
     private var content: some View {
         if !Features.cloudKitSharing {
             comingSoonView
+        } else if !club.isOwner {
+            inviteLinkView
         } else if let loadError {
             errorView(loadError)
         } else if let share {
             shareView(share)
         } else {
             PreparingInviteView()
+        }
+    }
+
+    @ViewBuilder
+    private var inviteLinkView: some View {
+        let canManage = club.isAdmin(memberID: memberIdentity.memberID)
+        if let url = URL(string: club.inviteURLString), canManage {
+            CopyInviteLinkView(
+                clubName: club.name,
+                url: url,
+                didCopy: $didCopyURL
+            )
+        } else if canManage {
+            InviteStatusView(
+                systemImage: "link",
+                title: "Invite link not available yet",
+                message: "The creator hasn't published a shareable link yet. Once they open Manage Sharing in this club, the link appears here so you can invite others."
+            )
+        } else {
+            InviteStatusView(
+                systemImage: "lock.fill",
+                title: "Invitations are creator + admin only",
+                message: "Ask the club creator to promote you to admin if you'd like to invite new members."
+            )
         }
     }
 
@@ -111,49 +137,24 @@ struct InviteView: View {
     }
 
     #if os(macOS)
+    @ViewBuilder
     private func macShareView(_ share: CKShare) -> some View {
-        VStack(spacing: 14) {
-            Image(systemName: "person.2.badge.plus")
-                .font(.system(size: 36))
-                .foregroundStyle(.tint)
-            Text("Share \"\(club.name)\"")
-                .font(.title3.bold())
-            if let url = share.url {
-                Text(url.absoluteString)
-                    .font(.callout.monospaced())
-                    .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
-                    .padding(12)
-                    .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(.horizontal, 20)
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                    didCopyURL = true
-                } label: {
-                    Label(didCopyURL ? "Copied!" : "Copy Invite Link",
-                          systemImage: didCopyURL ? "checkmark.circle.fill" : "doc.on.doc")
-                }
-                .buttonStyle(.borderedProminent)
-            } else {
-                Text("Share URL not yet available — try again in a moment.")
-                    .foregroundStyle(.secondary)
-            }
-            Text("Send this link via Messages, email, or any channel. The recipient must be signed into iCloud and have BookLoom installed.")
-                .font(.footnote)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 20)
+        if let url = share.url {
+            CopyInviteLinkView(clubName: club.name, url: url, didCopy: $didCopyURL)
+                .frame(minWidth: 460, minHeight: 300)
+        } else {
+            InviteStatusView(
+                systemImage: "person.2.badge.plus",
+                title: "Share \"\(club.name)\"",
+                message: "Share URL not yet available — try again in a moment."
+            )
+            .frame(minWidth: 460, minHeight: 300)
         }
-        .padding()
-        .frame(minWidth: 460, minHeight: 300)
-        .bookLoomScreenBackground()
     }
     #endif
 
     private func loadShare(force: Bool = false) async {
-        guard Features.cloudKitSharing else { return }
+        guard Features.cloudKitSharing, club.isOwner else { return }
         guard force || share == nil else { return }
         isLoading = true
         loadError = nil
@@ -273,6 +274,83 @@ enum InviteLoadError: Equatable {
         case .networkUnavailable, .other:
             return nil
         }
+    }
+}
+
+private struct CopyInviteLinkView: View {
+    let clubName: String
+    let url: URL
+    @Binding var didCopy: Bool
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "link.circle.fill")
+                .font(.system(size: 36))
+                .foregroundStyle(.tint)
+            Text("Invite to \"\(clubName)\"")
+                .font(.title3.bold())
+                .multilineTextAlignment(.center)
+            Text(url.absoluteString)
+                .font(.callout.monospaced())
+                .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity)
+                .bookLoomCard(padding: 12)
+                .padding(.horizontal, 20)
+            Button {
+                Pasteboard.copy(url.absoluteString)
+                didCopy = true
+            } label: {
+                Label(
+                    didCopy ? "Copied!" : "Copy Invite Link",
+                    systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc"
+                )
+            }
+            .buttonStyle(.borderedProminent)
+            Text("Send this link via Messages, email, or any channel. The recipient must be signed into iCloud and have BookLoom installed. Only the club creator can revoke or re-issue links.")
+                .font(.footnote)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 20)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .bookLoomScreenBackground()
+    }
+}
+
+private struct InviteStatusView: View {
+    let systemImage: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 36))
+                .foregroundStyle(.tint)
+            Text(title)
+                .font(.title3.bold())
+                .multilineTextAlignment(.center)
+            Text(message)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .bookLoomScreenBackground()
+    }
+}
+
+enum Pasteboard {
+    static func copy(_ string: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = string
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(string, forType: .string)
+        #endif
     }
 }
 

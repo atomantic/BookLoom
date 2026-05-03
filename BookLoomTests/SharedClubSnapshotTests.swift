@@ -139,7 +139,9 @@ final class SharedClubSnapshotTests: XCTestCase {
                 shareParticipantCount: 2,
                 creatorMemberID: nil,
                 adminMemberIDs: nil,
-                removedMemberIDs: nil
+                removedMemberIDs: nil,
+                inviteURLString: nil,
+                nameUpdatedAt: nil
             ),
             submissions: [alexSubmission],
             ratings: [],
@@ -230,7 +232,9 @@ final class SharedClubSnapshotTests: XCTestCase {
                 shareParticipantCount: 2,
                 creatorMemberID: nil,
                 adminMemberIDs: nil,
-                removedMemberIDs: nil
+                removedMemberIDs: nil,
+                inviteURLString: nil,
+                nameUpdatedAt: nil
             ),
             submissions: [basePayload]
         )
@@ -295,7 +299,9 @@ final class SharedClubSnapshotTests: XCTestCase {
                 shareParticipantCount: 2,
                 creatorMemberID: nil,
                 adminMemberIDs: nil,
-                removedMemberIDs: nil
+                removedMemberIDs: nil,
+                inviteURLString: nil,
+                nameUpdatedAt: nil
             ),
             submissions: []
         )
@@ -350,7 +356,9 @@ final class SharedClubSnapshotTests: XCTestCase {
                 shareParticipantCount: 2,
                 creatorMemberID: "member-alex",
                 adminMemberIDs: [],
-                removedMemberIDs: ["member-kim"]
+                removedMemberIDs: ["member-kim"],
+                inviteURLString: nil,
+                nameUpdatedAt: nil
             ),
             submissions: []
         )
@@ -375,6 +383,142 @@ final class SharedClubSnapshotTests: XCTestCase {
             .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
         XCTAssertTrue(surviving.isEmpty, "Removed member's submissions must not appear after merge")
         XCTAssertEqual(club.removedMemberIDs, ["member-kim"], "Owner-published removal list propagates locally")
+    }
+
+    func test_adminNameProposalAdoptedWhenNewerThanOwnerMeta() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.cloudZoneName = "BookClub-Test"
+        club.ownerUserRecordName = "owner-record"
+        club.shareIsActive = true
+        context.insert(club)
+        try context.save()
+
+        // Owner's published meta carries the original name with no recorded
+        // rename timestamp.
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: MemberShareSnapshot.ClubMeta(
+                name: "Sunday Pages",
+                createdAt: Date(timeIntervalSince1970: 1_000),
+                cloudZoneName: "BookClub-Test",
+                shareParticipantCount: 2,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: ["member-lena"],
+                removedMemberIDs: [],
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+
+        // Admin Lena pushes a rename through her own snapshot's nameProposal.
+        let adminRename = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 6_000),
+            authorMemberID: "member-lena",
+            authorName: "Lena",
+            nameProposal: MemberShareSnapshot.NameProposal(
+                name: "Sunday Mornings",
+                updatedAt: Date(timeIntervalSince1970: 5_500),
+                proposerMemberID: "member-lena"
+            )
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, adminRename],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        XCTAssertEqual(club.name, "Sunday Mornings", "Admin's later rename proposal should override owner's stale name")
+        XCTAssertEqual(club.nameUpdatedAt, Date(timeIntervalSince1970: 5_500))
+    }
+
+    func test_nonAdminNameProposalIsIgnored() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.cloudZoneName = "BookClub-Test"
+        club.ownerUserRecordName = "owner-record"
+        club.shareIsActive = true
+        context.insert(club)
+        try context.save()
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: MemberShareSnapshot.ClubMeta(
+                name: "Sunday Pages",
+                createdAt: Date(timeIntervalSince1970: 1_000),
+                cloudZoneName: "BookClub-Test",
+                shareParticipantCount: 2,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: [],
+                removedMemberIDs: [],
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+
+        // Sam is a regular member, not in adminMemberIDs.
+        let sneaky = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 6_000),
+            authorMemberID: "member-sam",
+            authorName: "Sam",
+            nameProposal: MemberShareSnapshot.NameProposal(
+                name: "Sam's Pages",
+                updatedAt: Date(timeIntervalSince1970: 5_999),
+                proposerMemberID: "member-sam"
+            )
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, sneaky],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        XCTAssertEqual(club.name, "Sunday Pages", "Non-admin members should not be able to rename via nameProposal")
+    }
+
+    func test_inviteURLPropagatesThroughClubMeta() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.cloudZoneName = "BookClub-Test"
+        club.ownerUserRecordName = "owner-record"
+        club.shareIsActive = true
+        context.insert(club)
+        try context.save()
+
+        let inviteURL = "https://www.icloud.com/share/0Aabcdef"
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: MemberShareSnapshot.ClubMeta(
+                name: "Sunday Pages",
+                createdAt: Date(timeIntervalSince1970: 1_000),
+                cloudZoneName: "BookClub-Test",
+                shareParticipantCount: 2,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: ["member-lena"],
+                removedMemberIDs: [],
+                inviteURLString: inviteURL,
+                nameUpdatedAt: nil
+            )
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-lena"
+        )
+
+        XCTAssertEqual(club.inviteURLString, inviteURL, "Invite URL from owner's clubMeta should land on member device for admins to copy")
     }
 
     func test_coverDataCleanupRemovesPersistedImageBytes() throws {

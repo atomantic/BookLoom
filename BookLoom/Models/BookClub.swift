@@ -49,6 +49,12 @@ final class BookClub {
     /// re-applying any future re-published snapshot from a removed member.
     var removedMemberIDsJSON: String = "[]"
 
+    var inviteURLString: String = ""
+
+    /// Tie-break clock for `name`: the latest of the owner's `ClubMeta` rename
+    /// timestamp and any admin's `nameProposal.updatedAt`.
+    var nameUpdatedAt: Date = Date.distantPast
+
     @Relationship(deleteRule: .cascade, inverse: \BookSubmission.bookClub)
     var submissions: [BookSubmission]? = nil
 
@@ -117,6 +123,11 @@ final class BookClub {
         guard !memberID.isEmpty else { return false }
         if memberID == creatorMemberID { return true }
         return adminMemberIDs.contains(memberID)
+    }
+
+    func isCreator(memberID: String) -> Bool {
+        guard !memberID.isEmpty else { return false }
+        return memberID == creatorMemberID
     }
 
     func setAdmin(_ isAdmin: Bool, memberID: String) {

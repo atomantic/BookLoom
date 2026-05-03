@@ -22,7 +22,10 @@ struct ClubManagementView: View {
     var body: some View {
         let members = club.memberDigests
         let unnamedCount = max(0, club.displayedMemberCount - members.count)
-        let canManageAdmins = club.isOwner
+        let localID = memberIdentity.memberID
+        let canManageClub = club.isAdmin(memberID: localID)
+        let canDelete = club.isCreator(memberID: localID)
+        let canManageAdmins = canDelete
 
         List {
             Section {
@@ -30,8 +33,8 @@ struct ClubManagementView: View {
                     club: club,
                     draftName: $draftName,
                     nameSaved: nameSaved,
-                    canEditName: club.isOwner,
-                    saveDisabled: nameSaveDisabled,
+                    canEditName: canManageClub,
+                    saveDisabled: !canManageClub || draftName.trimmedOrNil.map { $0 == club.name } ?? true,
                     onSaveName: saveName
                 )
             } header: {
@@ -71,23 +74,23 @@ struct ClubManagementView: View {
             .bookLoomListRow()
 
             Section {
-                if club.isOwner {
+                if canManageClub {
                     Button {
                         showingInvite = true
                     } label: {
-                        Label("Manage Sharing", systemImage: "person.2.fill")
+                        Label(club.isOwner ? "Manage Sharing" : "Copy Invite Link", systemImage: "person.2.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
 
                     PermissionsHelpRow(
-                        message: "Toggle admin to grant a member the same management abilities you have. The club creator is always admin and cannot be demoted. Remove a member to drop their books, ratings, and notes from the club."
+                        message: canManageAdmins
+                            ? "Toggle admin to grant a member the same management abilities you have. The club creator is always admin and cannot be demoted. Remove a member to drop their books, ratings, and notes from the club."
+                            : "You're an admin: you can rename the club and share the invite link. Only the creator can promote other admins, remove members, or delete the club."
                     )
                 } else {
                     PermissionsHelpRow(
-                        message: localUserIsAdmin
-                            ? "You're an admin. Only the club creator can change other members' admin status."
-                            : "The creator manages invitations and admin permissions."
+                        message: "The creator and other admins manage invitations and admin permissions."
                     )
                 }
             } header: {
@@ -97,12 +100,13 @@ struct ClubManagementView: View {
 
             Section {
                 ClubDeleteCard(
-                    club: club,
+                    canDelete: canDelete,
+                    clubName: club.name,
                     isDeleting: isDeleting,
                     onTapDelete: { showingDeleteConfirmation = true }
                 )
             } header: {
-                SectionTitle(title: club.isOwner ? "Delete Club" : "Leave Club")
+                SectionTitle(title: canDelete ? "Delete Club" : "Leave Club")
             }
             .bookLoomListRow()
         }
@@ -117,19 +121,19 @@ struct ClubManagementView: View {
             InviteView(club: club)
         }
         .confirmationDialog(
-            club.isOwner ? "Delete \(club.name)?" : "Leave \(club.name)?",
+            canDelete ? "Delete \(club.name)?" : "Leave \(club.name)?",
             isPresented: $showingDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button(club.isOwner ? "Delete Club" : "Leave Club", role: .destructive) {
+            Button(canDelete ? "Delete Club" : "Leave Club", role: .destructive) {
                 deleteClub()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            if club.isOwner {
+            if canDelete {
                 Text("This removes the club and its proposals, meetings, votes, ratings, and notes from this device, and from anyone you've shared it with.")
             } else {
-                Text("This removes the club from this device. The owner's copy is unaffected.")
+                Text("This removes the club from this device. The creator's copy is unaffected.")
             }
         }
         .confirmationDialog(
@@ -155,16 +159,6 @@ struct ClubManagementView: View {
         .task {
             backfillCreatorIfNeeded()
         }
-    }
-
-    private var localUserIsAdmin: Bool {
-        club.isAdmin(memberID: memberIdentity.memberID)
-    }
-
-    private var nameSaveDisabled: Bool {
-        guard club.isOwner else { return true }
-        guard let trimmed = draftName.trimmedOrNil else { return true }
-        return trimmed == club.name
     }
 
     private func isCreator(_ member: ClubMemberDigest) -> Bool {
@@ -232,13 +226,17 @@ struct ClubManagementView: View {
     }
 
     private func saveName() {
-        guard club.isOwner, let trimmed = draftName.trimmedOrNil, trimmed != club.name else { return }
+        let localID = memberIdentity.memberID
+        guard club.isAdmin(memberID: localID),
+              let trimmed = draftName.trimmedOrNil,
+              trimmed != club.name else { return }
         club.name = trimmed
+        club.nameUpdatedAt = .now
         do {
             try SharedClubSync.saveAndPublish(
                 context: context,
                 club: club,
-                localMemberID: memberIdentity.memberID,
+                localMemberID: localID,
                 localMemberName: memberIdentity.name
             )
             nameSaved = true
@@ -352,7 +350,8 @@ private struct ClubInfoCard: View {
 }
 
 private struct ClubDeleteCard: View {
-    let club: BookClub
+    let canDelete: Bool
+    let clubName: String
     let isDeleting: Bool
     let onTapDelete: () -> Void
 
@@ -383,15 +382,15 @@ private struct ClubDeleteCard: View {
 
     private var buttonTitle: String {
         if isDeleting {
-            return club.isOwner ? "Deleting…" : "Leaving…"
+            return canDelete ? "Deleting…" : "Leaving…"
         }
-        return club.isOwner ? "Delete Club" : "Leave Club"
+        return canDelete ? "Delete Club" : "Leave Club"
     }
 
     private var message: String {
-        club.isOwner
-            ? "Permanently removes this club from this device and from anyone you've shared it with. This can't be undone."
-            : "Removes the club from this device. The owner's copy is unaffected."
+        canDelete
+            ? "Permanently removes “\(clubName)” from this device and from anyone you've shared it with. This can't be undone."
+            : "Removes “\(clubName)” from this device. The creator's copy and other members' copies are unaffected."
     }
 }
 

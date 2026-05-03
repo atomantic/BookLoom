@@ -455,8 +455,13 @@ final class CloudKitSharingService {
     }
 
     private func markShareActive(_ share: CKShare, for club: BookClub) {
-        club.shareIsActive = true
-        club.shareParticipantCount = Self.acceptedParticipantCount(in: share)
+        if !club.shareIsActive { club.shareIsActive = true }
+        let count = Self.acceptedParticipantCount(in: share)
+        if club.shareParticipantCount != count { club.shareParticipantCount = count }
+        if let urlString = share.url?.absoluteString.trimmedOrNil,
+           club.inviteURLString != urlString {
+            club.inviteURLString = urlString
+        }
     }
 
     private static func acceptedParticipantCount(in share: CKShare) -> Int {

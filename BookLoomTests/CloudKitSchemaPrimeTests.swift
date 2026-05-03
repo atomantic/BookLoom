@@ -34,7 +34,9 @@ final class CloudKitSchemaPrimeTests: XCTestCase {
                 shareParticipantCount: 1,
                 creatorMemberID: nil,
                 adminMemberIDs: nil,
-                removedMemberIDs: nil
+                removedMemberIDs: nil,
+                inviteURLString: nil,
+                nameUpdatedAt: nil
             )
         )
         memberRecord["snapshotData"] = try JSONEncoder().encode(snapshot) as NSData
