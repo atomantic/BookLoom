@@ -3,6 +3,7 @@ import Foundation
 enum BookMetadataProvider: String, Sendable, Equatable, Hashable, Codable {
     case openLibrary = "Open Library"
     case googleBooks = "Google Books"
+    case goodreads = "Goodreads"
 
     var displayName: String { rawValue }
 
@@ -50,6 +51,8 @@ struct BookMetadataCandidate: Identifiable, Equatable, Hashable, Codable, Sendab
 enum BookMetadataError: LocalizedError {
     case missingTitle
     case requestFailed
+    case invalidGoodreadsURL
+    case goodreadsParseFailed
 
     var errorDescription: String? {
         switch self {
@@ -57,6 +60,10 @@ enum BookMetadataError: LocalizedError {
             return "Enter a title before searching."
         case .requestFailed:
             return "Couldn't search for book details. Check your connection and try again."
+        case .invalidGoodreadsURL:
+            return "That doesn't look like a Goodreads book link. Paste a URL like https://www.goodreads.com/book/show/60233239."
+        case .goodreadsParseFailed:
+            return "Couldn't read the Goodreads page. Try entering the title and author manually."
         }
     }
 }
@@ -194,6 +201,174 @@ struct BookMetadataService: Sendable {
         }
         return try JSONDecoder().decode(T.self, from: data)
     }
+
+    func importFromGoodreads(url: URL) async throws -> BookMetadataCandidate {
+        guard let bookID = Self.goodreadsBookID(from: url) else {
+            throw BookMetadataError.invalidGoodreadsURL
+        }
+
+        let canonicalURL = URL(string: "https://www.goodreads.com/book/show/\(bookID)")!
+        var request = URLRequest(url: canonicalURL)
+        // Goodreads serves a stripped/blocked response without a real browser UA.
+        request.setValue(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await urlSession.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw BookMetadataError.requestFailed
+        }
+
+        guard let candidate = Self.parseGoodreadsHTML(html, bookID: bookID, sourceURL: canonicalURL) else {
+            throw BookMetadataError.goodreadsParseFailed
+        }
+        return candidate
+    }
+
+    static func goodreadsBookID(from url: URL) -> String? {
+        guard let host = url.host?.lowercased(), host.contains("goodreads.com") else { return nil }
+        let path = url.path
+        guard let regex = try? NSRegularExpression(pattern: "/book/show/(\\d+)") else { return nil }
+        let range = NSRange(path.startIndex..., in: path)
+        guard let match = regex.firstMatch(in: path, range: range),
+              let idRange = Range(match.range(at: 1), in: path) else {
+            return nil
+        }
+        return String(path[idRange])
+    }
+
+    static func parseGoodreadsHTML(_ html: String, bookID: String, sourceURL: URL) -> BookMetadataCandidate? {
+        var title: String?
+        var authors: [String] = []
+        var isbn: String?
+        var coverURL: URL?
+        var description: String?
+        var publishedYear: Int?
+
+        for blob in jsonLDBlobs(in: html) {
+            guard let data = blob.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) else { continue }
+            for book in goodreadsBookObjects(in: object) {
+                if title == nil, let value = book["name"] as? String, !value.isEmpty {
+                    title = value.htmlDecoded
+                }
+                if authors.isEmpty {
+                    authors = goodreadsAuthors(from: book["author"])
+                }
+                if isbn == nil, let value = book["isbn"] as? String, !value.isEmpty {
+                    isbn = value
+                }
+                if coverURL == nil, let value = book["image"] as? String, let url = URL(string: value) {
+                    coverURL = url
+                }
+                if description == nil, let value = book["description"] as? String, !value.isEmpty {
+                    description = value.cleanedBookDescription
+                }
+                if publishedYear == nil, let value = book["datePublished"] as? String {
+                    publishedYear = Self.year(from: value)
+                }
+            }
+        }
+
+        if title == nil {
+            title = metaContent(in: html, property: "og:title")?.htmlDecoded
+        }
+        if coverURL == nil, let value = metaContent(in: html, property: "og:image"), let url = URL(string: value) {
+            coverURL = url
+        }
+        if description == nil {
+            description = (metaContent(in: html, property: "og:description")
+                ?? metaContent(in: html, name: "description"))?
+                .htmlDecoded.cleanedBookDescription
+        }
+        if isbn == nil {
+            isbn = metaContent(in: html, property: "books:isbn")
+        }
+
+        guard let resolvedTitle = title?.trimmedOrNil else { return nil }
+
+        return BookMetadataCandidate(
+            provider: .goodreads,
+            externalID: bookID,
+            title: resolvedTitle,
+            authors: authors,
+            publishedYear: publishedYear,
+            isbn: isbn?.trimmedOrNil,
+            coverURL: coverURL,
+            description: description?.trimmedOrNil,
+            sourceURL: sourceURL
+        )
+    }
+
+    private static func jsonLDBlobs(in html: String) -> [String] {
+        guard let regex = try? NSRegularExpression(
+            pattern: "<script[^>]*type=\"application/ld\\+json\"[^>]*>([\\s\\S]*?)</script>",
+            options: [.caseInsensitive]
+        ) else { return [] }
+        let range = NSRange(html.startIndex..., in: html)
+        return regex.matches(in: html, range: range).compactMap { match in
+            guard let r = Range(match.range(at: 1), in: html) else { return nil }
+            return String(html[r])
+        }
+    }
+
+    private static func goodreadsBookObjects(in json: Any) -> [[String: Any]] {
+        if let array = json as? [Any] {
+            return array.flatMap { goodreadsBookObjects(in: $0) }
+        }
+        guard let dict = json as? [String: Any] else { return [] }
+        if let type = dict["@type"] as? String, type.caseInsensitiveCompare("Book") == .orderedSame {
+            return [dict]
+        }
+        if let graph = dict["@graph"] {
+            return goodreadsBookObjects(in: graph)
+        }
+        return []
+    }
+
+    private static func goodreadsAuthors(from value: Any?) -> [String] {
+        if let array = value as? [Any] {
+            return array.flatMap { goodreadsAuthors(from: $0) }
+        }
+        if let dict = value as? [String: Any], let name = dict["name"] as? String {
+            return [name.htmlDecoded]
+        }
+        if let name = value as? String, !name.isEmpty {
+            return [name.htmlDecoded]
+        }
+        return []
+    }
+
+    private static func metaContent(in html: String, property: String? = nil, name: String? = nil) -> String? {
+        let key: String
+        let attr: String
+        if let property {
+            key = property
+            attr = "property"
+        } else if let name {
+            key = name
+            attr = "name"
+        } else {
+            return nil
+        }
+
+        let pattern = "<meta[^>]*\(attr)=\"\(NSRegularExpression.escapedPattern(for: key))\"[^>]*content=\"([^\"]*)\""
+        let altPattern = "<meta[^>]*content=\"([^\"]*)\"[^>]*\(attr)=\"\(NSRegularExpression.escapedPattern(for: key))\""
+        for candidate in [pattern, altPattern] {
+            guard let regex = try? NSRegularExpression(pattern: candidate, options: [.caseInsensitive]) else { continue }
+            let range = NSRange(html.startIndex..., in: html)
+            if let match = regex.firstMatch(in: html, range: range),
+               let r = Range(match.range(at: 1), in: html) {
+                let raw = String(html[r])
+                return raw.isEmpty ? nil : raw
+            }
+        }
+        return nil
+    }
+
 
     private func ranked(_ candidates: [BookMetadataCandidate], title: String, author: String) -> [BookMetadataCandidate] {
         candidates
@@ -347,5 +522,34 @@ private extension String {
             .replacingOccurrences(of: "*", with: "")
             .replacingOccurrences(of: "_", with: "")
             .trimmed
+    }
+
+    // Decodes a small set of common HTML/XML entities surfaced by Goodreads JSON-LD
+    // (titles like "Babel: An Arcane History" don't usually need decoding, but
+    // apostrophes/quotes do: &#39; &amp; &quot; &lt; &gt; &nbsp; &#x27;).
+    var htmlDecoded: String {
+        var result = self
+        let entities: [(String, String)] = [
+            ("&amp;", "&"),
+            ("&quot;", "\""),
+            ("&apos;", "'"),
+            ("&#39;", "'"),
+            ("&#x27;", "'"),
+            ("&#x2019;", "\u{2019}"),
+            ("&#8217;", "\u{2019}"),
+            ("&#8216;", "\u{2018}"),
+            ("&#8220;", "\u{201C}"),
+            ("&#8221;", "\u{201D}"),
+            ("&lt;", "<"),
+            ("&gt;", ">"),
+            ("&nbsp;", " "),
+            ("&mdash;", "\u{2014}"),
+            ("&ndash;", "\u{2013}"),
+            ("&hellip;", "\u{2026}")
+        ]
+        for (entity, replacement) in entities {
+            result = result.replacingOccurrences(of: entity, with: replacement)
+        }
+        return result
     }
 }

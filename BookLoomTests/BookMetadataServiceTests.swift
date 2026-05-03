@@ -71,6 +71,157 @@ final class BookMetadataServiceTests: XCTestCase {
         XCTAssertEqual(submission.externalID, "OL20893680W")
     }
 
+    func test_goodreadsBookID_extractsIDFromVariousURLShapes() {
+        XCTAssertEqual(
+            BookMetadataService.goodreadsBookID(from: URL(string: "https://www.goodreads.com/book/show/60233239")!),
+            "60233239"
+        )
+        XCTAssertEqual(
+            BookMetadataService.goodreadsBookID(from: URL(string: "https://www.goodreads.com/book/show/60233239-babel")!),
+            "60233239"
+        )
+        XCTAssertEqual(
+            BookMetadataService.goodreadsBookID(from: URL(string: "https://goodreads.com/book/show/12345-some-slug?utm=foo")!),
+            "12345"
+        )
+        XCTAssertNil(
+            BookMetadataService.goodreadsBookID(from: URL(string: "https://www.goodreads.com/author/show/123")!)
+        )
+        XCTAssertNil(
+            BookMetadataService.goodreadsBookID(from: URL(string: "https://example.com/book/show/60233239")!)
+        )
+    }
+
+    func test_parseGoodreadsHTML_pullsTitleAuthorISBNCoverDescriptionFromJSONLD() throws {
+        let html = """
+        <html><head>
+        <meta property="og:title" content="Babel: An Arcane History"/>
+        <meta property="og:image" content="https://example.com/og-cover.jpg"/>
+        <meta name="description" content="Falls into a tale of language and empire."/>
+        <script type="application/ld+json">
+        {
+          "@context":"https://schema.org",
+          "@type":"Book",
+          "name":"Babel: Or the Necessity of Violence",
+          "image":"https://example.com/cover.jpg",
+          "isbn":"0063021420",
+          "datePublished":"2022-08-23",
+          "author":[{"@type":"Person","name":"R.F. Kuang"}],
+          "description":"An incandescent novel about translation, power, and revolution."
+        }
+        </script>
+        </head><body></body></html>
+        """
+
+        let candidate = BookMetadataService.parseGoodreadsHTML(
+            html,
+            bookID: "60233239",
+            sourceURL: URL(string: "https://www.goodreads.com/book/show/60233239")!
+        )
+
+        XCTAssertEqual(candidate?.provider, .goodreads)
+        XCTAssertEqual(candidate?.externalID, "60233239")
+        XCTAssertEqual(candidate?.title, "Babel: Or the Necessity of Violence")
+        XCTAssertEqual(candidate?.authors, ["R.F. Kuang"])
+        XCTAssertEqual(candidate?.isbn, "0063021420")
+        XCTAssertEqual(candidate?.publishedYear, 2022)
+        XCTAssertEqual(candidate?.coverURL?.absoluteString, "https://example.com/cover.jpg")
+        XCTAssertEqual(candidate?.description, "An incandescent novel about translation, power, and revolution.")
+    }
+
+    func test_parseGoodreadsHTML_fallsBackToOpenGraphWhenJSONLDIsMissing() throws {
+        let html = """
+        <html><head>
+        <meta property="og:title" content="Some Book Title"/>
+        <meta property="og:image" content="https://example.com/cover.jpg"/>
+        <meta property="og:description" content="A great read."/>
+        <meta property="books:isbn" content="9781234567890"/>
+        </head><body></body></html>
+        """
+
+        let candidate = BookMetadataService.parseGoodreadsHTML(
+            html,
+            bookID: "999",
+            sourceURL: URL(string: "https://www.goodreads.com/book/show/999")!
+        )
+
+        XCTAssertEqual(candidate?.title, "Some Book Title")
+        XCTAssertEqual(candidate?.coverURL?.absoluteString, "https://example.com/cover.jpg")
+        XCTAssertEqual(candidate?.isbn, "9781234567890")
+        XCTAssertEqual(candidate?.description, "A great read.")
+    }
+
+    func test_parseGoodreadsHTML_decodesAmpersandsAndApostrophesInTitleAndAuthor() throws {
+        let html = """
+        <html><head>
+        <script type="application/ld+json">
+        {
+          "@context":"https://schema.org",
+          "@type":"Book",
+          "name":"Tom &amp; Jerry's Big Day",
+          "author":[{"@type":"Person","name":"Jane O&#39;Hara"}]
+        }
+        </script>
+        </head></html>
+        """
+
+        let candidate = BookMetadataService.parseGoodreadsHTML(
+            html,
+            bookID: "1",
+            sourceURL: URL(string: "https://www.goodreads.com/book/show/1")!
+        )
+
+        XCTAssertEqual(candidate?.title, "Tom & Jerry's Big Day")
+        XCTAssertEqual(candidate?.authors, ["Jane O'Hara"])
+    }
+
+    func test_importFromGoodreads_fetchesAndParsesPage() async throws {
+        let html = """
+        <html><head>
+        <script type="application/ld+json">
+        {
+          "@context":"https://schema.org",
+          "@type":"Book",
+          "name":"Imported Book",
+          "image":"https://example.com/cover.jpg",
+          "isbn":"9780000000001",
+          "author":[{"@type":"Person","name":"Author One"}]
+        }
+        </script>
+        </head></html>
+        """
+
+        MockURLProtocol.responses = [
+            "https://www.goodreads.com/book/show/60233239": html.data(using: .utf8)!
+        ]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        let candidate = try await service.importFromGoodreads(
+            url: URL(string: "https://www.goodreads.com/book/show/60233239-babel")!
+        )
+
+        XCTAssertEqual(candidate.title, "Imported Book")
+        XCTAssertEqual(candidate.authors, ["Author One"])
+        XCTAssertEqual(candidate.isbn, "9780000000001")
+        XCTAssertEqual(candidate.coverURL?.absoluteString, "https://example.com/cover.jpg")
+        XCTAssertEqual(candidate.provider, .goodreads)
+    }
+
+    func test_importFromGoodreads_rejectsNonGoodreadsURL() async {
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        do {
+            _ = try await service.importFromGoodreads(url: URL(string: "https://example.com/book/show/123")!)
+            XCTFail("Expected invalidGoodreadsURL error")
+        } catch let error as BookMetadataError {
+            switch error {
+            case .invalidGoodreadsURL: break
+            default: XCTFail("Unexpected BookMetadataError: \(error)")
+            }
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func test_searchUsesCachedMetadataWhenNetworkIsUnavailable() async throws {
         let cacheURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("BookLoomMetadataCache-\(UUID().uuidString)", isDirectory: true)

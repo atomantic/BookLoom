@@ -15,6 +15,11 @@ struct AddSubmissionView: View {
     @State private var showingMetadataSearch = false
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var goodreadsURL: String = ""
+    @State private var isImportingGoodreads = false
+    @State private var goodreadsError: String?
+
+    private let metadataService = BookMetadataService()
 
     var body: some View {
         ScrollView {
@@ -37,6 +42,38 @@ struct AddSubmissionView: View {
                             .lineLimit(2)
                     }
                     Spacer(minLength: 0)
+                }
+                .bookLoomCard(padding: 12)
+                .frame(maxWidth: 500)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Import from Goodreads", systemImage: "link")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BookLoomStyle.ink)
+
+                    TextField("https://www.goodreads.com/book/show/...", text: $goodreadsURL)
+                        .textFieldStyle(.roundedBorder)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        #endif
+
+                    Button {
+                        Task { await importFromGoodreads() }
+                    } label: {
+                        Label(isImportingGoodreads ? "Importing..." : "Import", systemImage: "square.and.arrow.down")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .disabled(goodreadsURL.trimmed.isEmpty || isImportingGoodreads)
+
+                    if let goodreadsError {
+                        Text(goodreadsError)
+                            .font(.caption)
+                            .foregroundStyle(BookLoomStyle.coral)
+                    }
                 }
                 .bookLoomCard(padding: 12)
                 .frame(maxWidth: 500)
@@ -167,6 +204,24 @@ struct AddSubmissionView: View {
             self.isbn = isbn
         }
         selectedMetadata = candidate
+    }
+
+    private func importFromGoodreads() async {
+        let trimmed = goodreadsURL.trimmed
+        guard let url = URL(string: trimmed) else {
+            goodreadsError = BookMetadataError.invalidGoodreadsURL.localizedDescription
+            return
+        }
+        goodreadsError = nil
+        isImportingGoodreads = true
+        defer { isImportingGoodreads = false }
+
+        do {
+            let candidate = try await metadataService.importFromGoodreads(url: url)
+            apply(candidate)
+        } catch {
+            goodreadsError = error.localizedDescription
+        }
     }
 }
 
