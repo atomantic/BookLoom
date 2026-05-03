@@ -10,20 +10,134 @@ import SwiftData
 final class SharedClubSyncStatus: ObservableObject {
     static let shared = SharedClubSyncStatus()
 
-    @Published private(set) var lastErrorByZone: [String: String] = [:]
+    // Private storage so callers go through `issue(for:)`. `@Published` still
+    // drives view updates via ObservableObject conformance.
+    @Published private var issuesByZone: [String: SyncIssue] = [:]
 
     private init() {}
 
-    func recordFailure(zoneName: String, message: String) {
-        lastErrorByZone[zoneName] = message
+    // Guarded so a flapping network (which produces the same SyncIssue every
+    // retry) doesn't republish and rerender observers on every cycle.
+    func recordFailure(zoneName: String, operation: SyncOperation, error: Error) {
+        let next = SyncIssue.classify(error, operation: operation)
+        guard issuesByZone[zoneName] != next else { return }
+        issuesByZone[zoneName] = next
     }
 
+    // Guarded so a steady "no errors" state doesn't fire @Published on every
+    // successful sync tick — clearFailure is called from each publish/refresh
+    // success path.
     func clearFailure(zoneName: String) {
-        lastErrorByZone[zoneName] = nil
+        guard issuesByZone[zoneName] != nil else { return }
+        issuesByZone.removeValue(forKey: zoneName)
     }
 
-    func errorMessage(for club: BookClub) -> String? {
-        lastErrorByZone[club.cloudZoneName]
+    func issue(for club: BookClub) -> SyncIssue? {
+        issuesByZone[club.cloudZoneName]
+    }
+}
+
+enum SyncOperation {
+    case publish
+    case refresh
+}
+
+/// User-facing classification of a CloudKit sync failure. Hides raw CKError
+/// codes and produces copy a non-developer can act on. Transient/network
+/// failures render as a soft "offline" indicator rather than an alarming
+/// error, since they self-resolve when connectivity returns.
+struct SyncIssue: Equatable {
+    enum Severity: Equatable {
+        /// Transient, self-resolving (network, rate-limit, busy zone). Render
+        /// as an unobtrusive offline banner.
+        case offline
+        /// Needs the user to do something (sign in, free up space, etc.).
+        case warning
+    }
+
+    let severity: Severity
+    let title: String
+    let message: String
+    let systemImage: String
+
+    static func classify(_ error: Error, operation: SyncOperation) -> SyncIssue {
+        if let direct = directIssue(from: error) {
+            return direct
+        }
+        // CloudKit batch operations report the real cause inside partial
+        // errors — a single network blip arrives wrapped in `partialFailure`,
+        // and falling through would surface a generic warning instead of the
+        // friendly offline banner.
+        let ns = error as NSError
+        if let partials = ns.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error] {
+            for inner in partials.values {
+                if let issue = directIssue(from: inner) {
+                    return issue
+                }
+            }
+        }
+        return SyncIssue(
+            severity: .warning,
+            title: operation == .publish ? "Couldn't share latest changes" : "Couldn't fetch latest changes",
+            message: "Sync will retry automatically. If this keeps happening, restart the app or check your iCloud connection.",
+            systemImage: "exclamationmark.triangle.fill"
+        )
+    }
+
+    private static func directIssue(from error: Error) -> SyncIssue? {
+        let ns = error as NSError
+
+        if ns.domain == NSURLErrorDomain {
+            return offline()
+        }
+
+        guard ns.domain == CKErrorDomain else { return nil }
+        switch ns.code {
+        case CKError.networkUnavailable.rawValue,
+             CKError.networkFailure.rawValue:
+            return offline()
+        case CKError.serviceUnavailable.rawValue,
+             CKError.requestRateLimited.rawValue,
+             CKError.zoneBusy.rawValue:
+            return SyncIssue(
+                severity: .offline,
+                title: "Sync paused",
+                message: "iCloud is busy. Changes will sync automatically in a moment.",
+                systemImage: "icloud"
+            )
+        case CKError.notAuthenticated.rawValue:
+            return SyncIssue(
+                severity: .warning,
+                title: "Sign in to iCloud",
+                message: "BookLoom needs an iCloud account to keep this club in sync. Open Settings → iCloud to sign in.",
+                systemImage: "person.crop.circle.badge.exclamationmark"
+            )
+        case CKError.accountTemporarilyUnavailable.rawValue:
+            return SyncIssue(
+                severity: .warning,
+                title: "iCloud is unavailable",
+                message: "Your iCloud account is temporarily unavailable. Try again after iCloud finishes signing in.",
+                systemImage: "icloud.and.arrow.down"
+            )
+        case CKError.quotaExceeded.rawValue:
+            return SyncIssue(
+                severity: .warning,
+                title: "iCloud storage is full",
+                message: "Free up iCloud space to keep syncing this club.",
+                systemImage: "externaldrive.fill.badge.exclamationmark"
+            )
+        default:
+            return nil
+        }
+    }
+
+    private static func offline() -> SyncIssue {
+        SyncIssue(
+            severity: .offline,
+            title: "Working offline",
+            message: "Your changes will sync when you reconnect.",
+            systemImage: "icloud.slash"
+        )
     }
 }
 
@@ -78,7 +192,7 @@ enum SharedClubSync {
                 logger.info("Published member snapshot for \(club.name, privacy: .public) by \(localMemberName, privacy: .public)")
             } catch {
                 let description = CloudKitErrorDescriber.describe(error)
-                SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, message: "Publish failed: \(description)")
+                SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .publish, error: error)
                 logger.error("Member snapshot publish failed: \(description, privacy: .public)")
             }
         }
@@ -100,11 +214,12 @@ enum SharedClubSync {
                 // The owner has deleted the club, or we've been removed from
                 // the share. Drop the orphan local row so the UI clears.
                 logger.info("Shared zone for \(club.name, privacy: .public) is gone — removing local club")
+                SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
                 context.delete(club)
                 try? context.save()
             } else {
                 let description = CloudKitErrorDescriber.describe(error)
-                SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, message: "Refresh failed: \(description)")
+                SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .refresh, error: error)
                 logger.error("Member snapshot refresh failed: \(description, privacy: .public)")
             }
             return
@@ -194,6 +309,7 @@ enum SharedClubSync {
     /// here is "zone already deleted" which is the desired end state anyway.
     static func cleanupBeforeDelete(_ club: BookClub, localMemberID: String) async {
         guard Features.cloudKitSharing, club.shareIsActive else { return }
+        SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
         do {
             if club.isOwner {
                 try await CloudKitSharingService.shared.deleteSharedZone(for: club)

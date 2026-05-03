@@ -27,9 +27,9 @@ struct BookClubHomeView: View {
                     .bookLoomListRow(top: 6, bottom: 8)
             }
 
-            if let syncError = syncStatus.errorMessage(for: club) {
+            if let syncIssue = syncStatus.issue(for: club) {
                 Section {
-                    SyncErrorBanner(message: syncError)
+                    SyncStatusBanner(issue: syncIssue)
                         .bookLoomListRow(top: 4, bottom: 8)
                 }
             }
@@ -657,19 +657,19 @@ private struct ClubHomeHeader: View {
     }
 }
 
-private struct SyncErrorBanner: View {
-    let message: String
+private struct SyncStatusBanner: View {
+    let issue: SyncIssue
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+            Image(systemName: issue.systemImage)
+                .foregroundStyle(iconTint)
                 .font(.title3)
             VStack(alignment: .leading, spacing: 2) {
-                Text("CloudKit sync error")
+                Text(issue.title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(BookLoomStyle.ink)
-                Text(message)
+                Text(issue.message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -677,6 +677,13 @@ private struct SyncErrorBanner: View {
             Spacer(minLength: 0)
         }
         .bookLoomCard(padding: 10)
+    }
+
+    private var iconTint: Color {
+        switch issue.severity {
+        case .offline: return .secondary
+        case .warning: return .orange
+        }
     }
 }
 
