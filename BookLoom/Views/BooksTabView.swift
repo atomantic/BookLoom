@@ -93,19 +93,16 @@ private struct BooksTabContent: View {
                     .bookLoomListRow()
                 } else {
                     ForEach(displayedSections.proposed) { submission in
-                        NavigationLink(value: submission) {
-                            BooksTabRow(submission: submission)
-                        }
-                        .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing) {
-                            Button {
-                                assignCurrent(submission)
-                            } label: {
-                                Label("Set Current", systemImage: "book.fill")
+                        BooksTabRow(submission: submission)
+                            .swipeActions(edge: .trailing) {
+                                Button {
+                                    assignCurrent(submission)
+                                } label: {
+                                    Label("Set Current", systemImage: "book.fill")
+                                }
+                                .tint(BookLoomStyle.sage)
                             }
-                            .tint(BookLoomStyle.sage)
-                        }
-                        .bookLoomListRow()
+                            .bookLoomListRow()
                     }
                     .onDelete { offsets in
                         delete(displayedSections.proposed, at: offsets)
@@ -118,11 +115,8 @@ private struct BooksTabContent: View {
             if !displayedSections.completed.isEmpty {
                 Section {
                     ForEach(displayedSections.completed) { submission in
-                        NavigationLink(value: submission) {
-                            BooksTabRow(submission: submission)
-                        }
-                        .buttonStyle(.plain)
-                        .bookLoomListRow()
+                        BooksTabRow(submission: submission)
+                            .bookLoomListRow()
                     }
                     .onDelete { offsets in
                         delete(displayedSections.completed, at: offsets)
@@ -331,46 +325,49 @@ private struct BooksTabRow: View {
     @Bindable var submission: BookSubmission
 
     var body: some View {
-        HStack(spacing: 12) {
-            BookCoverTile(
-                title: submission.displayTitle,
-                author: submission.displayAuthor,
-                coverURL: submission.coverImageURL,
-                width: 48,
-                height: 64
-            )
+        NavigationLink(value: submission) {
+            HStack(spacing: 12) {
+                BookCoverTile(
+                    title: submission.displayTitle,
+                    author: submission.displayAuthor,
+                    coverURL: submission.coverImageURL,
+                    width: 48,
+                    height: 64
+                )
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(submission.displayTitle)
-                            .font(.headline)
-                            .foregroundStyle(BookLoomStyle.ink)
-                            .lineLimit(2)
-                        if !submission.displayAuthor.isEmpty {
-                            Text(submission.displayAuthor)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(submission.displayTitle)
+                                .font(.headline)
+                                .foregroundStyle(BookLoomStyle.ink)
+                                .lineLimit(2)
+                            if !submission.displayAuthor.isEmpty {
+                                Text(submission.displayAuthor)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 10)
+                        StatusPill(status: submission.status)
+                    }
+
+                    HStack(spacing: 10) {
+                        Label(submission.displaySubmitter, systemImage: "person.fill")
+                        if submission.ratingSummary.count > 0 {
+                            Label(submission.ratingSummary.displayValue, systemImage: "star.fill")
+                        }
+                        if !(submission.notes ?? []).isEmpty {
+                            Label("\((submission.notes ?? []).count)", systemImage: "note.text")
                         }
                     }
-                    Spacer(minLength: 10)
-                    StatusPill(status: submission.status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
-
-                HStack(spacing: 10) {
-                    Label(submission.displaySubmitter, systemImage: "person.fill")
-                    if submission.ratingSummary.count > 0 {
-                        Label(submission.ratingSummary.displayValue, systemImage: "star.fill")
-                    }
-                    if !(submission.notes ?? []).isEmpty {
-                        Label("\((submission.notes ?? []).count)", systemImage: "note.text")
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
         }
+        .buttonStyle(.plain)
         .bookLoomCard(padding: 10)
     }
 }
