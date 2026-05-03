@@ -96,6 +96,7 @@ private struct BooksTabContent: View {
                         NavigationLink(value: submission) {
                             BooksTabRow(submission: submission)
                         }
+                        .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
                             Button {
                                 assignCurrent(submission)
@@ -120,6 +121,7 @@ private struct BooksTabContent: View {
                         NavigationLink(value: submission) {
                             BooksTabRow(submission: submission)
                         }
+                        .buttonStyle(.plain)
                         .bookLoomListRow()
                     }
                     .onDelete { offsets in
