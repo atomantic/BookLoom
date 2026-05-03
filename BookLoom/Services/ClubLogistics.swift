@@ -169,9 +169,16 @@ enum DiscussionPromptLibrary {
 }
 
 struct ClubMemberDigest: Identifiable, Equatable {
+    /// Synthetic key used when a contributor was seen by name only and has no
+    /// real `MemberIdentity.memberID`. Such digests cannot be tracked across
+    /// devices, so admin/removal actions on them are intentionally disabled.
+    static let nameOnlyPrefix = "name:"
+
     let id: String
     let name: String
     let activityCount: Int
+
+    var isNameOnly: Bool { id.hasPrefix(Self.nameOnlyPrefix) }
 }
 
 enum ClubMemberCollector {
@@ -180,7 +187,7 @@ enum ClubMemberCollector {
 
         func insert(memberID: String, memberName: String, activity: Int = 1) {
             let trimmedName = memberName.trimmedOrNil ?? "Unknown member"
-            let key = memberID.trimmedOrNil ?? "name:\(trimmedName.lowercased())"
+            let key = memberID.trimmedOrNil ?? "\(ClubMemberDigest.nameOnlyPrefix)\(trimmedName.lowercased())"
             let existing = members[key]
             members[key] = (
                 name: existing?.name.trimmedOrNil ?? trimmedName,

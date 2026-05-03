@@ -162,13 +162,14 @@ private struct BooksTabContent: View {
             SubmissionDetailView(submission: sub)
         }
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                Button {
-                    Task { await syncClubForCurrentRole() }
-                } label: {
-                    Label(syncDescriptor.label, systemImage: syncDescriptor.icon)
+            if club.shareIsActive {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button {
+                        Task { await syncClubForCurrentRole() }
+                    } label: {
+                        Label("Refresh Club", systemImage: "arrow.triangle.2.circlepath")
+                    }
                 }
-                .disabled(!club.shareIsActive)
             }
             ToolbarItem {
                 NavigationLink {
@@ -259,13 +260,6 @@ private struct BooksTabContent: View {
 
     private var clubSubmissions: [BookSubmission] {
         submissions.filter { $0.bookClub?.persistentModelID == club.persistentModelID }
-    }
-
-    private var syncDescriptor: (label: String, icon: String) {
-        if !club.isOwner {
-            return ("Refresh Club", "arrow.triangle.2.circlepath")
-        }
-        return club.shareIsActive ? ("Publish Changes", "arrow.up.icloud.fill") : ("Owner Device", "lock.fill")
     }
 
     private func syncClubForCurrentRole() async {

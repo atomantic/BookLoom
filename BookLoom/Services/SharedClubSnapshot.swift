@@ -66,6 +66,16 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
         let createdAt: Date
         let cloudZoneName: String
         let shareParticipantCount: Int
+        /// Creator's `MemberIdentity.memberID`. Optional for backward
+        /// compatibility with snapshots written before this field existed.
+        let creatorMemberID: String?
+        /// Sorted list of memberIDs granted admin status by the creator.
+        /// Optional for backward compatibility.
+        let adminMemberIDs: [String]?
+        /// Sorted list of memberIDs the owner has removed from the club.
+        /// Other devices use this to ignore re-published snapshots from a
+        /// removed member. Optional for backward compatibility.
+        let removedMemberIDs: [String]?
     }
 
     struct SubmissionPayload: Codable, Equatable, Sendable {
@@ -294,7 +304,10 @@ enum MemberShareSnapshotStore {
                 name: club.name,
                 createdAt: club.createdAt,
                 cloudZoneName: club.cloudZoneName,
-                shareParticipantCount: club.shareParticipantCount
+                shareParticipantCount: club.shareParticipantCount,
+                creatorMemberID: club.creatorMemberID.trimmedOrNil,
+                adminMemberIDs: club.adminMemberIDs.sorted(),
+                removedMemberIDs: club.removedMemberIDs.sorted()
             )
             : nil
 
@@ -344,8 +357,25 @@ enum MemberShareSnapshotStore {
                 club.cloudZoneName = meta.cloudZoneName
             }
             club.shareParticipantCount = max(1, meta.shareParticipantCount)
+            if let creator = meta.creatorMemberID?.trimmedOrNil {
+                club.creatorMemberID = creator
+            }
+            if let admins = meta.adminMemberIDs {
+                club.adminMemberIDs = Set(admins.filter { !$0.isEmpty })
+            }
+            if let removed = meta.removedMemberIDs {
+                club.removedMemberIDs = Set(removed.filter { !$0.isEmpty })
+            }
         }
         club.shareIsActive = true
+
+        // Removed members' snapshots must be filtered before building canonical
+        // sets — otherwise step 5's "delete non-canonical, non-local" pass
+        // would re-import their rows on every merge.
+        let removedAuthors = club.removedMemberIDs
+        let activeSnapshots = removedAuthors.isEmpty
+            ? snapshots
+            : snapshots.filter { !removedAuthors.contains($0.authorMemberID) }
 
         // 2. Index existing local rows by stable ID for upsert.
         let clubID = club.persistentModelID
@@ -386,7 +416,7 @@ enum MemberShareSnapshotStore {
         var votesByKey: [String: MemberShareSnapshot.VotePayload] = [:] // "<pollID>|<memberID>"
         var rsvpsByKey: [String: MemberShareSnapshot.RSVPPayload] = [:] // "<meetingID>|<memberID>"
 
-        for snap in snapshots {
+        for snap in activeSnapshots {
             for sub in snap.submissions {
                 canonicalSubmissions[sub.selectionID] = sub
             }
@@ -598,11 +628,11 @@ enum MemberShareSnapshotStore {
             notificationEvents = []
         }
 
-        let latestCaptureAt = snapshots.map(\.capturedAt).max() ?? .now
+        let latestCaptureAt = activeSnapshots.map(\.capturedAt).max() ?? .now
         club.lastSharedSnapshotAt = latestCaptureAt
 
         var roster = club.knownMemberRoster
-        for snap in snapshots {
+        for snap in activeSnapshots {
             let trimmedID = snap.authorMemberID.trimmedOrNil
             let trimmedName = snap.authorName.trimmedOrNil
             guard let id = trimmedID, let name = trimmedName else { continue }

@@ -136,7 +136,10 @@ final class SharedClubSnapshotTests: XCTestCase {
                 name: "Sunday Pages",
                 createdAt: Date(timeIntervalSince1970: 1_000),
                 cloudZoneName: "BookClub-Test",
-                shareParticipantCount: 2
+                shareParticipantCount: 2,
+                creatorMemberID: nil,
+                adminMemberIDs: nil,
+                removedMemberIDs: nil
             ),
             submissions: [alexSubmission],
             ratings: [],
@@ -224,7 +227,10 @@ final class SharedClubSnapshotTests: XCTestCase {
                 name: "Sunday Pages",
                 createdAt: Date(timeIntervalSince1970: 1_000),
                 cloudZoneName: "BookClub-Test",
-                shareParticipantCount: 2
+                shareParticipantCount: 2,
+                creatorMemberID: nil,
+                adminMemberIDs: nil,
+                removedMemberIDs: nil
             ),
             submissions: [basePayload]
         )
@@ -286,7 +292,10 @@ final class SharedClubSnapshotTests: XCTestCase {
                 name: "Sunday Pages",
                 createdAt: Date(timeIntervalSince1970: 1_000),
                 cloudZoneName: "BookClub-Test",
-                shareParticipantCount: 2
+                shareParticipantCount: 2,
+                creatorMemberID: nil,
+                adminMemberIDs: nil,
+                removedMemberIDs: nil
             ),
             submissions: []
         )
@@ -301,6 +310,71 @@ final class SharedClubSnapshotTests: XCTestCase {
         let surviving = (try context.fetch(FetchDescriptor<BookSubmission>()))
             .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
         XCTAssertEqual(surviving.map(\.selectionID), ["sel-local"])
+    }
+
+    func test_removedMembersHaveTheirSnapshotIgnoredAndRowsCleaned() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.cloudZoneName = "BookClub-Test"
+        club.ownerUserRecordName = "owner-record"
+        club.shareIsActive = true
+        context.insert(club)
+        try context.save()
+
+        let kickedSubmission = MemberShareSnapshot.SubmissionPayload(
+            selectionID: "sel-kicked",
+            title: "Vanishing",
+            author: "Kim",
+            isbn: "",
+            submittedBy: "Kim",
+            submittedByMemberID: "member-kim",
+            submittedAt: Date(timeIntervalSince1970: 1_000),
+            initialStatusRaw: BookSubmissionStatus.proposed.rawValue,
+            initialPickedAt: nil,
+            initialCompletedAt: nil,
+            bookDescription: "",
+            publishedYear: nil,
+            coverURL: "",
+            externalProvider: "",
+            externalID: ""
+        )
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: MemberShareSnapshot.ClubMeta(
+                name: "Sunday Pages",
+                createdAt: Date(timeIntervalSince1970: 1_000),
+                cloudZoneName: "BookClub-Test",
+                shareParticipantCount: 2,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: [],
+                removedMemberIDs: ["member-kim"]
+            ),
+            submissions: []
+        )
+
+        // The kicked member's snapshot is still in CloudKit (their record may
+        // not have been deleted yet, or they re-published from another device).
+        let kicked = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_500),
+            authorMemberID: "member-kim",
+            authorName: "Kim",
+            submissions: [kickedSubmission]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, kicked],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let surviving = (try context.fetch(FetchDescriptor<BookSubmission>()))
+            .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+        XCTAssertTrue(surviving.isEmpty, "Removed member's submissions must not appear after merge")
+        XCTAssertEqual(club.removedMemberIDs, ["member-kim"], "Owner-published removal list propagates locally")
     }
 
     func test_coverDataCleanupRemovesPersistedImageBytes() throws {

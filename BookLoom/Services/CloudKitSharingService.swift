@@ -228,6 +228,30 @@ final class CloudKitSharingService {
         Self.logger.info("🗑 Deleted shared zone \(club.cloudZoneName, privacy: .public)")
     }
 
+    /// Owner-side: delete a specific participant's `MemberShareSnapshot`
+    /// record from the shared zone. Their CKShare access remains, but their
+    /// content is gone for everyone and the owner's `removedMemberIDs` list
+    /// (synced via `ClubMeta`) prevents any re-published snapshot from being
+    /// applied.
+    func removeMemberSnapshot(for club: BookClub, memberID: String) async throws {
+        guard Features.cloudKitSharing else { return }
+        guard club.isOwner else {
+            throw SharingError.notOwner
+        }
+        guard !memberID.isEmpty else {
+            throw SharingError.missingLocalMemberID
+        }
+        let zoneID = try zoneID(for: club)
+        let recordID = CKRecord.ID(recordName: Self.memberRecordPrefix + memberID, zoneID: zoneID)
+        // Best-effort: their record may already be gone if they leftShare.
+        do {
+            _ = try await privateDB.modifyRecords(saving: [], deleting: [recordID])
+            Self.logger.info("✂️ Removed member snapshot \(memberID, privacy: .public) from \(club.cloudZoneName, privacy: .public)")
+        } catch {
+            Self.logger.warning("⚠️ Best-effort removeMemberSnapshot failed for \(memberID, privacy: .public): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+        }
+    }
+
     /// Member-side cleanup: remove the local member's `MemberShareSnapshot`
     /// record so other participants stop seeing their contributions, then
     /// drop the shared zone from `sharedCloudDatabase`. The latter is how

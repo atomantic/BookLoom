@@ -31,7 +31,10 @@ final class CloudKitSchemaPrimeTests: XCTestCase {
                 name: "Schema Prime",
                 createdAt: .now,
                 cloudZoneName: zone.zoneID.zoneName,
-                shareParticipantCount: 1
+                shareParticipantCount: 1,
+                creatorMemberID: nil,
+                adminMemberIDs: nil,
+                removedMemberIDs: nil
             )
         )
         memberRecord["snapshotData"] = try JSONEncoder().encode(snapshot) as NSData

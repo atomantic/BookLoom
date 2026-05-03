@@ -33,6 +33,22 @@ final class BookClub {
     /// before they have any club activity.
     var knownMemberRosterJSON: String = "{}"
 
+    /// `MemberIdentity.memberID` of the device that created this club. Cannot
+    /// be revoked as an admin by anyone. Set on creation and propagated via
+    /// the owner's `ClubMeta` snapshot. Empty for legacy clubs created before
+    /// this field existed; backfilled when the local creator opens the club.
+    var creatorMemberID: String = ""
+
+    /// JSON-encoded `[memberID]` of members granted admin privileges in
+    /// addition to the creator. Synced through the owner's `ClubMeta`.
+    var adminMemberIDsJSON: String = "[]"
+
+    /// JSON-encoded `[memberID]` of members the owner has removed from the
+    /// club. The owner's snapshot deletion drops their CloudKit record; this
+    /// list is propagated through the owner's `ClubMeta` so every device skips
+    /// re-applying any future re-published snapshot from a removed member.
+    var removedMemberIDsJSON: String = "[]"
+
     @Relationship(deleteRule: .cascade, inverse: \BookSubmission.bookClub)
     var submissions: [BookSubmission]? = nil
 
@@ -91,4 +107,66 @@ final class BookClub {
             knownMemberRosterJSON = json
         }
     }
+
+    var adminMemberIDs: Set<String> {
+        get { decodeIDSet(adminMemberIDsJSON) }
+        set { adminMemberIDsJSON = encodeIDSet(newValue) }
+    }
+
+    func isAdmin(memberID: String) -> Bool {
+        guard !memberID.isEmpty else { return false }
+        if memberID == creatorMemberID { return true }
+        return adminMemberIDs.contains(memberID)
+    }
+
+    func setAdmin(_ isAdmin: Bool, memberID: String) {
+        guard !memberID.isEmpty, memberID != creatorMemberID else { return }
+        var current = adminMemberIDs
+        if isAdmin {
+            current.insert(memberID)
+        } else {
+            current.remove(memberID)
+        }
+        adminMemberIDs = current
+    }
+
+    var removedMemberIDs: Set<String> {
+        get { decodeIDSet(removedMemberIDsJSON) }
+        set { removedMemberIDsJSON = encodeIDSet(newValue) }
+    }
+
+    /// Owner-only operation. Marks `memberID` as removed, demotes them out of
+    /// the admin set, and drops them from the local roster so the UI clears.
+    /// The creator can never be removed.
+    func removeMember(memberID: String) {
+        guard !memberID.isEmpty, memberID != creatorMemberID else { return }
+        var removed = removedMemberIDs
+        removed.insert(memberID)
+        removedMemberIDs = removed
+
+        var admins = adminMemberIDs
+        admins.remove(memberID)
+        adminMemberIDs = admins
+
+        var roster = knownMemberRoster
+        roster.removeValue(forKey: memberID)
+        knownMemberRoster = roster
+    }
+}
+
+private func decodeIDSet(_ json: String) -> Set<String> {
+    guard let data = json.data(using: .utf8),
+          let decoded = try? JSONDecoder().decode([String].self, from: data) else {
+        return []
+    }
+    return Set(decoded.filter { !$0.isEmpty })
+}
+
+private func encodeIDSet(_ ids: Set<String>) -> String {
+    let array = ids.filter { !$0.isEmpty }.sorted()
+    guard let data = try? JSONEncoder().encode(array),
+          let json = String(data: data, encoding: .utf8) else {
+        return "[]"
+    }
+    return json
 }

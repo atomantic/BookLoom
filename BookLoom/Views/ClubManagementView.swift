@@ -17,6 +17,7 @@ struct ClubManagementView: View {
     @State private var showingInvite = false
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
+    @State private var memberPendingRemoval: ClubMemberDigest? = nil
 
     var body: some View {
         let members = club.memberDigests
@@ -52,9 +53,11 @@ struct ClubManagementView: View {
                             isCreator: isCreator(member),
                             isAdmin: club.isAdmin(memberID: member.id),
                             canToggleAdmin: canToggleAdmin(for: member, canManage: canManageAdmins),
+                            canRemove: canRemoveMember(member, canManage: canManageAdmins),
                             adminToggle: { newValue in
                                 toggleAdmin(memberID: member.id, isAdmin: newValue)
-                            }
+                            },
+                            onRemove: { memberPendingRemoval = member }
                         )
                     }
 
@@ -78,7 +81,7 @@ struct ClubManagementView: View {
                     .buttonStyle(.borderedProminent)
 
                     PermissionsHelpRow(
-                        message: "Toggle admin to grant a member the same management abilities you have. The club creator is always admin and cannot be demoted."
+                        message: "Toggle admin to grant a member the same management abilities you have. The club creator is always admin and cannot be demoted. Remove a member to drop their books, ratings, and notes from the club."
                     )
                 } else {
                     PermissionsHelpRow(
@@ -129,6 +132,23 @@ struct ClubManagementView: View {
                 Text("This removes the club from this device. The owner's copy is unaffected.")
             }
         }
+        .confirmationDialog(
+            "Remove member?",
+            isPresented: Binding(
+                get: { memberPendingRemoval != nil },
+                set: { if !$0 { memberPendingRemoval = nil } }
+            ),
+            presenting: memberPendingRemoval,
+            actions: { target in
+                Button("Remove \(target.name)", role: .destructive) {
+                    removeMember(target)
+                }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { _ in
+                Text("Their books, ratings, notes, votes, and RSVPs will be cleared from the club for everyone. They keep their own iCloud share access — to fully revoke that, open Manage Sharing and remove them there.")
+            }
+        )
         .onAppear {
             draftName = club.name
         }
@@ -153,11 +173,48 @@ struct ClubManagementView: View {
 
     private func canToggleAdmin(for member: ClubMemberDigest, canManage: Bool) -> Bool {
         guard canManage else { return false }
-        // Synthetic name-keyed entries (no real memberID) can't be tracked
-        // across devices, so admin status would never sync.
-        guard !member.id.hasPrefix("name:") else { return false }
+        // Name-keyed digests have no MemberIdentity.memberID, so admin status
+        // would never round-trip through CloudKit.
+        guard !member.isNameOnly else { return false }
         if member.id == club.creatorMemberID { return false }
         return true
+    }
+
+    private func canRemoveMember(_ member: ClubMemberDigest, canManage: Bool) -> Bool {
+        guard canManage else { return false }
+        guard !member.isNameOnly else { return false }
+        if member.id == club.creatorMemberID { return false }
+        if member.id == memberIdentity.memberID { return false }
+        return true
+    }
+
+    private func removeMember(_ member: ClubMemberDigest) {
+        let removedID = member.id
+        guard !removedID.isEmpty, removedID != club.creatorMemberID else { return }
+        club.removeMember(memberID: removedID)
+        do {
+            try SharedClubSync.saveAndPublish(
+                context: context,
+                club: club,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
+        } catch {
+            assertionFailure("Failed to publish member removal: \(error.localizedDescription)")
+        }
+        if Features.cloudKitSharing, club.shareIsActive {
+            // The refresh waits for the CloudKit deletion so the next merge
+            // doesn't re-import the just-removed snapshot.
+            Task { @MainActor in
+                try? await CloudKitSharingService.shared.removeMemberSnapshot(for: club, memberID: removedID)
+                await SharedClubSync.refreshIfNeeded(
+                    club,
+                    context: context,
+                    localMemberID: memberIdentity.memberID,
+                    localMemberName: memberIdentity.name
+                )
+            }
+        }
     }
 
     private func toggleAdmin(memberID: String, isAdmin: Bool) {
@@ -343,7 +400,9 @@ private struct ClubMemberRow: View {
     let isCreator: Bool
     let isAdmin: Bool
     let canToggleAdmin: Bool
+    let canRemove: Bool
     let adminToggle: @MainActor (Bool) -> Void
+    let onRemove: @MainActor () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -365,6 +424,16 @@ private struct ClubMemberRow: View {
             Spacer(minLength: 8)
 
             roleControl
+
+            if canRemove {
+                Button(role: .destructive, action: onRemove) {
+                    Image(systemName: "person.fill.xmark")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
+                .accessibilityLabel("Remove \(member.name)")
+            }
         }
         .bookLoomCard(padding: 10)
     }
@@ -378,16 +447,22 @@ private struct ClubMemberRow: View {
                 systemImage: "crown.fill"
             )
         } else if canToggleAdmin {
-            Toggle(
-                "Admin",
-                isOn: Binding(
-                    get: { isAdmin },
-                    set: { newValue in adminToggle(newValue) }
+            HStack(spacing: 8) {
+                Text("Admin")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BookLoomStyle.ink)
+                Toggle(
+                    "Admin",
+                    isOn: Binding(
+                        get: { isAdmin },
+                        set: { newValue in adminToggle(newValue) }
+                    )
                 )
-            )
-            .toggleStyle(.switch)
-            .labelsHidden()
-            .tint(BookLoomStyle.indigo)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .tint(BookLoomStyle.indigo)
+            }
+            .accessibilityElement(children: .combine)
         } else if isAdmin {
             TintedCapsuleLabel(
                 text: "Admin",
