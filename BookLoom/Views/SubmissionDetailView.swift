@@ -100,14 +100,14 @@ struct SubmissionDetailView: View {
                  : "This sets the book as the club's current read.")
         }
         .confirmationDialog(
-            "Mark this book as read?",
+            markReadConfirmationTitle,
             isPresented: $showingMarkReadConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Mark Read") { markComplete() }
+            Button(markReadConfirmationActionTitle) { markComplete() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This moves the book into reading history and clears the current slot.")
+            Text(markReadConfirmationMessage)
         }
         .confirmationDialog(
             "Move this book back to proposals?",
@@ -133,6 +133,32 @@ struct SubmissionDetailView: View {
 
     private var hasDisplayableDetails: Bool {
         !submission.isbn.isEmpty || submission.publishedYear != nil || !submission.displayDescription.isEmpty
+    }
+
+    private var markReadConfirmationTitle: String {
+        switch submission.status {
+        case .current:
+            return "Mark the current book as read?"
+        case .proposed, .skipped:
+            return "Mark this book as already read?"
+        case .completed:
+            return "This book is already marked read."
+        }
+    }
+
+    private var markReadConfirmationActionTitle: String {
+        submission.status == .current ? "Mark Read" : "Mark Already Read"
+    }
+
+    private var markReadConfirmationMessage: String {
+        switch submission.status {
+        case .current:
+            return "This moves the book into reading history and clears the current slot."
+        case .proposed, .skipped:
+            return "This moves the book into the group's read history without setting it as current."
+        case .completed:
+            return "The book is already in the group's read history."
+        }
     }
 
     private func setAsCurrent() {
@@ -403,6 +429,7 @@ private struct StatusActionsCard: View {
                 switch submission.status {
                 case .proposed:
                     actionButton("Set as Current Read", systemImage: "book.fill", prominent: true, action: onSetCurrent)
+                    actionButton("Mark Already Read", systemImage: "checkmark.seal.fill", prominent: false, action: onMarkRead)
                     if canMoveToShelf {
                         actionButton("Move to Shelf", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
                     }
@@ -416,6 +443,7 @@ private struct StatusActionsCard: View {
                     }
                 case .skipped:
                     actionButton("Restore to Proposals", systemImage: "tray.full.fill", prominent: true, action: onMoveToProposals)
+                    actionButton("Mark Already Read", systemImage: "checkmark.seal.fill", prominent: false, action: onMarkRead)
                     if canMoveToShelf {
                         actionButton("Move to Shelf", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
                     }

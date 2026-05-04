@@ -104,6 +104,14 @@ private struct BooksTabContent: View {
                                     Label("Set Current", systemImage: "book.fill")
                                 }
                                 .tint(BookLoomStyle.sage)
+
+                                Button {
+                                    markComplete(submission)
+                                    libraryTab = .read
+                                } label: {
+                                    Label("Mark Read", systemImage: "checkmark.seal.fill")
+                                }
+                                .tint(BookLoomStyle.indigo)
                             }
                             .swipeActions(edge: .leading) {
                                 if GoodreadsImportInbox.canMoveToShelf(submission) {
@@ -307,37 +315,12 @@ private struct BooksTabContent: View {
     }
 
     private func markComplete(_ submission: BookSubmission) {
-        let now = Date.now
-        submission.status = .completed
-        submission.completedAt = now
-        club.recordStatusOverride(
-            StatusOverrideEntry(
-                submissionSelectionID: submission.selectionID,
-                statusRaw: BookSubmissionStatus.completed.rawValue,
-                pickedAt: submission.pickedAt,
-                completedAt: now,
-                occurredAt: now,
-                actorMemberID: memberIdentity.memberID
-            )
-        )
+        BookSubmissionStatusEditor.markComplete(submission, in: club, actorMemberID: memberIdentity.memberID)
         saveClubChanges()
     }
 
     private func moveCurrentToProposals(_ submission: BookSubmission) {
-        let now = Date.now
-        submission.status = .proposed
-        submission.pickedAt = nil
-        submission.completedAt = nil
-        club.recordStatusOverride(
-            StatusOverrideEntry(
-                submissionSelectionID: submission.selectionID,
-                statusRaw: BookSubmissionStatus.proposed.rawValue,
-                pickedAt: nil,
-                completedAt: nil,
-                occurredAt: now,
-                actorMemberID: memberIdentity.memberID
-            )
-        )
+        BookSubmissionStatusEditor.moveToProposals(submission, in: club, actorMemberID: memberIdentity.memberID)
         saveClubChanges()
     }
 

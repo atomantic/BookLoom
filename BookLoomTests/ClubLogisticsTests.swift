@@ -62,6 +62,35 @@ final class ClubLogisticsTests: XCTestCase {
         XCTAssertEqual(winner.pickedAt, pickedAt)
     }
 
+    func test_statusEditorMarksProposedBookAlreadyRead() throws {
+        let club = BookClub(name: "Tuesday")
+        let proposal = BookSubmission(title: "Already Read", status: .proposed)
+        club.addSubmission(proposal)
+
+        let completedAt = Date(timeIntervalSince1970: 42)
+        StatusOverrideStore.clear(forZone: club.cloudZoneName)
+        defer { StatusOverrideStore.clear(forZone: club.cloudZoneName) }
+
+        BookSubmissionStatusEditor.markComplete(
+            proposal,
+            in: club,
+            actorMemberID: "member-1",
+            now: completedAt
+        )
+
+        XCTAssertEqual(proposal.status, .completed)
+        XCTAssertNil(proposal.pickedAt)
+        XCTAssertEqual(proposal.completedAt, completedAt)
+
+        let override = try XCTUnwrap(club.statusOverrideLog.first)
+        XCTAssertEqual(club.statusOverrideLog.count, 1)
+        XCTAssertEqual(override.submissionSelectionID, proposal.selectionID)
+        XCTAssertEqual(override.statusRaw, BookSubmissionStatus.completed.rawValue)
+        XCTAssertNil(override.pickedAt)
+        XCTAssertEqual(override.completedAt, completedAt)
+        XCTAssertEqual(override.actorMemberID, "member-1")
+    }
+
     func test_discussionPromptLibraryAddsStarterPromptsOnce() throws {
         let container = try ModelContainer(
             for: BookClub.self,
