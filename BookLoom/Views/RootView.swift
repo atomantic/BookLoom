@@ -168,19 +168,28 @@ private struct MainTabs: View {
         activeClubStore.setActiveClub(club)
 
         switch route {
-        case "books", "clubs", "clubHome":
+        case "books", "clubs", "clubHome", "shelf":
             selectedTab = .books
+        case "import":
+            selectedTab = .books
+            if let firstPending = goodreadsInbox.pending.first {
+                goodreadsInbox.present(firstPending.url)
+            }
         case "currentRead":
             selectedTab = .books
             if let current = club.sections.current {
                 booksPath.append(current)
             }
-        case "poll", "polls":
+        case "polls":
+            selectedTab = .polls
+        case "poll", "vote":
             selectedTab = .polls
             if let poll = club.recentSelectionPolls.first {
                 pollsPath.append(poll)
             }
-        case "meeting", "meetings", "schedule":
+        case "schedule":
+            selectedTab = .schedule
+        case "meeting", "meetings":
             selectedTab = .schedule
             if let meeting = club.upcomingMeetings.first ?? club.pastMeetings.first {
                 schedulePath.append(meeting)

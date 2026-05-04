@@ -70,6 +70,7 @@ struct SettingsView: View {
         }
         .bookLoomScreenBackground()
         .navigationTitle("Settings")
+        .bookLoomNavigationBar()
         .confirmationDialog(
             "Delete all your BookLoom data?",
             isPresented: $showingResetConfirmation,

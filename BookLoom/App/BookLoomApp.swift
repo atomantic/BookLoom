@@ -67,6 +67,7 @@ struct BookLoomApp: App {
                 .environment(activeClubStore)
                 .environment(goodreadsInbox)
                 .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
+                .modifier(ScreenshotDynamicTypeOverride())
                 .onContinueUserActivity(ShareAcceptance.activityType) { activity in
                     guard let metadata = ShareAcceptance.metadata(from: activity) else { return }
                     Task { @MainActor in
@@ -126,6 +127,21 @@ struct BookLoomApp: App {
                 localMemberID: memberIdentity.memberID,
                 localMemberName: memberIdentity.name
             )
+        }
+    }
+}
+
+/// Applies the `-screenshotDynamicType <size>` launch arg as a `dynamicTypeSize`
+/// override. No-op when the arg is absent or unrecognized so the user's system
+/// setting wins in production.
+private struct ScreenshotDynamicTypeOverride: ViewModifier {
+    private let resolvedSize: DynamicTypeSize? = .fromScreenshotArgument(AppLaunchOptions.screenshotDynamicType)
+
+    func body(content: Content) -> some View {
+        if let resolvedSize {
+            content.dynamicTypeSize(resolvedSize)
+        } else {
+            content
         }
     }
 }

@@ -62,35 +62,51 @@ final class ScreenshotTests: XCTestCase {
         captureStandardScreens()
     }
 
+    /// Captures the Books, Polls, and Schedule tabs at the largest accessibility
+    /// text size. Used to verify Dynamic Type doesn't break the layout. Output
+    /// lands in `screenshots/{locale}/{device}_a11y/` so it doesn't clobber the
+    /// App Store-bound captures.
+    @MainActor func testCaptureLargestDynamicType() {
+        captureRoute("a11y_01_books", route: "books", waitForText: "Currently Reading", dynamicType: "accessibility5", outputSuffix: "_a11y")
+        captureRoute("a11y_05_polls", route: "polls", waitForText: "June Pick Shortlist", dynamicType: "accessibility5", outputSuffix: "_a11y")
+        captureRoute("a11y_08_schedule", route: "schedule", waitForText: "Small Fires Discussion", dynamicType: "accessibility5", outputSuffix: "_a11y")
+    }
+
     @MainActor
     private func captureStandardScreens() {
-        captureRoute("01_clubs", route: "clubs", waitForText: "Riverside Reading Circle")
-        captureRoute("02_club_home", route: "clubHome", waitForText: "Currently Reading")
-        captureRoute("03_current_read", route: "currentRead", waitForText: "Discussion")
-        captureRoute("04_vote", route: "poll", waitForText: "June Pick Shortlist")
-        captureRoute("05_meeting", route: "meeting", waitForText: "Small Fires Discussion")
-        captureBookIdeas()
+        captureRoute("01_books", route: "books", waitForText: "Currently Reading")
+        captureShelf()
+        captureRoute("03_import", route: "import", waitForText: "Add to Proposals")
+        captureRoute("04_current_read", route: "currentRead", waitForText: "Discussion")
+        captureRoute("05_polls", route: "polls", waitForText: "June Pick Shortlist")
+        captureRoute("06_vote", route: "vote", waitForText: "Save Ballot")
+        captureRoute("07_discussions", route: "discussions", waitForText: "Current Read")
+        captureRoute("08_schedule", route: "schedule", waitForText: "Small Fires Discussion")
+        captureRoute("09_meeting", route: "meeting", waitForText: "Save RSVP")
         captureAddBook()
     }
 
     @MainActor
-    private func captureRoute(_ name: String, route: String, waitForText expectedText: String) {
+    private func captureRoute(_ name: String, route: String, waitForText expectedText: String, dynamicType: String? = nil, outputSuffix: String = "") {
         guard shouldCapture(name) else { return }
-        launch(route: route)
+        launch(route: route, dynamicType: dynamicType)
         waitForText(expectedText)
-        saveScreenshot(name)
+        saveScreenshot(name, suffix: outputSuffix)
     }
 
+    /// The Library → Shelf segment lives at the bottom of the Books screen.
+    /// Swipe up until the seeded Goodreads import is on-screen so the capture
+    /// shows the import banner instead of the page header again.
     @MainActor
-    private func captureBookIdeas() {
-        let name = "06_book_ideas"
+    private func captureShelf() {
+        let name = "02_shelf"
         guard shouldCapture(name) else { return }
-        launch(route: "clubHome")
-        waitForText("Proposed")
+        launch(route: "shelf")
+        waitForText("Library")
 
-        let lastProposal = app.staticTexts["Tomorrow, and Tomorrow, and Tomorrow"]
+        let target = app.staticTexts["Circe"]
         var attempts = 0
-        while !lastProposal.isHittable && attempts < 8 {
+        while !target.isHittable && attempts < 8 {
             app.swipeUp()
             attempts += 1
         }
@@ -100,28 +116,32 @@ final class ScreenshotTests: XCTestCase {
 
     @MainActor
     private func captureAddBook() {
-        let name = "07_add_book"
+        let name = "10_add_book"
         guard shouldCapture(name) else { return }
-        launch(route: "clubHome")
+        launch(route: "books")
         waitForText("Currently Reading")
 
         let addBook = app.buttons["Add Book"]
         if addBook.waitForExistence(timeout: 3) {
             addBook.tap()
         }
-        waitForText("Add a Proposal")
+        waitForText("Add a Book")
         saveScreenshot(name)
     }
 
     @MainActor
-    private func launch(route: String) {
+    private func launch(route: String, dynamicType: String? = nil) {
         app = XCUIApplication()
-        app.launchArguments = [
+        var args = [
             "-SeedSampleData",
             "-screenshotRoute", route,
             "-AppleLanguages", "(\(locale))",
             "-AppleLocale", locale
         ]
+        if let dynamicType {
+            args += ["-screenshotDynamicType", dynamicType]
+        }
+        app.launchArguments = args
         app.launch()
         sleep(1)
     }
@@ -138,14 +158,14 @@ final class ScreenshotTests: XCTestCase {
     }
 
     @MainActor
-    private func saveScreenshot(_ name: String) {
+    private func saveScreenshot(_ name: String, suffix: String = "") {
         let screenshot = app.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.name = "\(locale)_\(deviceType)_\(name)"
+        attachment.name = "\(locale)_\(deviceType)\(suffix)_\(name)"
         attachment.lifetime = .keepAlways
         add(attachment)
 
-        let dir = "\(outputDir)/\(locale)/\(deviceType)"
+        let dir = "\(outputDir)/\(locale)/\(deviceType)\(suffix)"
         let url = URL(fileURLWithPath: "\(dir)/\(name).png")
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         try? screenshot.pngRepresentation.write(to: url)

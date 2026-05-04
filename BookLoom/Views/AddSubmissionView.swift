@@ -130,7 +130,7 @@ struct AddSubmissionView: View {
                     Button {
                         Task { await addSubmission(asRead: true) }
                     } label: {
-                        Label(isSaving ? "Saving..." : "Save to Read", systemImage: "checkmark.seal.fill")
+                        Label(isSaving ? "Saving..." : "Save to Completed", systemImage: "checkmark.seal.fill")
                     }
                     .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.sage))
                     .disabled(trimmedTitle.isEmpty || isSaving)
@@ -143,9 +143,7 @@ struct AddSubmissionView: View {
         }
         .bookLoomScreenBackground()
         .navigationTitle("Add Book")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .bookLoomNavigationBar()
         .alert("Couldn't Add Book", isPresented: saveErrorBinding) {
             Button("OK", role: .cancel) {}
         } message: {

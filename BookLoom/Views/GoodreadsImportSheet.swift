@@ -159,7 +159,7 @@ struct GoodreadsImportSheet: View {
             Button {
                 Task { await save(asRead: true) }
             } label: {
-                Label(isSaving ? "Saving…" : "Save to Read", systemImage: "checkmark.seal.fill")
+                Label(isSaving ? "Saving…" : "Save to Completed", systemImage: "checkmark.seal.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)

@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
         --screen) SCREEN="$2"; shift 2 ;;
         --help|-h)
             echo "Usage: $0 [--iphone-only|--ipad-only] [--screen <name>] [locale ...]"
-            echo "Screens: 01_clubs 02_club_home 03_current_read 04_vote 05_meeting 06_book_ideas 07_add_book"
+            echo "Screens: 01_books 02_shelf 03_import 04_current_read 05_polls 06_vote 07_discussions 08_schedule 09_meeting 10_add_book"
             echo "Override devices with BOOKLOOM_IPHONE_DEVICE/BOOKLOOM_IPAD_DEVICE and BOOKLOOM_IPHONE_OS/BOOKLOOM_IPAD_OS."
             exit 0
             ;;

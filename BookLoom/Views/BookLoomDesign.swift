@@ -99,6 +99,19 @@ extension View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
     }
+
+    /// Inline navigation title + opaque toolbar background. Without an opaque
+    /// background, `bookLoomScreenBackground()` content scrolls under the
+    /// transparent navbar and the inline title overlaps the first card text.
+    @ViewBuilder
+    func bookLoomNavigationBar() -> some View {
+        #if os(iOS)
+        self.navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+        #else
+        self
+        #endif
+    }
 }
 
 struct BookLoomSecondaryButtonStyle: ButtonStyle {
@@ -379,8 +392,10 @@ struct TintedCapsuleLabel: View {
             .padding(.vertical, verticalPadding)
             .foregroundStyle(tint)
             .background(tint.opacity(0.13), in: Capsule())
-            .lineLimit(1)
+            .lineLimit(2)
             .minimumScaleFactor(0.75)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder

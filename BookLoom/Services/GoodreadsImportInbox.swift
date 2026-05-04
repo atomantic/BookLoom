@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftData
 import os
 
 /// Live, observable view of `SharedImportInbox` for SwiftUI. The underlying
@@ -9,10 +10,13 @@ import os
 ///
 /// Two presentation paths feed `presentedItem`:
 ///   • `presentNextIfNeeded()` — used by auto-pop on app launch / foreground.
-///     Records URLs that were skipped (closed without saving) so the same
-///     book doesn't pop again every time the app returns to active.
+///     Only fires for items enqueued within the last `autoPresentMaxAge`
+///     window so books the user has chosen to keep on the Shelf without
+///     adding to a club don't pop every time the app comes back. Records
+///     URLs that were skipped (closed without saving) so the same book
+///     doesn't pop again every time the app returns to active.
 ///   • `present(_:)` — used when the user explicitly taps a row in the
-///     visible Shelf list. Bypasses the skip set.
+///     visible Shelf list. Bypasses the skip set and the freshness window.
 ///
 /// `prefetchAll()` resolves Goodreads metadata for unresolved entries in the
 /// background so the banner can show real titles/covers without the user
@@ -21,6 +25,10 @@ import os
 @MainActor
 final class GoodreadsImportInbox {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "ImportInbox")
+    /// How recently an entry must have been enqueued for the auto-pop path to
+    /// surface it. Items older than this stay quietly on the Shelf — the user
+    /// already chose to keep them there without adding to a club.
+    static let autoPresentMaxAge: TimeInterval = 60 * 10
 
     private(set) var pending: [SharedImportInbox.PendingImport] = []
     var presentedItem: SharedImportInbox.PendingImport?
@@ -45,12 +53,65 @@ final class GoodreadsImportInbox {
         }
     }
 
-    func presentNextIfNeeded() {
+    func presentNextIfNeeded(now: Date = .now) {
         guard presentedItem == nil else { return }
         refresh()
-        guard let next = pending.first(where: { !skippedThisSession.contains($0.url) }) else { return }
+        let cutoff = now.addingTimeInterval(-Self.autoPresentMaxAge)
+        guard let next = pending.first(where: {
+            $0.enqueuedAt >= cutoff && !skippedThisSession.contains($0.url)
+        }) else { return }
         skippedThisSession.insert(next.url)
         presentedItem = next
+    }
+
+    /// Pull a club submission back to the Shelf. Removes the submission from
+    /// the club's SwiftData store and re-enqueues a `PendingImport` with the
+    /// submission's metadata pre-populated. The new entry's `enqueuedAt` is
+    /// set just outside the auto-present window so the move doesn't trigger
+    /// the import sheet — the user explicitly parked the book on their Shelf
+    /// rather than adding it. Returns `false` when the submission has no
+    /// reconstructable Goodreads URL (e.g. it was added by manual search via
+    /// Open Library) and a Shelf entry can't be synthesized.
+    @discardableResult
+    func moveSubmissionToShelf(
+        _ submission: BookSubmission,
+        context: ModelContext,
+        now: Date = .now
+    ) -> Bool {
+        guard let url = Self.goodreadsURL(for: submission) else { return false }
+        let enqueueDate = now.addingTimeInterval(-Self.autoPresentMaxAge - 1)
+        SharedImportInbox.enqueue(url, defaults: defaults, now: enqueueDate)
+        SharedImportInbox.update(url, defaults: defaults, now: now) { entry in
+            entry.title = submission.title.isEmpty ? nil : submission.title
+            entry.author = submission.author.isEmpty ? nil : submission.author
+            entry.coverURLString = submission.coverURL.isEmpty ? nil : submission.coverURL
+            entry.bookDescription = submission.bookDescription.isEmpty ? nil : submission.bookDescription
+            entry.publishedYear = submission.publishedYear
+            entry.isbn = submission.isbn.isEmpty ? nil : submission.isbn
+            entry.externalProvider = submission.externalProvider.isEmpty ? nil : submission.externalProvider
+            entry.externalID = submission.externalID.isEmpty ? nil : submission.externalID
+            entry.metadataFetchedAt = now
+        }
+        skippedThisSession.insert(url)
+        context.delete(submission)
+        refresh()
+        return true
+    }
+
+    static func canMoveToShelf(_ submission: BookSubmission) -> Bool {
+        goodreadsURL(for: submission) != nil
+    }
+
+    /// GoodreadsLinkExtractor canonicalizes shared URLs to
+    /// `https://www.goodreads.com/book/show/<id>`, so we can rebuild the same
+    /// canonical URL from a Goodreads-sourced submission's externalID.
+    private static func goodreadsURL(for submission: BookSubmission) -> URL? {
+        guard submission.externalProvider == BookMetadataProvider.goodreads.rawValue,
+              !submission.externalID.isEmpty,
+              let url = URL(string: "https://www.goodreads.com/book/show/\(submission.externalID)") else {
+            return nil
+        }
+        return url
     }
 
     func present(_ url: URL) {

@@ -130,6 +130,18 @@ enum SharedImportInbox {
         return true
     }
 
+    /// Replace the entire queue in a single read-modify-write. Used by
+    /// screenshot seeding to avoid N round-trips through UserDefaults + the
+    /// App Group file mirror when populating multiple resolved entries at once.
+    static func replaceAll(
+        _ entries: [PendingImport],
+        defaults: UserDefaults? = SharedImportInbox.defaults,
+        fileURL: URL? = nil
+    ) {
+        let resolvedFileURL = resolvedQueueFileURL(defaults: defaults, explicitFileURL: fileURL)
+        writeQueue(entries, defaults: defaults, fileURL: resolvedFileURL)
+    }
+
     static func clear(defaults: UserDefaults? = SharedImportInbox.defaults, fileURL: URL? = nil) {
         let resolvedFileURL = resolvedQueueFileURL(defaults: defaults, explicitFileURL: fileURL)
         defaults?.removeObject(forKey: queueKey)

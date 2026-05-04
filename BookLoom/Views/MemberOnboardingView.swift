@@ -15,7 +15,7 @@ struct MemberOnboardingView: View {
 
                 VStack(spacing: 6) {
                     Text("BookLoom")
-                        .font(.system(size: 32, weight: .semibold))
+                        .font(.largeTitle.weight(.semibold))
                         .foregroundStyle(BookLoomStyle.ink)
                     Text("Choose the next book together.")
                         .font(.body)

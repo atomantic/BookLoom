@@ -51,7 +51,7 @@ Launch with deterministic in-memory screenshot data:
 open .build/DerivedData/Build/Products/Debug/BookLoom.app --args -SeedSampleData
 ```
 
-In Xcode, add `-SeedSampleData` to Run > Arguments. The sample launch uses an in-memory SwiftData store and includes a configured member, a shared test club, current read, proposals, completed history, ratings, notes, discussion prompts, meetings, RSVPs, and a ranked poll.
+In Xcode, add `-SeedSampleData` to Run > Arguments. The sample launch uses an in-memory SwiftData store and includes a configured member, a shared test club, current read, proposals, completed history, ratings, notes, discussion prompts, meetings, RSVPs, a ranked poll, and two queued Goodreads imports on the Library → Shelf segment.
 
 ## Screenshots
 
@@ -66,9 +66,21 @@ Useful variants:
 ```sh
 ./take_screenshots.sh --iphone-only
 ./take_screenshots.sh --ipad-only
-./take_screenshots.sh --screen 01_clubs
+./take_screenshots.sh --screen 01_books
 ./take_screenshots_macos.sh
 ```
+
+Captured screens (in order): `01_books`, `02_shelf`, `03_import`, `04_current_read`, `05_polls`, `06_vote`, `07_discussions`, `08_schedule`, `09_meeting`, `10_add_book`. Each maps to a `-screenshotRoute` value handled by `RootView.navigateToScreenshotRoute`. The Shelf and Import screens rely on two pre-seeded Goodreads pending imports (`ScreenshotSampleData.seedShelfImports`); to add or rename screens, update both `BookLoomUITests/ScreenshotTests.swift` and the route switch in `RootView.swift`.
+
+Run the Dynamic Type stress test (largest accessibility text) with:
+
+```sh
+xcodebuild test -project BookLoom.xcodeproj -scheme BookLoom_iOS \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' \
+  -only-testing:BookLoomUITests_iOS/ScreenshotTests/testCaptureLargestDynamicType
+```
+
+Output lands in `screenshots/{locale}/{device}_a11y/` and uses the `-screenshotDynamicType accessibility5` launch arg to override `DynamicTypeSize`. Use this to verify layout adapts when users have set the largest text size in Accessibility → Display & Text Size.
 
 Outputs are written to `screenshots/{locale}/{device}/`. Override simulator defaults with `BOOKLOOM_IPHONE_DEVICE`, `BOOKLOOM_IPHONE_OS`, `BOOKLOOM_IPAD_DEVICE`, and `BOOKLOOM_IPAD_OS`.
 

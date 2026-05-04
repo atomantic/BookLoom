@@ -3,7 +3,9 @@ import SwiftData
 
 struct SubmissionDetailView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @Environment(MemberIdentity.self) private var memberIdentity
+    @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
 
     @Bindable var submission: BookSubmission
 
@@ -13,6 +15,7 @@ struct SubmissionDetailView: View {
     @State private var showingSetCurrentConfirmation: Bool = false
     @State private var showingMarkReadConfirmation: Bool = false
     @State private var showingMoveToProposalsConfirmation: Bool = false
+    @State private var showingMoveToShelfConfirmation: Bool = false
 
     var body: some View {
         let summary = submission.ratingSummary
@@ -31,9 +34,11 @@ struct SubmissionDetailView: View {
             Section {
                 StatusActionsCard(
                     submission: submission,
+                    canMoveToShelf: GoodreadsImportInbox.canMoveToShelf(submission),
                     onSetCurrent: { showingSetCurrentConfirmation = true },
                     onMarkRead: { showingMarkReadConfirmation = true },
-                    onMoveToProposals: { showingMoveToProposalsConfirmation = true }
+                    onMoveToProposals: { showingMoveToProposalsConfirmation = true },
+                    onMoveToShelf: { showingMoveToShelfConfirmation = true }
                 )
             } header: {
                 SectionTitle(title: "Status")
@@ -78,6 +83,7 @@ struct SubmissionDetailView: View {
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle(submission.displayTitle)
+        .bookLoomNavigationBar()
         .sheet(isPresented: $showingDiscussionMode) {
             DiscussionModeView(submissionTitle: submission.displayTitle, prompts: prompts)
         }
@@ -113,6 +119,16 @@ struct SubmissionDetailView: View {
         } message: {
             Text("This returns the book to the proposal list without recording a read.")
         }
+        .confirmationDialog(
+            "Move this book to your Shelf?",
+            isPresented: $showingMoveToShelfConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Move to Shelf") { moveToShelf() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the book from the club and returns it to your personal Shelf.")
+        }
     }
 
     private var hasDisplayableDetails: Bool {
@@ -136,6 +152,22 @@ struct SubmissionDetailView: View {
         guard let club = submission.bookClub else { return }
         BookSubmissionStatusEditor.moveToProposals(submission, in: club, actorMemberID: memberIdentity.memberID)
         saveSubmissionChanges()
+    }
+
+    private func moveToShelf() {
+        guard let club = submission.bookClub else { return }
+        guard goodreadsInbox.moveSubmissionToShelf(submission, context: context) else { return }
+        do {
+            try SharedClubSync.saveAndPublish(
+                context: context,
+                club: club,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
+        } catch {
+            assertionFailure("Failed to save after moving submission to Shelf: \(error.localizedDescription)")
+        }
+        dismiss()
     }
 
     private func bindingForOwnRating() -> Binding<Int> {
@@ -349,9 +381,11 @@ private struct SubmissionHero: View {
 
 private struct StatusActionsCard: View {
     let submission: BookSubmission
+    let canMoveToShelf: Bool
     let onSetCurrent: () -> Void
     let onMarkRead: () -> Void
     let onMoveToProposals: () -> Void
+    let onMoveToShelf: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -369,13 +403,22 @@ private struct StatusActionsCard: View {
                 switch submission.status {
                 case .proposed:
                     actionButton("Set as Current Read", systemImage: "book.fill", prominent: true, action: onSetCurrent)
+                    if canMoveToShelf {
+                        actionButton("Move to Shelf", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
+                    }
                 case .current:
                     actionButton("Mark Read", systemImage: "checkmark.seal.fill", prominent: true, action: onMarkRead)
                     actionButton("Move Back to Proposals", systemImage: "tray.full.fill", prominent: false, action: onMoveToProposals)
                 case .completed:
                     actionButton("Move Back to Proposals", systemImage: "tray.full.fill", prominent: true, action: onMoveToProposals)
+                    if canMoveToShelf {
+                        actionButton("Move to Shelf", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
+                    }
                 case .skipped:
                     actionButton("Restore to Proposals", systemImage: "tray.full.fill", prominent: true, action: onMoveToProposals)
+                    if canMoveToShelf {
+                        actionButton("Move to Shelf", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
+                    }
                 }
             }
         }

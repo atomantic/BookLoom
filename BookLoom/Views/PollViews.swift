@@ -210,6 +210,7 @@ struct SelectionPollDetailView: View {
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle("Poll")
+        .bookLoomNavigationBar()
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {

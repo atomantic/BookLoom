@@ -29,9 +29,7 @@ struct ClubScopedScaffold<Content: View>: View {
             if let club = activeClubStore.resolveActiveClub(from: visible) {
                 content(club)
                     .navigationTitle(title)
-                    #if os(iOS)
-                    .navigationBarTitleDisplayMode(.inline)
-                    #endif
+                    .bookLoomNavigationBar()
                     .toolbar {
                         ToolbarItem(placement: clubSwitcherPlacement) {
                             ClubSwitcherButton(club: club, action: { showingSwitcher = true })
@@ -50,9 +48,7 @@ struct ClubScopedScaffold<Content: View>: View {
                     showingNewClubSheet = true
                 })
                     .navigationTitle(title)
-                    #if os(iOS)
-                    .navigationBarTitleDisplayMode(.inline)
-                    #endif
+                    .bookLoomNavigationBar()
             }
         }
         .sheet(isPresented: $showingSwitcher) {

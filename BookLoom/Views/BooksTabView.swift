@@ -105,6 +105,16 @@ private struct BooksTabContent: View {
                                 }
                                 .tint(BookLoomStyle.sage)
                             }
+                            .swipeActions(edge: .leading) {
+                                if GoodreadsImportInbox.canMoveToShelf(submission) {
+                                    Button {
+                                        moveSubmissionToShelf(submission)
+                                    } label: {
+                                        Label("Move to Shelf", systemImage: "tray.and.arrow.down.fill")
+                                    }
+                                    .tint(BookLoomStyle.indigo)
+                                }
+                            }
                             .bookLoomListRow()
                     }
                     .onDelete { offsets in
@@ -228,7 +238,12 @@ private struct BooksTabContent: View {
             Text("This clears the current book and returns it to the proposal list.")
         }
         .task(id: club.cloudZoneName) {
-            refreshShelfFromSharedQueue(selectShelfWhenPending: !didResolveInitialLibraryTab)
+            if let forced = screenshotInitialLibraryTab {
+                libraryTab = forced
+                refreshShelfFromSharedQueue(selectShelfWhenPending: false)
+            } else {
+                refreshShelfFromSharedQueue(selectShelfWhenPending: !didResolveInitialLibraryTab)
+            }
             didResolveInitialLibraryTab = true
             await syncClubForCurrentRole()
         }
@@ -237,6 +252,7 @@ private struct BooksTabContent: View {
             refreshShelfFromSharedQueue(selectShelfWhenPending: false)
         }
         .onChange(of: goodreadsInbox.pending.count) { oldValue, newValue in
+            guard screenshotInitialLibraryTab == nil else { return }
             if oldValue == 0, newValue > 0 {
                 libraryTab = .shelf
             }
@@ -245,6 +261,17 @@ private struct BooksTabContent: View {
 
     private var sections: BookClubSubmissionSections {
         BookClubSubmissionSections(submissions: clubSubmissions)
+    }
+
+    /// During screenshot capture (`-screenshotRoute`), pin the Library segment
+    /// so each screen captures the same view regardless of pending Shelf items.
+    private var screenshotInitialLibraryTab: LibraryTab? {
+        guard let route = AppLaunchOptions.screenshotRoute else { return nil }
+        switch route {
+        case "shelf", "import": return .shelf
+        case "books", "clubs", "clubHome": return .read
+        default: return nil
+        }
     }
 
     private var clubSubmissions: [BookSubmission] {
@@ -321,6 +348,12 @@ private struct BooksTabContent: View {
         saveClubChanges()
     }
 
+    private func moveSubmissionToShelf(_ submission: BookSubmission) {
+        guard goodreadsInbox.moveSubmissionToShelf(submission, context: context) else { return }
+        saveClubChanges()
+        libraryTab = .shelf
+    }
+
     private func saveClubChanges() {
         do {
             try SharedClubSync.saveAndPublish(
@@ -338,6 +371,7 @@ private struct BooksTabContent: View {
 private struct BooksHeader: View {
     let club: BookClub
     let sections: BookClubSubmissionSections
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let memberCount = club.displayedMemberCount
@@ -350,7 +384,8 @@ private struct BooksHeader: View {
                     Text(club.name)
                         .font(.headline.bold())
                         .foregroundStyle(BookLoomStyle.ink)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
                     Label(sharing.label, systemImage: sharing.icon)
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -358,7 +393,7 @@ private struct BooksHeader: View {
                 Spacer(minLength: 0)
             }
 
-            HStack(spacing: 10) {
+            metricsLayout {
                 MetricTile(value: "\(sections.proposed.count)", label: "proposed", systemImage: "tray.full.fill", tint: BookLoomStyle.plum)
                 MetricTile(value: "\(sections.completed.count)", label: "read", systemImage: "checkmark.seal.fill", tint: BookLoomStyle.indigo)
                 NavigationLink {
@@ -372,6 +407,14 @@ private struct BooksHeader: View {
             }
         }
         .bookLoomCard(padding: 12)
+    }
+
+    /// Stack metric tiles vertically when accessibility text sizes would
+    /// otherwise compress each label to a single character.
+    private var metricsLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 10))
     }
 
     private var sharingDescriptor: (label: String, icon: String) {
@@ -509,9 +552,12 @@ private struct CurrentActionButton: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.footnote.weight(.semibold))
-                .lineLimit(1)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
-                .frame(minHeight: 40)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 40)
                 .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
                 .foregroundStyle(prominent ? Color.white : tint)
         }
@@ -523,37 +569,50 @@ private struct ProposedActionBar: View {
     let club: BookClub
     let canPickRandom: Bool
     let onPickRandom: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 8) {
+        let layout: AnyLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+
+        layout {
             NavigationLink {
                 AddSubmissionView(club: club)
             } label: {
-                Label("Add Book", systemImage: "plus")
-                    .font(.footnote.weight(.semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, minHeight: 40)
-                    .background(BookLoomStyle.indigo, in: Capsule())
-                    .foregroundStyle(Color.white)
+                actionLabel(
+                    title: "Add Book",
+                    systemImage: "plus",
+                    background: BookLoomStyle.indigo,
+                    foreground: Color.white
+                )
             }
             .buttonStyle(.plain)
 
             Button(action: onPickRandom) {
-                Label("Pick Random", systemImage: "shuffle")
-                    .font(.footnote.weight(.semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, minHeight: 40)
-                    .background(
-                        canPickRandom ? BookLoomStyle.plum.opacity(0.16) : Color.secondary.opacity(0.10),
-                        in: Capsule()
-                    )
-                    .foregroundStyle(canPickRandom ? BookLoomStyle.plum : Color.secondary)
+                actionLabel(
+                    title: "Pick Random",
+                    systemImage: "shuffle",
+                    background: canPickRandom ? BookLoomStyle.plum.opacity(0.16) : Color.secondary.opacity(0.10),
+                    foreground: canPickRandom ? BookLoomStyle.plum : Color.secondary
+                )
             }
             .buttonStyle(.plain)
             .disabled(!canPickRandom)
         }
+    }
+
+    private func actionLabel(title: String, systemImage: String, background: Color, foreground: Color) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.footnote.weight(.semibold))
+            .lineLimit(2)
+            .minimumScaleFactor(0.85)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .background(background, in: Capsule())
+            .foregroundStyle(foreground)
     }
 }
 

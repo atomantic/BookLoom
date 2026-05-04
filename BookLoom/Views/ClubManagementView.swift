@@ -114,9 +114,7 @@ struct ClubManagementView: View {
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle("Manage Club")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .bookLoomNavigationBar()
         .sheet(isPresented: $showingInvite) {
             InviteView(club: club)
         }

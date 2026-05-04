@@ -5,25 +5,26 @@ struct MeetingRow: View {
     @Bindable var meeting: ClubMeeting
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: meeting.isCompleted ? "calendar.badge.checkmark" : "calendar")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(meeting.isCompleted ? BookLoomStyle.sage : BookLoomStyle.indigo)
-                .frame(width: 34, height: 34)
+                .frame(minWidth: 28, minHeight: 28)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(meeting.displayTitle)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(BookLoomStyle.ink)
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Text(meeting.scheduledAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
                 if !meeting.location.trimmed.isEmpty {
                     Label(meeting.location.trimmed, systemImage: "mappin.and.ellipse")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
             }
 
@@ -269,6 +270,7 @@ struct MeetingDetailView: View {
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle("Meeting")
+        .bookLoomNavigationBar()
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {

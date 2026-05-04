@@ -4,18 +4,52 @@ import SwiftData
 enum AppLaunchOptions {
     static let seedSampleDataArgument = "-SeedSampleData"
     static let screenshotRouteArgument = "-screenshotRoute"
+    static let screenshotDynamicTypeArgument = "-screenshotDynamicType"
 
     static let isSampleDataEnabled: Bool = ProcessInfo.processInfo.arguments.contains(seedSampleDataArgument)
 
-    static let screenshotRoute: String? = {
+    static let screenshotRoute: String? = launchArgument(named: screenshotRouteArgument)
+
+    /// Optional Dynamic Type override used by accessibility screenshot variants.
+    /// Accepted values match `DynamicTypeSize` raw cases:
+    /// `xSmall`, `small`, `medium`, `large`, `xLarge`, `xxLarge`, `xxxLarge`,
+    /// `accessibility1`…`accessibility5`.
+    static let screenshotDynamicType: String? = launchArgument(named: screenshotDynamicTypeArgument)
+
+    private static func launchArgument(named name: String) -> String? {
         let args = ProcessInfo.processInfo.arguments
-        guard let index = args.firstIndex(of: screenshotRouteArgument),
-              index + 1 < args.count else {
+        guard let index = args.firstIndex(of: name), index + 1 < args.count else {
             return nil
         }
         return args[index + 1]
-    }()
+    }
 }
+
+#if canImport(SwiftUI)
+import SwiftUI
+
+extension DynamicTypeSize {
+    /// Resolve a `DynamicTypeSize` from the launch-arg string (e.g. "accessibility5").
+    static func fromScreenshotArgument(_ raw: String?) -> DynamicTypeSize? {
+        guard let raw else { return nil }
+        switch raw {
+        case "xSmall": return .xSmall
+        case "small": return .small
+        case "medium": return .medium
+        case "large": return .large
+        case "xLarge": return .xLarge
+        case "xxLarge": return .xxLarge
+        case "xxxLarge": return .xxxLarge
+        case "accessibility1": return .accessibility1
+        case "accessibility2": return .accessibility2
+        case "accessibility3": return .accessibility3
+        case "accessibility4": return .accessibility4
+        case "accessibility5": return .accessibility5
+        default: return nil
+        }
+    }
+}
+#endif
 
 enum ScreenshotSampleData {
     static let memberName = "Maya Chen"
@@ -28,6 +62,7 @@ enum ScreenshotSampleData {
 
     static func populate(context: ModelContext) {
         seedBundledCovers()
+        seedShelfImports()
 
         let calendar = Calendar.current
         let club = BookClub(
@@ -289,6 +324,7 @@ enum ScreenshotSampleData {
         context.insert(rsvp)
     }
 
+
     private static let bundledCoverNames: [Int: String] = [
         10226290: "piranesi",
         15143022: "dungeon_crawler_carl",
@@ -296,7 +332,9 @@ enum ScreenshotSampleData {
         11200092: "project_hail_mary",
         12859975: "tomorrow",
         10201431: "thursday_murder_club",
-        10648686: "klara_and_the_sun"
+        10648686: "klara_and_the_sun",
+        8739376: "circe",
+        9312772: "cerulean_sea"
     ]
 
     private static func seedBundledCovers() {
@@ -309,6 +347,54 @@ enum ScreenshotSampleData {
             return (url, data)
         }
         BookCoverCache.seedSync(mappings)
+    }
+
+    /// Pre-populate the App Group import queue with two resolved Goodreads
+    /// shares so the Books → Shelf segment has visible content during screenshot
+    /// capture. Single batched write — replaces any prior queue, no merge with
+    /// stale screenshot reruns.
+    private static func seedShelfImports() {
+        let candidates: [(url: URL, candidate: BookMetadataCandidate, daysAgo: Int)] = [
+            (
+                URL(string: "https://www.goodreads.com/book/show/35959740-circe")!,
+                BookMetadataCandidate(
+                    provider: .goodreads,
+                    externalID: "35959740",
+                    title: "Circe",
+                    authors: ["Madeline Miller"],
+                    publishedYear: 2018,
+                    isbn: "9780316556347",
+                    coverURL: BookMetadataProvider.openLibraryCoverURL(coverID: 8739376),
+                    description: "Banished to a deserted island, the witch-goddess Circe forges her own power on the edge of the Olympian world.",
+                    sourceURL: URL(string: "https://www.goodreads.com/book/show/35959740-circe")
+                ),
+                2
+            ),
+            (
+                URL(string: "https://www.goodreads.com/book/show/45047384-the-house-in-the-cerulean-sea")!,
+                BookMetadataCandidate(
+                    provider: .goodreads,
+                    externalID: "45047384",
+                    title: "The House in the Cerulean Sea",
+                    authors: ["TJ Klune"],
+                    publishedYear: 2020,
+                    isbn: "9781250217288",
+                    coverURL: BookMetadataProvider.openLibraryCoverURL(coverID: 9312772),
+                    description: "A caseworker for magical youth is sent to inspect a remote orphanage and discovers a found-family worth fighting for.",
+                    sourceURL: URL(string: "https://www.goodreads.com/book/show/45047384-the-house-in-the-cerulean-sea")
+                ),
+                1
+            )
+        ]
+
+        let calendar = Calendar.current
+        let entries: [SharedImportInbox.PendingImport] = candidates.map { input in
+            let enqueuedAt = calendar.date(byAdding: .day, value: -input.daysAgo, to: .now) ?? .now
+            var entry = SharedImportInbox.PendingImport(url: input.url, enqueuedAt: enqueuedAt)
+            entry.apply(input.candidate, fetchedAt: enqueuedAt)
+            return entry
+        }
+        SharedImportInbox.replaceAll(entries)
     }
 
     private static func addPoll(to club: BookClub, proposals: [BookSubmission], context: ModelContext) {
