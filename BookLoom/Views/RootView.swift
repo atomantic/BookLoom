@@ -22,17 +22,18 @@ private struct MainTabs: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(MemberIdentity.self) private var memberIdentity
     @Environment(ActiveClubStore.self) private var activeClubStore
+    @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
     @State private var selectedTab = MainTab.books
     @State private var booksPath = NavigationPath()
     @State private var pollsPath = NavigationPath()
     @State private var schedulePath = NavigationPath()
     @State private var discussionsPath = NavigationPath()
-    @State private var pendingImport: PendingGoodreadsImport?
     private let sharedSyncTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        @Bindable var goodreadsInbox = goodreadsInbox
+        return TabView(selection: $selectedTab) {
             NavigationStack(path: $booksPath) {
                 BooksTabView()
             }
@@ -76,7 +77,7 @@ private struct MainTabs: View {
         .task {
             activeClubStore.reconcileWithVisibleClubs(visibleClubs)
             await refreshSharedClubs()
-            consumePendingImport()
+            goodreadsInbox.presentNextIfNeeded()
             guard let route = AppLaunchOptions.screenshotRoute else { return }
             try? await Task.sleep(nanoseconds: 350_000_000)
             navigateToScreenshotRoute(route)
@@ -84,7 +85,7 @@ private struct MainTabs: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task { await refreshSharedClubs() }
-            consumePendingImport()
+            goodreadsInbox.presentNextIfNeeded()
         }
         .onReceive(sharedSyncTimer) { _ in
             guard scenePhase == .active else { return }
@@ -93,13 +94,13 @@ private struct MainTabs: View {
         .onOpenURL { url in
             handleIncomingURL(url)
         }
-        .sheet(item: $pendingImport) { item in
+        .sheet(item: $goodreadsInbox.presentedItem) { item in
             GoodreadsImportSheet(
                 goodreadsURL: item.url,
                 clubs: visibleClubs,
                 initiallyActiveClub: activeClubStore.resolveActiveClub(from: visibleClubs)
-            ) {
-                dismissPendingImport(remove: item.url)
+            ) { saved in
+                goodreadsInbox.dismiss(saved: saved)
             }
         }
     }
@@ -125,22 +126,8 @@ private struct MainTabs: View {
             return
         }
         SharedImportInbox.enqueue(canonical)
-        consumePendingImport()
-    }
-
-    private func consumePendingImport() {
-        guard pendingImport == nil, let next = SharedImportInbox.peekNext() else { return }
         selectedTab = .books
-        pendingImport = PendingGoodreadsImport(url: next)
-    }
-
-    private func dismissPendingImport(remove url: URL) {
-        SharedImportInbox.remove(url)
-        pendingImport = nil
-        // Defer to next runloop so SwiftUI registers the dismiss before we
-        // present the next sheet — otherwise the new item can collide with
-        // the outgoing one and the sheet appears to "stick" on the old book.
-        Task { @MainActor in consumePendingImport() }
+        goodreadsInbox.present(canonical)
     }
 
     private var visibleClubs: [BookClub] {
@@ -196,11 +183,6 @@ private struct MainTabs: View {
             selectedTab = .books
         }
     }
-}
-
-private struct PendingGoodreadsImport: Identifiable, Equatable {
-    let id = UUID()
-    let url: URL
 }
 
 private enum MainTab: Hashable {

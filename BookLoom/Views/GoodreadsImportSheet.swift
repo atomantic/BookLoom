@@ -8,7 +8,12 @@ struct GoodreadsImportSheet: View {
     let goodreadsURL: URL
     let clubs: [BookClub]
     let initiallyActiveClub: BookClub?
-    var onDismiss: () -> Void
+    /// Called when the sheet is finishing. `saved` is `true` when the user
+    /// successfully added the book to a club, `false` when they cancelled.
+    /// Cancelled URLs stay in `SharedImportInbox` so the user can come back
+    /// to them from the visible Import Inbox banner instead of losing the
+    /// share entirely.
+    var onDismiss: (Bool) -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(MemberIdentity.self) private var memberIdentity
@@ -66,7 +71,7 @@ struct GoodreadsImportSheet: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", action: onDismiss)
+                    Button("Close") { onDismiss(false) }
                 }
             }
         }
@@ -196,7 +201,7 @@ struct GoodreadsImportSheet: View {
                 localMemberID: memberIdentity.memberID,
                 localMemberName: memberIdentity.name
             )
-            onDismiss()
+            onDismiss(true)
         } catch {
             fetchError = error.localizedDescription
         }

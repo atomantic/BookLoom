@@ -14,6 +14,7 @@ struct BookLoomApp: App {
 
     @State private var memberIdentity = MemberIdentity()
     @State private var activeClubStore = ActiveClubStore()
+    @State private var goodreadsInbox = GoodreadsImportInbox()
     @StateObject private var acceptedShareInbox = AcceptedShareInbox.shared
     @StateObject private var cloudKitChangeInbox = CloudKitChangeInbox.shared
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
@@ -64,6 +65,7 @@ struct BookLoomApp: App {
             RootView()
                 .environment(memberIdentity)
                 .environment(activeClubStore)
+                .environment(goodreadsInbox)
                 .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
                 .onContinueUserActivity(ShareAcceptance.activityType) { activity in
                     guard let metadata = ShareAcceptance.metadata(from: activity) else { return }
