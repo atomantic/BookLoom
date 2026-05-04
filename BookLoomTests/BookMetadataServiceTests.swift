@@ -207,6 +207,116 @@ final class BookMetadataServiceTests: XCTestCase {
         XCTAssertEqual(candidate.provider, .goodreads)
     }
 
+    func test_parseGoodreadsHTML_prefersLongerNextDataDescriptionOverJSONLD() throws {
+        let truncated = "A masterful tale of language and revolution."
+        let full = String(repeating: "Lorem ipsum dolor sit amet consectetur. ", count: 25)
+            + "An incandescent novel about translation, power, and revolution."
+        let nextDataJSON = """
+        {"props":{"pageProps":{"apolloState":{
+            "Book:kca:abc": {
+                "__typename": "Book",
+                "title": "Babel",
+                "description({\\"stripped\\":true})": "\(full)"
+            }
+        }}}}
+        """
+        let html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Book","name":"Babel","author":[{"@type":"Person","name":"R.F. Kuang"}],"description":"\(truncated)","isbn":"0063021420"}
+        </script>
+        <script id="__NEXT_DATA__" type="application/json">\(nextDataJSON)</script>
+        </head></html>
+        """
+
+        let candidate = BookMetadataService.parseGoodreadsHTML(
+            html,
+            bookID: "60233239",
+            sourceURL: URL(string: "https://www.goodreads.com/book/show/60233239")!
+        )
+
+        XCTAssertEqual(candidate?.description, full)
+        XCTAssertGreaterThan(candidate?.description?.count ?? 0, truncated.count)
+    }
+
+    func test_parseGoodreadsHTML_stripsHTMLAndDecodesEntitiesInNextDataDescription() throws {
+        let nextDataJSON = """
+        {"props":{"pageProps":{"apolloState":{
+            "Book:kca:xyz": {
+                "description": "<p>Once upon a time &amp; long ago, there was a world.</p><p>Then it changed.</p>"
+            }
+        }}}}
+        """
+        let html = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Book","name":"Some Book"}
+        </script>
+        <script id="__NEXT_DATA__" type="application/json">\(nextDataJSON)</script>
+        </head></html>
+        """
+
+        let candidate = BookMetadataService.parseGoodreadsHTML(
+            html,
+            bookID: "1",
+            sourceURL: URL(string: "https://www.goodreads.com/book/show/1")!
+        )
+
+        XCTAssertEqual(candidate?.description, "Once upon a time & long ago, there was a world.Then it changed.")
+    }
+
+    func test_importFromGoodreads_fillsShortDescriptionFromGoogleBooksByISBN() async throws {
+        let goodreadsHTML = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Book","name":"Imported Book","isbn":"9780000000001","description":"Short blurb…","author":[{"@type":"Person","name":"Author One"}]}
+        </script>
+        </head></html>
+        """
+        let fullDescription = String(repeating: "Full publisher description sentence. ", count: 20)
+        let googleResponse = """
+        {"items":[{"id":"abc123","volumeInfo":{"title":"Imported Book","authors":["Author One"],"description":"\(fullDescription)","industryIdentifiers":[{"type":"ISBN_13","identifier":"9780000000001"}]}}]}
+        """
+
+        MockURLProtocol.responses = [
+            "https://www.goodreads.com/book/show/60233239": goodreadsHTML.data(using: .utf8)!,
+            "https://www.googleapis.com/books/v1/volumes?q=isbn:9780000000001&maxResults=1": googleResponse.data(using: .utf8)!
+        ]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        let candidate = try await service.importFromGoodreads(
+            url: URL(string: "https://www.goodreads.com/book/show/60233239-imported")!
+        )
+
+        XCTAssertEqual(candidate.title, "Imported Book")
+        XCTAssertEqual(candidate.isbn, "9780000000001")
+        XCTAssertEqual(candidate.provider, .goodreads)
+        XCTAssertEqual(candidate.description, fullDescription.trimmingCharacters(in: .whitespacesAndNewlines))
+        XCTAssertGreaterThan(candidate.description?.count ?? 0, "Short blurb…".count)
+    }
+
+    func test_importFromGoodreads_keepsFullGoodreadsDescriptionWithoutEnrichment() async throws {
+        let fullDescription = String(repeating: "A long full description from Goodreads itself. ", count: 12)
+        let goodreadsHTML = """
+        <html><head>
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Book","name":"Self-Sufficient Book","isbn":"9780000000002","description":"\(fullDescription)","author":[{"@type":"Person","name":"A. Author"}]}
+        </script>
+        </head></html>
+        """
+
+        MockURLProtocol.responses = [
+            "https://www.goodreads.com/book/show/777": goodreadsHTML.data(using: .utf8)!
+        ]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        let candidate = try await service.importFromGoodreads(
+            url: URL(string: "https://www.goodreads.com/book/show/777")!
+        )
+
+        XCTAssertEqual(candidate.description, fullDescription.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     func test_importFromGoodreads_rejectsNonGoodreadsURL() async {
         let service = BookMetadataService(urlSession: .mocked, cache: nil)
         do {

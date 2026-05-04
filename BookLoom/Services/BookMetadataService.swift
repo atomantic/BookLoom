@@ -225,7 +225,52 @@ struct BookMetadataService: Sendable {
         guard let candidate = Self.parseGoodreadsHTML(html, bookID: bookID, sourceURL: canonicalURL) else {
             throw BookMetadataError.goodreadsParseFailed
         }
+
+        // Goodreads's og:description / JSON-LD are sometimes truncated (~200 chars).
+        // If we ended up with a short description but have an ISBN, enrich from
+        // Google Books — typically returns the full publisher description.
+        if Self.descriptionNeedsEnrichment(candidate.description),
+           let isbn = candidate.isbn?.trimmedOrNil,
+           let enriched = try? await fetchDescription(byISBN: isbn),
+           enriched.count > (candidate.description?.count ?? 0) {
+            return BookMetadataCandidate(
+                provider: candidate.provider,
+                externalID: candidate.externalID,
+                title: candidate.title,
+                authors: candidate.authors,
+                publishedYear: candidate.publishedYear,
+                isbn: candidate.isbn,
+                coverURL: candidate.coverURL,
+                description: enriched,
+                sourceURL: candidate.sourceURL
+            )
+        }
+
         return candidate
+    }
+
+    private static func descriptionNeedsEnrichment(_ description: String?) -> Bool {
+        guard let description = description?.trimmed, !description.isEmpty else { return true }
+        // Truncated og:description / JSON-LD blurbs are typically <250 chars or
+        // end with an ellipsis. Above that, we trust Goodreads has the full text.
+        if description.count < 250 { return true }
+        if description.hasSuffix("…") || description.hasSuffix("...") { return true }
+        return false
+    }
+
+    private func fetchDescription(byISBN isbn: String) async throws -> String? {
+        let cleanISBN = isbn.replacingOccurrences(of: "-", with: "").trimmed
+        guard !cleanISBN.isEmpty else { return nil }
+
+        var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes")!
+        components.queryItems = [
+            URLQueryItem(name: "q", value: "isbn:\(cleanISBN)"),
+            URLQueryItem(name: "maxResults", value: "1")
+        ]
+
+        let response: GoogleBooksResponse = try await fetch(components.url!)
+        let description = response.items?.first?.volumeInfo.description?.cleanedBookDescription
+        return description?.trimmedOrNil
     }
 
     static func goodreadsBookID(from url: URL) -> String? {
@@ -264,13 +309,24 @@ struct BookMetadataService: Sendable {
                 if coverURL == nil, let value = book["image"] as? String, let url = URL(string: value) {
                     coverURL = url
                 }
-                if description == nil, let value = book["description"] as? String, !value.isEmpty {
-                    description = value.cleanedBookDescription
+                if let value = book["description"] as? String, !value.isEmpty {
+                    let cleaned = value.cleanedBookDescription
+                    if (description?.count ?? 0) < cleaned.count {
+                        description = cleaned
+                    }
                 }
                 if publishedYear == nil, let value = book["datePublished"] as? String {
                     publishedYear = Self.year(from: value)
                 }
             }
+        }
+
+        // Goodreads's full description lives in the Apollo cache embedded in
+        // __NEXT_DATA__. JSON-LD's `description` field is sometimes the same
+        // truncated text as og:description (~200 chars), so prefer the longer
+        // value found anywhere under a key containing "description".
+        if let fuller = longestDescription(inNextData: html), fuller.count > (description?.count ?? 0) {
+            description = fuller
         }
 
         if title == nil {
@@ -301,6 +357,60 @@ struct BookMetadataService: Sendable {
             description: description?.trimmedOrNil,
             sourceURL: sourceURL
         )
+    }
+
+    // Walk the __NEXT_DATA__ JSON tree and return the longest string found
+    // under any key containing "description". Goodreads stores the full
+    // description in the Apollo cache under encoded GraphQL keys like
+    // `description({"stripped":true})`, so we match by substring.
+    private static func longestDescription(inNextData html: String) -> String? {
+        guard let blob = nextDataBlob(in: html),
+              let data = blob.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) else {
+            return nil
+        }
+        var longest: String?
+        collectDescriptionStrings(from: json, into: &longest)
+        return longest?.cleanedBookDescription.trimmedOrNil
+    }
+
+    private static func nextDataBlob(in html: String) -> String? {
+        guard let regex = try? NSRegularExpression(
+            pattern: "<script[^>]*id=\"__NEXT_DATA__\"[^>]*>([\\s\\S]*?)</script>",
+            options: [.caseInsensitive]
+        ) else { return nil }
+        let range = NSRange(html.startIndex..., in: html)
+        guard let match = regex.firstMatch(in: html, range: range),
+              let r = Range(match.range(at: 1), in: html) else {
+            return nil
+        }
+        return String(html[r])
+    }
+
+    private static func collectDescriptionStrings(from json: Any, into longest: inout String?) {
+        if let array = json as? [Any] {
+            for value in array {
+                collectDescriptionStrings(from: value, into: &longest)
+            }
+            return
+        }
+        guard let dict = json as? [String: Any] else { return }
+        for (key, value) in dict {
+            if key.lowercased().contains("description"), let stringValue = value as? String {
+                let stripped = stripHTMLTags(stringValue).htmlDecoded.trimmed
+                if stripped.count > (longest?.count ?? 0) {
+                    longest = stripped
+                }
+            } else {
+                collectDescriptionStrings(from: value, into: &longest)
+            }
+        }
+    }
+
+    private static func stripHTMLTags(_ value: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "<[^>]+>") else { return value }
+        let range = NSRange(value.startIndex..., in: value)
+        return regex.stringByReplacingMatches(in: value, range: range, withTemplate: "")
     }
 
     private static func jsonLDBlobs(in html: String) -> [String] {
