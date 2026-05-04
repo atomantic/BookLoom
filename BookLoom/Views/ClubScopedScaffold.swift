@@ -159,6 +159,7 @@ struct NoActiveClubView: View {
         }
         .bookLoomScreenBackground()
         .onAppear {
+            goodreadsInbox.refresh()
             goodreadsInbox.prefetchAll()
         }
     }

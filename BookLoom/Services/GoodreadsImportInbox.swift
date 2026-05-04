@@ -37,7 +37,12 @@ final class GoodreadsImportInbox {
 
     func refresh() {
         let next = SharedImportInbox.peekAll(defaults: defaults)
-        if next != pending { pending = next }
+        if next != pending {
+            Self.logger.info("Shelf refresh changed pending imports from \(self.pending.count, privacy: .public) to \(next.count, privacy: .public)")
+            pending = next
+        } else {
+            Self.logger.debug("Shelf refresh saw \(next.count, privacy: .public) pending import(s)")
+        }
     }
 
     func presentNextIfNeeded() {

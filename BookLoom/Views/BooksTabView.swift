@@ -261,6 +261,7 @@ private struct BooksTabContent: View {
     }
 
     private func refreshShelfFromSharedQueue(selectShelfWhenPending: Bool) {
+        goodreadsInbox.refresh()
         goodreadsInbox.prefetchAll()
         if selectShelfWhenPending, !goodreadsInbox.pending.isEmpty {
             libraryTab = .shelf

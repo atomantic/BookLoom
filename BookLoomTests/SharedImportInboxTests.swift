@@ -64,6 +64,30 @@ final class SharedImportInboxTests: XCTestCase {
         XCTAssertEqual(SharedImportInbox.pendingCount(defaults: defaults), 1)
     }
 
+    func test_fileMirrorKeepsQueueReadableWhenDefaultsAreEmpty() throws {
+        let fileURL = makeTemporaryQueueFileURL()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+        let url = URL(string: "https://www.goodreads.com/book/show/99")!
+
+        SharedImportInbox.enqueue(url, defaults: defaults, fileURL: fileURL)
+        defaults.removeObject(forKey: SharedImportInbox.queueKey)
+
+        XCTAssertEqual(SharedImportInbox.peekAll(defaults: defaults, fileURL: fileURL).map(\.url), [url])
+        XCTAssertEqual(SharedImportInbox.pendingCount(defaults: defaults, fileURL: fileURL), 1)
+    }
+
+    func test_clearRemovesFileMirror() throws {
+        let fileURL = makeTemporaryQueueFileURL()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+        let url = URL(string: "https://www.goodreads.com/book/show/100")!
+        SharedImportInbox.enqueue(url, defaults: defaults, fileURL: fileURL)
+
+        SharedImportInbox.clear(defaults: defaults, fileURL: fileURL)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+        XCTAssertEqual(SharedImportInbox.pendingCount(defaults: defaults, fileURL: fileURL), 0)
+    }
+
     func test_removeDeletesSpecificURL() {
         let first = URL(string: "https://www.goodreads.com/book/show/1")!
         let second = URL(string: "https://www.goodreads.com/book/show/2")!
@@ -160,5 +184,11 @@ final class SharedImportInboxTests: XCTestCase {
         let secondRead = SharedImportInbox.peekAll(defaults: defaults).map(\.url)
         XCTAssertEqual(secondRead, [legacy])
         XCTAssertNil(defaults.string(forKey: SharedImportInbox.legacyURLKey))
+    }
+
+    private func makeTemporaryQueueFileURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("SharedImportInboxTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(SharedImportInbox.queueFileName, isDirectory: false)
     }
 }
