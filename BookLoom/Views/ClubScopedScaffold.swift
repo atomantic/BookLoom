@@ -158,6 +158,9 @@ struct NoActiveClubView: View {
             .frame(maxWidth: .infinity)
         }
         .bookLoomScreenBackground()
+        .onAppear {
+            goodreadsInbox.prefetchAll()
+        }
     }
 }
 
@@ -170,8 +173,8 @@ private struct PendingImportInboxSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionTitle(title: "Import Inbox", detail: "\(inbox.pending.count)")
-            Text("Books you shared from Goodreads are waiting here. Create a club, then tap a row to add them.")
+            SectionTitle(title: "Shelf", detail: "\(inbox.pending.count)")
+            Text("Books you shared from Goodreads are waiting on your Shelf. Create a club, then tap a row to add them.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

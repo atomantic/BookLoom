@@ -5,7 +5,7 @@ import os
 private let shareLogger = Logger(subsystem: "net.shadowpuppet.BookLoom.ShareExtension", category: "Share")
 
 /// Share Extension entry point. Reads a shared URL/text, extracts a Goodreads
-/// book URL, queues it for the main app via the App Group import inbox, and
+/// book URL, queues it for the main app via the App Group Shelf queue, and
 /// shows a confirmation alert so the user knows the share succeeded.
 ///
 /// We don't try to launch the host app from here. Apple disallows share
@@ -39,9 +39,7 @@ final class ShareViewController: UIViewController {
         let pending = SharedImportInbox.pendingCount()
         shareLogger.info("📥 Share: queued Goodreads URL \(url.absoluteString, privacy: .public) (\(pending, privacy: .public) pending)")
 
-        let detail = pending > 1
-            ? "\(pending) books are waiting in your Import Inbox. Open BookLoom to add them to a club."
-            : "Open BookLoom to add this book to a club."
+        let detail = SharedImportInbox.shareConfirmationMessage(pendingCount: pending)
         await present(
             title: "Saved to BookLoom",
             message: detail,

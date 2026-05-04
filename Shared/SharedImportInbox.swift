@@ -12,8 +12,8 @@ extension String {
 
 /// App Group-backed queue for handing book imports from the Share Extension to
 /// the main app. The extension enqueues a Goodreads URL here; the main app
-/// drains items on launch / foreground / `bookloom://import` and presents the
-/// import sheet for each.
+/// reflects those items on the Books screen Shelf and presents the import sheet
+/// when a row is opened.
 ///
 /// Stored as a JSON array under a single key so multiple shares stack instead
 /// of overwriting each other when the user shares several books before
@@ -122,6 +122,13 @@ enum SharedImportInbox {
 
     static func pendingCount(defaults: UserDefaults? = SharedImportInbox.defaults, now: Date = .now) -> Int {
         peekAll(defaults: defaults, now: now).count
+    }
+
+    static func shareConfirmationMessage(pendingCount: Int) -> String {
+        if pendingCount > 1 {
+            return "\(pendingCount) books are waiting on your Shelf on the Books screen. Open BookLoom to add them to a club."
+        }
+        return "This book is waiting on your Shelf on the Books screen. Open BookLoom to add it to a club."
     }
 
     // MARK: - Internal

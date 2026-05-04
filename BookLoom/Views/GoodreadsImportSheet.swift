@@ -13,7 +13,7 @@ struct GoodreadsImportSheet: View {
     /// successfully added the book to that club (the caller should snap the
     /// active-club selector to it). `nil` means the user cancelled, and the
     /// URL stays in `SharedImportInbox` so they can return to it from the
-    /// visible Import Inbox banner.
+    /// visible Shelf list.
     var onDismiss: (BookClub?) -> Void
 
     @Environment(\.modelContext) private var context

@@ -133,7 +133,6 @@ private struct MainTabs: View {
         }
         SharedImportInbox.enqueue(canonical)
         selectedTab = .books
-        goodreadsInbox.refresh()
         goodreadsInbox.prefetchAll()
         goodreadsInbox.present(canonical)
     }

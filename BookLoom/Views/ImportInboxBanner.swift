@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// Rendered both inside `BooksTabContent` (when a club is active) and inside
-/// `NoActiveClubView` (when the user shared books before creating a club).
-/// Without the second placement, a user who shares from Goodreads before
-/// creating their first club sees no inbox anywhere — only the share-extension
-/// confirmation alert that promised one.
+/// Rendered both inside the Books screen Shelf (when a club is active) and
+/// inside `NoActiveClubView` (when the user shared books before creating a
+/// club). Without the second placement, a user who shares from Goodreads before
+/// creating their first club sees no queued imports anywhere.
 struct ImportInboxBanner: View {
     let pending: [SharedImportInbox.PendingImport]
     let onTap: (URL) -> Void
@@ -76,7 +75,7 @@ private struct ImportInboxRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Remove from import inbox")
+            .accessibilityLabel("Remove from Shelf")
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)

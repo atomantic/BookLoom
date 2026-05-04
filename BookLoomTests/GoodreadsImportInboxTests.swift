@@ -29,6 +29,17 @@ final class GoodreadsImportInboxTests: XCTestCase {
         XCTAssertEqual(inbox.pending.map(\.url), [url])
     }
 
+    func test_refreshPicksUpExternalShareAfterInit() {
+        let url = URL(string: "https://www.goodreads.com/book/show/99")!
+        let inbox = GoodreadsImportInbox(defaults: defaults)
+        XCTAssertTrue(inbox.pending.isEmpty)
+
+        SharedImportInbox.enqueue(url, defaults: defaults)
+        inbox.refresh()
+
+        XCTAssertEqual(inbox.pending.map(\.url), [url])
+    }
+
     func test_dismissWithSavedTrueRemovesURLFromQueue() {
         let url = URL(string: "https://www.goodreads.com/book/show/42")!
         SharedImportInbox.enqueue(url, defaults: defaults)

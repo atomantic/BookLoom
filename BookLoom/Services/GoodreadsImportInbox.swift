@@ -12,7 +12,7 @@ import os
 ///     Records URLs that were skipped (closed without saving) so the same
 ///     book doesn't pop again every time the app returns to active.
 ///   • `present(_:)` — used when the user explicitly taps a row in the
-///     visible Import Inbox banner. Bypasses the skip set.
+///     visible Shelf list. Bypasses the skip set.
 ///
 /// `prefetchAll()` resolves Goodreads metadata for unresolved entries in the
 /// background so the banner can show real titles/covers without the user

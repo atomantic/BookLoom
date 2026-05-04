@@ -164,6 +164,7 @@ private struct BooksTabContent: View {
         }
         .listStyle(.plain)
         .refreshable {
+            refreshShelfFromSharedQueue(selectShelfWhenPending: false)
             await syncClubForCurrentRole()
         }
         .scrollContentBackground(.hidden)
@@ -227,12 +228,16 @@ private struct BooksTabContent: View {
             Text("This clears the current book and returns it to the proposal list.")
         }
         .task(id: club.cloudZoneName) {
+            refreshShelfFromSharedQueue(selectShelfWhenPending: !didResolveInitialLibraryTab)
+            didResolveInitialLibraryTab = true
             await syncClubForCurrentRole()
         }
-        .onAppear {
-            guard !didResolveInitialLibraryTab else { return }
-            didResolveInitialLibraryTab = true
-            if !goodreadsInbox.pending.isEmpty {
+        .onChange(of: libraryTab) { _, tab in
+            guard tab == .shelf else { return }
+            refreshShelfFromSharedQueue(selectShelfWhenPending: false)
+        }
+        .onChange(of: goodreadsInbox.pending.count) { oldValue, newValue in
+            if oldValue == 0, newValue > 0 {
                 libraryTab = .shelf
             }
         }
@@ -253,6 +258,13 @@ private struct BooksTabContent: View {
             localMemberID: memberIdentity.memberID,
             localMemberName: memberIdentity.name
         )
+    }
+
+    private func refreshShelfFromSharedQueue(selectShelfWhenPending: Bool) {
+        goodreadsInbox.prefetchAll()
+        if selectShelfWhenPending, !goodreadsInbox.pending.isEmpty {
+            libraryTab = .shelf
+        }
     }
 
     private func pickRandomNext() {
@@ -603,4 +615,3 @@ private struct LibraryTabPicker: View {
         count > 0 ? "\(tab.title) (\(count))" : tab.title
     }
 }
-
