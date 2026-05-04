@@ -125,9 +125,14 @@ private struct ClubSwitcherButton: View {
 struct NoActiveClubView: View {
     let onCreateClub: () -> Void
 
+    @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
+
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
+                if !goodreadsInbox.pending.isEmpty {
+                    PendingImportInboxSection(inbox: goodreadsInbox)
+                }
                 OnboardingHeroArtwork(maxHeight: 220)
                 VStack(spacing: 6) {
                     Text("Create or Join a Club")
@@ -153,6 +158,32 @@ struct NoActiveClubView: View {
             .frame(maxWidth: .infinity)
         }
         .bookLoomScreenBackground()
+    }
+}
+
+/// Wraps the shared `ImportInboxBanner` with a heading and the explanation
+/// users need when they share from Goodreads before creating a club: they
+/// won't be able to import yet, but the queued shares aren't lost — create
+/// a club first, then come back and tap a row.
+private struct PendingImportInboxSection: View {
+    let inbox: GoodreadsImportInbox
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Import Inbox")
+                .font(.headline)
+                .foregroundStyle(BookLoomStyle.ink)
+            Text("Books you shared from Goodreads are waiting here. Create a club, then tap a row to add them.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ImportInboxBanner(
+                pending: inbox.pending,
+                onTap: { url in inbox.present(url) },
+                onRemove: { url in inbox.remove(url) }
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
