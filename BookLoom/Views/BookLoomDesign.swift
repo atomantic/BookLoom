@@ -101,6 +101,49 @@ extension View {
     }
 }
 
+struct BookLoomSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
+
+    var tint: Color = BookLoomStyle.plum
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(isEnabled ? tint : Color.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .background(background(pressed: configuration.isPressed))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(strokeColor, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .opacity(isEnabled ? 1 : 0.5)
+    }
+
+    private func background(pressed: Bool) -> some View {
+        let opacity: Double
+        if !isEnabled {
+            opacity = colorScheme == .dark ? 0.06 : 0.05
+        } else if pressed {
+            opacity = colorScheme == .dark ? 0.42 : 0.28
+        } else {
+            opacity = colorScheme == .dark ? 0.30 : 0.18
+        }
+        return RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(tint.opacity(opacity))
+    }
+
+    private var strokeColor: Color {
+        if !isEnabled {
+            return tint.opacity(colorScheme == .dark ? 0.18 : 0.20)
+        }
+        return tint.opacity(colorScheme == .dark ? 0.55 : 0.45)
+    }
+}
+
 private struct BookLoomScreenBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 

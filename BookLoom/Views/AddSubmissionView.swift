@@ -81,10 +81,8 @@ struct AddSubmissionView: View {
                         Task { await importFromGoodreads() }
                     } label: {
                         Label(isImportingGoodreads ? "Importing..." : "Import", systemImage: "square.and.arrow.down")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
+                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
                     .disabled(goodreadsURL.trimmed.isEmpty || isImportingGoodreads)
 
                     if let goodreadsError {
@@ -111,10 +109,8 @@ struct AddSubmissionView: View {
                         showingMetadataSearch = true
                     } label: {
                         Label(selectedMetadata == nil ? "Find Cover & Details" : "Change Cover & Details", systemImage: "magnifyingglass")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
+                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
                     .disabled(trimmedTitle.isEmpty)
 
                     if let selectedMetadata {
@@ -135,10 +131,8 @@ struct AddSubmissionView: View {
                         Task { await addSubmission(asRead: true) }
                     } label: {
                         Label(isSaving ? "Saving..." : "Save to Read", systemImage: "checkmark.seal.fill")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
+                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.sage))
                     .disabled(trimmedTitle.isEmpty || isSaving)
                 }
                 .bookLoomCard(padding: 12)
