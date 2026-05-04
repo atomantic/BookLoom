@@ -51,6 +51,7 @@ SCHEME_MACOS="BookLoom_macOS"
 TEST_BUNDLE_IOS="BookLoomTests_iOS"
 IOS_BUNDLE_ID="net.shadowpuppet.PlotLoom"
 ICLOUD_CONTAINER="iCloud.${IOS_BUNDLE_ID}"
+APP_GROUP_ID="group.net.shadowpuppet.PlotLoom"
 
 SKIP_TESTS=false
 EXPLICIT_IOS=false
@@ -253,9 +254,10 @@ if $BUILD_IOS; then
         -configuration Release \
         -destination 'generic/platform=iOS' \
         -archivePath "$ARCHIVE_IOS" \
-        CODE_SIGNING_ALLOWED=NO \
-        CODE_SIGN_IDENTITY="" \
-        CODE_SIGNING_REQUIRED=NO \
+        -allowProvisioningUpdates \
+        -authenticationKeyPath "$KEY_PATH" \
+        -authenticationKeyID "$APPSTORE_API_KEY_ID" \
+        -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
         -quiet
     echo "✅ iOS archive complete"
 
@@ -277,67 +279,51 @@ if $BUILD_IOS; then
         exit 1
     fi
 
-    # Re-sign iOS app with explicit CloudKit entitlements. The unsigned-archive
-    # + signed-export flow drops capability entitlements (CloudKit) because the
-    # exporter has no .xcent to read from the unsigned archive. See skill:
-    # xcodebuild-unsigned-archive-strips-entitlements.
-    RESIGN_DIR="$BUILD_DIR/resign_ios"
-    rm -rf "$RESIGN_DIR" && mkdir -p "$RESIGN_DIR"
-    unzip -q "$IPA_PATH" -d "$RESIGN_DIR"
-    RESIGN_APP="$RESIGN_DIR/Payload/${APP_NAME}.app"
-    cat > "$RESIGN_DIR/signing.entitlements" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>application-identifier</key>
-    <string>${TEAM_ID}.${IOS_BUNDLE_ID}</string>
-    <key>beta-reports-active</key>
-    <true/>
-    <key>com.apple.developer.icloud-container-environment</key>
-    <string>Production</string>
-    <key>com.apple.developer.icloud-container-identifiers</key>
-    <array><string>${ICLOUD_CONTAINER}</string></array>
-    <key>com.apple.developer.icloud-services</key>
-    <array><string>CloudKit</string></array>
-    <key>com.apple.developer.team-identifier</key>
-    <string>${TEAM_ID}</string>
-    <key>com.apple.developer.ubiquity-container-identifiers</key>
-    <array><string>${ICLOUD_CONTAINER}</string></array>
-    <key>get-task-allow</key>
-    <false/>
-    <key>keychain-access-groups</key>
-    <array>
-        <string>${TEAM_ID}.*</string>
-        <string>com.apple.token</string>
-    </array>
-</dict>
-</plist>
-EOF
-
-    SIGN_IDENTITY=$(security find-identity -v -p codesigning | grep -E "Apple Distribution|iPhone Distribution" | grep "$TEAM_ID" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-    if [ -z "$SIGN_IDENTITY" ]; then
-        echo "❌ No distribution signing identity for team $TEAM_ID found in keychain."
-        echo "   Run once via Xcode → Product → Archive to prime the cert."
+    VERIFY_DIR="$BUILD_DIR/verify_ios"
+    rm -rf "$VERIFY_DIR" && mkdir -p "$VERIFY_DIR"
+    unzip -q "$IPA_PATH" -d "$VERIFY_DIR"
+    VERIFY_APP="$VERIFY_DIR/Payload/${APP_NAME}.app"
+    VERIFY_SHARE_EXTENSION="$VERIFY_APP/PlugIns/BookLoomShareExtension.appex"
+    if [ ! -d "$VERIFY_SHARE_EXTENSION" ]; then
+        echo "❌ Share extension not found at $VERIFY_SHARE_EXTENSION"
         exit 1
     fi
-    echo "🔏 Re-signing iOS app: $SIGN_IDENTITY"
-    codesign --force \
-        --sign "$SIGN_IDENTITY" \
-        --entitlements "$RESIGN_DIR/signing.entitlements" \
-        --preserve-metadata=identifier,flags,runtime \
-        "$RESIGN_APP"
 
-    if ! codesign -d --entitlements :- "$RESIGN_APP" 2>/dev/null \
+    if ! codesign -d --entitlements :- "$VERIFY_APP" 2>/dev/null \
         | grep -q "com.apple.developer.icloud-container-identifiers"; then
-        echo "❌ Re-sign did not embed CloudKit entitlements — aborting"
-        codesign -d --entitlements :- "$RESIGN_APP" 2>&1 | head
+        echo "❌ Exported IPA is missing CloudKit entitlements in the iOS app — aborting"
+        codesign -d --entitlements :- "$VERIFY_APP" 2>&1 | head
         exit 1
     fi
-    echo "✅ Re-signed iOS app; CloudKit entitlements verified"
-
-    rm -f "$IPA_PATH"
-    (cd "$RESIGN_DIR" && zip -qr "$IPA_PATH" Payload)
+    if ! codesign -d --entitlements :- "$VERIFY_APP" 2>/dev/null \
+        | grep -q "$ICLOUD_CONTAINER"; then
+        echo "❌ Exported IPA is missing the production CloudKit container in the iOS app — aborting"
+        codesign -d --entitlements :- "$VERIFY_APP" 2>&1 | head
+        exit 1
+    fi
+    if ! codesign -d --entitlements :- "$VERIFY_APP" 2>/dev/null \
+        | grep -q "$APP_GROUP_ID"; then
+        echo "❌ Exported IPA is missing App Group entitlements in the iOS app — aborting"
+        codesign -d --entitlements :- "$VERIFY_APP" 2>&1 | head
+        exit 1
+    fi
+    if ! codesign -d --entitlements :- "$VERIFY_SHARE_EXTENSION" 2>/dev/null \
+        | grep -q "$APP_GROUP_ID"; then
+        echo "❌ Exported IPA is missing App Group entitlements in the share extension — aborting"
+        codesign -d --entitlements :- "$VERIFY_SHARE_EXTENSION" 2>&1 | head
+        exit 1
+    fi
+    if ! security cms -D -i "$VERIFY_APP/embedded.mobileprovision" 2>/dev/null \
+        | grep -q "$APP_GROUP_ID"; then
+        echo "❌ Exported IPA provisioning profile is missing App Group entitlements in the iOS app — aborting"
+        exit 1
+    fi
+    if ! security cms -D -i "$VERIFY_SHARE_EXTENSION/embedded.mobileprovision" 2>/dev/null \
+        | grep -q "$APP_GROUP_ID"; then
+        echo "❌ Exported IPA provisioning profile is missing App Group entitlements in the share extension — aborting"
+        exit 1
+    fi
+    echo "✅ Exported iOS IPA; CloudKit and App Group entitlements verified in signatures and profiles"
 
     inter_upload_delay
     echo "🚀 Uploading iOS to TestFlight..."
