@@ -25,6 +25,8 @@ private struct BooksTabContent: View {
     @State private var showingPickConfirmation: Bool = false
     @State private var showingCompleteConfirmation: Bool = false
     @State private var showingMoveCurrentToProposalsConfirmation: Bool = false
+    @State private var libraryTab: LibraryTab = .read
+    @State private var didResolveInitialLibraryTab = false
 
     var body: some View {
         let displayedSections = sections
@@ -39,19 +41,6 @@ private struct BooksTabContent: View {
                 Section {
                     SyncStatusBanner(issue: syncIssue)
                         .bookLoomListRow(top: 4, bottom: 8)
-                }
-            }
-
-            if !goodreadsInbox.pending.isEmpty {
-                Section {
-                    ImportInboxBanner(
-                        pending: goodreadsInbox.pending,
-                        onTap: { url in goodreadsInbox.present(url) },
-                        onRemove: { url in goodreadsInbox.remove(url) }
-                    )
-                    .bookLoomListRow(top: 4, bottom: 8)
-                } header: {
-                    SectionTitle(title: "Import Inbox", detail: "\(goodreadsInbox.pending.count)")
                 }
             }
 
@@ -126,18 +115,51 @@ private struct BooksTabContent: View {
                 SectionTitle(title: "Proposed", detail: "\(displayedSections.proposed.count)")
             }
 
-            if !displayedSections.completed.isEmpty {
-                Section {
-                    ForEach(displayedSections.completed) { submission in
-                        BooksTabRow(submission: submission)
-                            .bookLoomListRow()
+            Section {
+                LibraryTabPicker(
+                    selection: $libraryTab,
+                    readCount: displayedSections.completed.count,
+                    shelfCount: goodreadsInbox.pending.count
+                )
+                .bookLoomListRow(top: 4, bottom: 6)
+
+                switch libraryTab {
+                case .read:
+                    if displayedSections.completed.isEmpty {
+                        InlineEmptyState(
+                            systemImage: "checkmark.seal",
+                            title: "No Books Read Yet",
+                            message: "Books the club finishes show up here."
+                        )
+                        .bookLoomListRow()
+                    } else {
+                        ForEach(displayedSections.completed) { submission in
+                            BooksTabRow(submission: submission)
+                                .bookLoomListRow()
+                        }
+                        .onDelete { offsets in
+                            delete(displayedSections.completed, at: offsets)
+                        }
                     }
-                    .onDelete { offsets in
-                        delete(displayedSections.completed, at: offsets)
+                case .shelf:
+                    if goodreadsInbox.pending.isEmpty {
+                        InlineEmptyState(
+                            systemImage: "tray",
+                            title: "Shelf is Empty",
+                            message: "Books shared from Goodreads (or pasted via Add Book) land here until you add them to the club."
+                        )
+                        .bookLoomListRow()
+                    } else {
+                        ImportInboxBanner(
+                            pending: goodreadsInbox.pending,
+                            onTap: { url in goodreadsInbox.present(url) },
+                            onRemove: { url in goodreadsInbox.remove(url) }
+                        )
+                        .bookLoomListRow()
                     }
-                } header: {
-                    SectionTitle(title: "Reading History", detail: "\(displayedSections.completed.count)")
                 }
+            } header: {
+                SectionTitle(title: "Library")
             }
         }
         .listStyle(.plain)
@@ -206,6 +228,13 @@ private struct BooksTabContent: View {
         }
         .task(id: club.cloudZoneName) {
             await syncClubForCurrentRole()
+        }
+        .onAppear {
+            guard !didResolveInitialLibraryTab else { return }
+            didResolveInitialLibraryTab = true
+            if !goodreadsInbox.pending.isEmpty {
+                libraryTab = .shelf
+            }
         }
     }
 
@@ -319,7 +348,14 @@ private struct BooksHeader: View {
             HStack(spacing: 10) {
                 MetricTile(value: "\(sections.proposed.count)", label: "proposed", systemImage: "tray.full.fill", tint: BookLoomStyle.plum)
                 MetricTile(value: "\(sections.completed.count)", label: "read", systemImage: "checkmark.seal.fill", tint: BookLoomStyle.indigo)
-                MetricTile(value: "\(memberCount)", label: "members", systemImage: "person.2.fill", tint: BookLoomStyle.sage)
+                NavigationLink {
+                    ClubManagementView(club: club)
+                } label: {
+                    MetricTile(value: "\(memberCount)", label: "members", systemImage: "person.2.fill", tint: BookLoomStyle.sage)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Manage club, \(memberCount) members")
             }
         }
         .bookLoomCard(padding: 12)
@@ -535,6 +571,36 @@ private struct SyncStatusBanner: View {
         case .offline: return .secondary
         case .warning: return .orange
         }
+    }
+}
+
+private enum LibraryTab: CaseIterable, Identifiable {
+    case read
+    case shelf
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .read: return "Read"
+        case .shelf: return "Shelf"
+        }
+    }
+}
+
+private struct LibraryTabPicker: View {
+    @Binding var selection: LibraryTab
+    let readCount: Int
+    let shelfCount: Int
+
+    var body: some View {
+        Picker("Library view", selection: $selection) {
+            Text(label(for: .read, count: readCount)).tag(LibraryTab.read)
+            Text(label(for: .shelf, count: shelfCount)).tag(LibraryTab.shelf)
+        }
+        .pickerStyle(.segmented)
+    }
+
+    private func label(for tab: LibraryTab, count: Int) -> String {
+        count > 0 ? "\(tab.title) (\(count))" : tab.title
     }
 }
 
