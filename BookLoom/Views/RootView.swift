@@ -77,6 +77,7 @@ private struct MainTabs: View {
         .task {
             activeClubStore.reconcileWithVisibleClubs(visibleClubs)
             await refreshSharedClubs()
+            goodreadsInbox.prefetchAll()
             goodreadsInbox.presentNextIfNeeded()
             guard let route = AppLaunchOptions.screenshotRoute else { return }
             try? await Task.sleep(nanoseconds: 350_000_000)
@@ -85,6 +86,7 @@ private struct MainTabs: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task { await refreshSharedClubs() }
+            goodreadsInbox.prefetchAll()
             goodreadsInbox.presentNextIfNeeded()
         }
         .onReceive(sharedSyncTimer) { _ in
@@ -96,11 +98,15 @@ private struct MainTabs: View {
         }
         .sheet(item: $goodreadsInbox.presentedItem) { item in
             GoodreadsImportSheet(
-                goodreadsURL: item.url,
+                pendingItem: item,
                 clubs: visibleClubs,
                 initiallyActiveClub: activeClubStore.resolveActiveClub(from: visibleClubs)
-            ) { saved in
-                goodreadsInbox.dismiss(saved: saved)
+            ) { savedClub in
+                goodreadsInbox.dismiss(saved: savedClub != nil)
+                if let savedClub {
+                    activeClubStore.setActiveClub(savedClub)
+                    selectedTab = .books
+                }
             }
         }
     }
@@ -127,6 +133,8 @@ private struct MainTabs: View {
         }
         SharedImportInbox.enqueue(canonical)
         selectedTab = .books
+        goodreadsInbox.refresh()
+        goodreadsInbox.prefetchAll()
         goodreadsInbox.present(canonical)
     }
 

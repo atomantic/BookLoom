@@ -1,5 +1,15 @@
 import Foundation
 
+extension String {
+    /// Whitespace-trimmed value, or `nil` if the trim leaves nothing.
+    /// Lives in `Shared/` because the share extension can't import the main
+    /// app's design system where `String.trimmedOrNil` lives.
+    fileprivate var trimmedNonEmpty: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+}
+
 /// App Group-backed queue for handing book imports from the Share Extension to
 /// the main app. The extension enqueues a Goodreads URL here; the main app
 /// drains items on launch / foreground / `bookloom://import` and presents the
@@ -21,11 +31,35 @@ enum SharedImportInbox {
         UserDefaults(suiteName: appGroupID)
     }
 
+    /// All metadata fields are `Optional` so App-Group blobs encoded before
+    /// they were added still decode cleanly — users with pending pre-update
+    /// shares don't lose their queue.
     struct PendingImport: Codable, Equatable, Identifiable {
         let url: URL
         let enqueuedAt: Date
+        var title: String? = nil
+        var author: String? = nil
+        var coverURLString: String? = nil
+        var bookDescription: String? = nil
+        var publishedYear: Int? = nil
+        var isbn: String? = nil
+        var externalProvider: String? = nil
+        var externalID: String? = nil
+        var metadataFetchedAt: Date? = nil
 
         var id: String { url.absoluteString }
+
+        var coverURL: URL? {
+            guard let value = coverURLString?.trimmedNonEmpty else { return nil }
+            return URL(string: value)
+        }
+
+        var hasResolvedMetadata: Bool {
+            metadataFetchedAt != nil
+        }
+
+        var displayTitle: String? { title?.trimmedNonEmpty }
+        var displayAuthor: String? { author?.trimmedNonEmpty }
     }
 
     /// Append a Goodreads URL to the back of the queue. Duplicate URLs already
@@ -58,6 +92,25 @@ enum SharedImportInbox {
         var queue = readQueue(defaults: defaults, now: now)
         queue.removeAll { $0.url == url }
         writeQueue(queue, defaults: defaults)
+    }
+
+    /// Mutates the queue entry for `url` in place. Returns `true` if a matching
+    /// entry was found and updated. The caller's closure receives an inout copy
+    /// of the entry so it can write resolved metadata fields without having to
+    /// reconstruct identity (`url`, `enqueuedAt`).
+    @discardableResult
+    static func update(
+        _ url: URL,
+        defaults: UserDefaults? = SharedImportInbox.defaults,
+        now: Date = .now,
+        mutation: (inout PendingImport) -> Void
+    ) -> Bool {
+        guard let defaults else { return false }
+        var queue = readQueue(defaults: defaults, now: now)
+        guard let index = queue.firstIndex(where: { $0.url == url }) else { return false }
+        mutation(&queue[index])
+        writeQueue(queue, defaults: defaults)
+        return true
     }
 
     static func clear(defaults: UserDefaults? = SharedImportInbox.defaults) {

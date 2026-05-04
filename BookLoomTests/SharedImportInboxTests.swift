@@ -84,6 +84,55 @@ final class SharedImportInboxTests: XCTestCase {
         XCTAssertEqual(urls, [fresh])
     }
 
+    func test_updateWritesMetadataBackForMatchingURL() {
+        let url = URL(string: "https://www.goodreads.com/book/show/77")!
+        SharedImportInbox.enqueue(url, defaults: defaults)
+
+        let written = SharedImportInbox.update(url, defaults: defaults) { entry in
+            entry.title = "Piranesi"
+            entry.author = "Susanna Clarke"
+            entry.coverURLString = "https://covers.openlibrary.org/b/id/12345-L.jpg"
+            entry.metadataFetchedAt = Date(timeIntervalSinceReferenceDate: 5_000)
+        }
+
+        XCTAssertTrue(written)
+        let entry = SharedImportInbox.peekAll(defaults: defaults).first
+        XCTAssertEqual(entry?.title, "Piranesi")
+        XCTAssertEqual(entry?.author, "Susanna Clarke")
+        XCTAssertEqual(entry?.coverURL?.absoluteString, "https://covers.openlibrary.org/b/id/12345-L.jpg")
+        XCTAssertTrue(entry?.hasResolvedMetadata == true)
+    }
+
+    func test_updateReturnsFalseWhenURLIsNotInQueue() {
+        let written = SharedImportInbox.update(URL(string: "https://www.goodreads.com/book/show/missing")!, defaults: defaults) { entry in
+            entry.title = "should not write"
+        }
+
+        XCTAssertFalse(written)
+        XCTAssertEqual(SharedImportInbox.pendingCount(defaults: defaults), 0)
+    }
+
+    func test_legacyEncodedEntryDecodesWithNilMetadata() throws {
+        // Simulates an App-Group blob written before the metadata fields were
+        // added: only the original two keys present. The new struct's optional
+        // fields must decode as nil so users with pending pre-update shares
+        // don't lose their queue.
+        let enqueuedAt = Date(timeIntervalSinceReferenceDate: 760_000_000)
+        let json = """
+        [{"url":"https://www.goodreads.com/book/show/old","enqueuedAt":760000000.0}]
+        """
+        defaults.set(Data(json.utf8), forKey: SharedImportInbox.queueKey)
+
+        // Pass `now` close to the encoded enqueuedAt so the 7-day TTL doesn't
+        // prune the test fixture out from under us.
+        let entries = SharedImportInbox.peekAll(defaults: defaults, now: enqueuedAt.addingTimeInterval(60))
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries.first?.url.absoluteString, "https://www.goodreads.com/book/show/old")
+        XCTAssertNil(entries.first?.title)
+        XCTAssertNil(entries.first?.metadataFetchedAt)
+        XCTAssertFalse(entries.first?.hasResolvedMetadata == true)
+    }
+
     func test_legacySingleURLEntryIsDrainedIntoQueueOnce() {
         let legacy = URL(string: "https://www.goodreads.com/book/show/legacy")!
         defaults.set(legacy.absoluteString, forKey: SharedImportInbox.legacyURLKey)

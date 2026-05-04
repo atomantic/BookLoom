@@ -2,29 +2,46 @@ import SwiftUI
 import SwiftData
 
 /// Sheet shown after the user shares a Goodreads link to BookLoom (via the
-/// Share Extension or `bookloom://import?url=...`). Fetches metadata, lets
-/// the user pick a club, and adds the book to proposals or marks it read.
+/// Share Extension or `bookloom://import?url=...`). Falls back to fetching
+/// metadata on-demand when the prefetch pass hasn't resolved this entry yet
+/// (typically a fresh share opened before `prefetchAll` could complete).
 struct GoodreadsImportSheet: View {
-    let goodreadsURL: URL
+    let pendingItem: SharedImportInbox.PendingImport
     let clubs: [BookClub]
     let initiallyActiveClub: BookClub?
-    /// Called when the sheet is finishing. `saved` is `true` when the user
-    /// successfully added the book to a club, `false` when they cancelled.
-    /// Cancelled URLs stay in `SharedImportInbox` so the user can come back
-    /// to them from the visible Import Inbox banner instead of losing the
-    /// share entirely.
-    var onDismiss: (Bool) -> Void
+    /// Called when the sheet is finishing. A non-nil club means the user
+    /// successfully added the book to that club (the caller should snap the
+    /// active-club selector to it). `nil` means the user cancelled, and the
+    /// URL stays in `SharedImportInbox` so they can return to it from the
+    /// visible Import Inbox banner.
+    var onDismiss: (BookClub?) -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(MemberIdentity.self) private var memberIdentity
 
     @State private var candidate: BookMetadataCandidate?
     @State private var fetchError: String?
-    @State private var isFetching = true
+    @State private var saveError: String?
+    @State private var isFetching: Bool
     @State private var isSaving = false
     @State private var selectedClubID: PersistentIdentifier?
 
     private let metadataService = BookMetadataService()
+
+    init(
+        pendingItem: SharedImportInbox.PendingImport,
+        clubs: [BookClub],
+        initiallyActiveClub: BookClub?,
+        onDismiss: @escaping (BookClub?) -> Void
+    ) {
+        self.pendingItem = pendingItem
+        self.clubs = clubs
+        self.initiallyActiveClub = initiallyActiveClub
+        self.onDismiss = onDismiss
+        let prefetched = pendingItem.resolvedCandidate
+        _candidate = State(initialValue: prefetched)
+        _isFetching = State(initialValue: prefetched == nil)
+    }
 
     var body: some View {
         NavigationStack {
@@ -32,7 +49,9 @@ struct GoodreadsImportSheet: View {
                 VStack(spacing: 14) {
                     header
 
-                    if isFetching {
+                    if let candidate {
+                        BookCard(candidate: candidate)
+                    } else if isFetching {
                         VStack(spacing: 8) {
                             ProgressView()
                             Text("Fetching from Goodreads…")
@@ -40,8 +59,6 @@ struct GoodreadsImportSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                         .padding(24)
-                    } else if let candidate {
-                        BookCard(candidate: candidate)
                     } else if let fetchError {
                         Label(fetchError, systemImage: "exclamationmark.triangle.fill")
                             .font(.callout)
@@ -58,6 +75,13 @@ struct GoodreadsImportSheet: View {
                             .padding(.vertical, 12)
                     }
 
+                    if let saveError {
+                        Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(BookLoomStyle.coral)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     actionButtons
                 }
                 .padding(16)
@@ -71,12 +95,14 @@ struct GoodreadsImportSheet: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { onDismiss(false) }
+                    Button("Close") { onDismiss(nil) }
                 }
             }
         }
-        .task { await loadMetadata() }
+        .task { await loadMetadataIfNeeded() }
     }
+
+    private var goodreadsURL: URL { pendingItem.url }
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -153,10 +179,11 @@ struct GoodreadsImportSheet: View {
         return initiallyActiveClub ?? clubs.first
     }
 
-    private func loadMetadata() async {
+    private func loadMetadataIfNeeded() async {
         if selectedClubID == nil {
             selectedClubID = (initiallyActiveClub ?? clubs.first)?.persistentModelID
         }
+        guard candidate == nil else { return }
         isFetching = true
         fetchError = nil
         defer { isFetching = false }
@@ -171,6 +198,7 @@ struct GoodreadsImportSheet: View {
     private func save(asRead: Bool) async {
         guard let candidate, let club = resolvedClub else { return }
         isSaving = true
+        saveError = nil
         defer { isSaving = false }
 
         let now = Date.now
@@ -201,11 +229,12 @@ struct GoodreadsImportSheet: View {
                 localMemberID: memberIdentity.memberID,
                 localMemberName: memberIdentity.name
             )
-            onDismiss(true)
+            onDismiss(club)
         } catch {
-            fetchError = error.localizedDescription
+            saveError = error.localizedDescription
         }
     }
+
 }
 
 private struct BookCard: View {

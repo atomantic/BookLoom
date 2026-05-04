@@ -169,10 +169,8 @@ private struct PendingImportInboxSection: View {
     let inbox: GoodreadsImportInbox
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Import Inbox")
-                .font(.headline)
-                .foregroundStyle(BookLoomStyle.ink)
+        VStack(alignment: .leading, spacing: 8) {
+            SectionTitle(title: "Import Inbox", detail: "\(inbox.pending.count)")
             Text("Books you shared from Goodreads are waiting here. Create a club, then tap a row to add them.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
