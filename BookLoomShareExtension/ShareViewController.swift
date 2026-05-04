@@ -5,8 +5,14 @@ import os
 private let shareLogger = Logger(subsystem: "net.shadowpuppet.BookLoom.ShareExtension", category: "Share")
 
 /// Share Extension entry point. Reads a shared URL/text, extracts a Goodreads
-/// book URL, hands it to the main app via the App Group pending-import store,
-/// and attempts to launch BookLoom via its custom URL scheme.
+/// book URL, queues it for the main app via the App Group import inbox, and
+/// shows a confirmation alert so the user knows the share succeeded.
+///
+/// We don't try to launch the host app from here. Apple disallows share
+/// extensions launching their containing app via `UIApplication.openURL` on
+/// the responder chain (the `perform` returns truthy but no launch happens),
+/// which previously caused the extension to flash a blank screen and dump
+/// the user back into the source app with no feedback.
 final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -21,18 +27,26 @@ final class ShareViewController: UIViewController {
     private func handleSharedItems() async {
         guard let url = await firstGoodreadsURL() else {
             shareLogger.error("📥 Share: no Goodreads URL found in shared items")
-            await present(message: "BookLoom couldn't find a Goodreads link in what you shared.", success: false)
+            await present(
+                title: "No Book Link Found",
+                message: "BookLoom couldn't find a Goodreads link in what you shared. Try sharing the book's page from inside Goodreads.",
+                success: false
+            )
             return
         }
 
-        SharedImportInbox.savePendingGoodreadsURL(url)
-        shareLogger.info("📥 Share: queued Goodreads URL \(url.absoluteString, privacy: .public)")
+        SharedImportInbox.enqueue(url)
+        let pending = SharedImportInbox.pendingCount()
+        shareLogger.info("📥 Share: queued Goodreads URL \(url.absoluteString, privacy: .public) (\(pending, privacy: .public) pending)")
 
-        if openMainApp(with: url) {
-            extensionContext?.completeRequest(returningItems: nil)
-        } else {
-            await present(message: "Saved! Open BookLoom to finish adding this book.", success: true)
-        }
+        let detail = pending > 1
+            ? "\(pending) books are waiting in your Import Inbox. Open BookLoom to add them to a club."
+            : "Open BookLoom to add this book to a club."
+        await present(
+            title: "Saved to BookLoom",
+            message: detail,
+            success: true
+        )
     }
 
     private func firstGoodreadsURL() async -> URL? {
@@ -70,30 +84,10 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    /// Tries to open the main app via custom URL scheme using the responder chain.
-    /// Returns true if the open call dispatched; the system may still ignore it.
-    @discardableResult
-    private func openMainApp(with goodreadsURL: URL) -> Bool {
-        guard var components = URLComponents(string: "bookloom://import") else { return false }
-        components.queryItems = [URLQueryItem(name: "url", value: goodreadsURL.absoluteString)]
-        guard let openURL = components.url else { return false }
-
-        let selector = NSSelectorFromString("openURL:")
-        var responder: UIResponder? = self
-        while let current = responder {
-            if current.responds(to: selector) {
-                _ = current.perform(selector, with: openURL)
-                return true
-            }
-            responder = current.next
-        }
-        return false
-    }
-
     @MainActor
-    private func present(message: String, success: Bool) async {
-        let alert = UIAlertController(title: success ? "Saved to BookLoom" : "Couldn't Save", message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+    private func present(title: String, message: String, success: Bool) async {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: success ? "Done" : "OK", style: .default) { [weak self] _ in
             self?.extensionContext?.completeRequest(returningItems: nil)
         })
         present(alert, animated: true)

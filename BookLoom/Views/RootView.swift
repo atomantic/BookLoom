@@ -99,7 +99,7 @@ private struct MainTabs: View {
                 clubs: visibleClubs,
                 initiallyActiveClub: activeClubStore.resolveActiveClub(from: visibleClubs)
             ) {
-                pendingImport = nil
+                dismissPendingImport(remove: item.url)
             }
         }
     }
@@ -124,17 +124,23 @@ private struct MainTabs: View {
               let canonical = GoodreadsLinkExtractor.extract(from: goodreadsURL) else {
             return
         }
-        selectedTab = .books
-        pendingImport = PendingGoodreadsImport(url: canonical)
+        SharedImportInbox.enqueue(canonical)
+        consumePendingImport()
     }
 
     private func consumePendingImport() {
-        guard let pending = SharedImportInbox.consumePendingGoodreadsURL(),
-              let canonical = GoodreadsLinkExtractor.extract(from: pending) else {
-            return
-        }
+        guard pendingImport == nil, let next = SharedImportInbox.peekNext() else { return }
         selectedTab = .books
-        pendingImport = PendingGoodreadsImport(url: canonical)
+        pendingImport = PendingGoodreadsImport(url: next)
+    }
+
+    private func dismissPendingImport(remove url: URL) {
+        SharedImportInbox.remove(url)
+        pendingImport = nil
+        // Defer to next runloop so SwiftUI registers the dismiss before we
+        // present the next sheet — otherwise the new item can collide with
+        // the outgoing one and the sheet appears to "stick" on the old book.
+        Task { @MainActor in consumePendingImport() }
     }
 
     private var visibleClubs: [BookClub] {
