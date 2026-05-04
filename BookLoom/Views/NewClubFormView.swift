@@ -6,6 +6,7 @@ import SwiftData
 struct NewClubFormView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(MemberIdentity.self) private var memberIdentity
 
     @State private var name: String = ""
 
@@ -66,6 +67,15 @@ struct NewClubFormView: View {
     private func createClub() {
         guard let name = name.trimmedOrNil else { return }
         let club = BookClub(name: name)
+        let creatorID = memberIdentity.memberID
+        if !creatorID.isEmpty {
+            club.creatorMemberID = creatorID
+            if let creatorName = memberIdentity.name.trimmedOrNil {
+                var roster = club.knownMemberRoster
+                roster[creatorID] = creatorName
+                club.knownMemberRoster = roster
+            }
+        }
         context.insert(club)
         try? context.save()
         dismiss()

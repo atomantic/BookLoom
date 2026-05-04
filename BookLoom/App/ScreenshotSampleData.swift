@@ -35,7 +35,16 @@ enum ScreenshotSampleData {
             createdAt: calendar.date(byAdding: .month, value: -9, to: .now) ?? .now
         )
         club.shareIsActive = true
-        club.shareParticipantCount = 6
+        club.shareParticipantCount = 5
+        club.creatorMemberID = memberID
+        club.adminMemberIDs = ["sample-member-lena"]
+        club.knownMemberRoster = [
+            memberID: memberName,
+            "sample-member-priya": "Priya Shah",
+            "sample-member-owen": "Owen Brooks",
+            "sample-member-lena": "Lena Ortiz",
+            "sample-member-sam": "Sam Rivera"
+        ]
         context.insert(club)
 
         let current = makeSubmission(
