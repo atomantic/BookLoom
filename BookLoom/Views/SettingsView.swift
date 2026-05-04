@@ -24,7 +24,6 @@ struct SettingsView: View {
                     SettingsPreferencesCard(
                         draftName: $draftName,
                         appAppearanceRaw: $appAppearanceRaw,
-                        replayWelcome: $replayWelcome,
                         nameSaved: nameSaved,
                         saveDisabled: saveDisabled,
                         onSaveName: saveName
@@ -48,6 +47,10 @@ struct SettingsView: View {
                         isResetting: isResetting,
                         onTapReset: { showingResetConfirmation = true }
                     )
+                }
+
+                SettingsSection("Welcome") {
+                    RelaunchWelcomeCard(replayWelcome: $replayWelcome)
                 }
 
                 SettingsSection("About") {
@@ -191,7 +194,6 @@ private struct SettingsHeader: View {
 private struct SettingsPreferencesCard: View {
     @Binding var draftName: String
     @Binding var appAppearanceRaw: String
-    @Binding var replayWelcome: Bool
 
     let nameSaved: Bool
     let saveDisabled: Bool
@@ -236,8 +238,21 @@ private struct SettingsPreferencesCard: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .bookLoomCard(padding: 12)
+    }
+}
 
-            Divider()
+private struct RelaunchWelcomeCard: View {
+    @Binding var replayWelcome: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Replay the welcome flow to revisit setup steps and tips.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             Button {
                 replayWelcome = true
