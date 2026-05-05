@@ -594,6 +594,7 @@ private struct MobileNewShelfBookView: View {
     @State private var title = ""
     @State private var author = ""
     @State private var isbn = ""
+    @State private var selectedMetadata: BookMetadataCandidate?
     @State private var didRead = false
     @State private var didListen = false
     @State private var format: LibraryBookFormat = .hardcover
@@ -606,10 +607,49 @@ private struct MobileNewShelfBookView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    ISBNMetadataLookupControls(
+                        title: $title,
+                        author: $author,
+                        isbn: $isbn,
+                        selectedMetadata: $selectedMetadata,
+                        layout: .scanButtonOnly(title: "Scan ISBN")
+                    )
+                } header: {
+                    Text("Scan")
+                } footer: {
+                    Text("Use the ISBN barcode or the printed ISBN inside the book.")
+                }
+
+                Section("Import") {
+                    GoodreadsMetadataImportControls(
+                        title: $title,
+                        author: $author,
+                        isbn: $isbn,
+                        selectedMetadata: $selectedMetadata,
+                        importButtonTitle: "Import from Goodreads",
+                        importButtonSystemImage: "link",
+                        buttonStyle: .bordered
+                    )
+                }
+
                 Section("Book") {
                     TextField("Title", text: $title)
+                        .textInputAutocapitalization(.words)
                     TextField("Author", text: $author)
+                        .textInputAutocapitalization(.words)
                     TextField("ISBN", text: $isbn)
+                        .textInputAutocapitalization(.characters)
+                        .keyboardType(.numbersAndPunctuation)
+                        .autocorrectionDisabled()
+
+                    BookMetadataSearchControls(
+                        title: $title,
+                        author: $author,
+                        isbn: $isbn,
+                        selectedMetadata: $selectedMetadata,
+                        buttonStyle: .bordered
+                    )
                 }
                 Section("Personal Tracking") {
                     Toggle("I read this", isOn: $didRead)
@@ -642,7 +682,17 @@ private struct MobileNewShelfBookView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let book = LibraryBook(title: title.trimmed, author: author.trimmed, isbn: isbn.trimmed)
+                        let book = LibraryBook(
+                            title: title.trimmed,
+                            author: author.trimmed,
+                            isbn: selectedMetadata?.primaryISBN.trimmedOrNil ?? isbn.trimmed,
+                            bookDescription: selectedMetadata?.description ?? "",
+                            publishedYear: selectedMetadata?.publishedYear,
+                            coverURL: selectedMetadata?.coverURL?.absoluteString ?? "",
+                            externalProvider: selectedMetadata?.provider.rawValue ?? "",
+                            externalID: selectedMetadata?.externalID ?? "",
+                            sourceURLString: selectedMetadata?.sourceURL?.absoluteString ?? ""
+                        )
                         book.didRead = didRead
                         book.didListenToAudiobook = didListen
                         book.format = format

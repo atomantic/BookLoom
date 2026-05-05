@@ -19,22 +19,11 @@ struct AddSubmissionView: View {
     @State private var author: String = ""
     @State private var isbn: String = ""
     @State private var selectedMetadata: BookMetadataCandidate?
-    @State private var showingMetadataSearch = false
     @State private var saveError: String?
     @State private var isSaving = false
-    @State private var goodreadsURL: String = ""
-    @State private var isImportingGoodreads = false
-    @State private var goodreadsError: String?
     @State private var saveCopyToLibrary = false
     @State private var markLibraryCopyRead = false
     @State private var markLibraryCopyListened = false
-    #if os(iOS)
-    @State private var showingISBNScanner = false
-    @State private var isLookingUpISBN = false
-    @State private var isbnLookupError: String?
-    #endif
-
-    private let metadataService = BookMetadataService()
 
     var body: some View {
         ScrollView {
@@ -66,40 +55,16 @@ struct AddSubmissionView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(BookLoomStyle.ink)
 
-                    HStack(spacing: 8) {
-                        TextField("Paste Goodreads share link", text: $goodreadsURL, prompt: Text("Paste Goodreads share link").foregroundStyle(.tertiary))
-                            .textFieldStyle(.roundedBorder)
-                            #if os(iOS)
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.URL)
-                            .autocorrectionDisabled()
-                            #endif
-
-                        Button {
-                            pasteGoodreadsURL()
-                        } label: {
-                            Label("Paste", systemImage: "doc.on.clipboard")
-                                .labelStyle(.iconOnly)
-                                .frame(width: 28, height: 22)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
-                        .accessibilityLabel("Paste Goodreads link from clipboard")
-                    }
-
-                    Button {
-                        Task { await importFromGoodreads() }
-                    } label: {
-                        Label(isImportingGoodreads ? "Importing..." : "Import", systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
-                    .disabled(goodreadsURL.trimmed.isEmpty || isImportingGoodreads)
-
-                    if let goodreadsError {
-                        Text(goodreadsError)
-                            .font(.caption)
-                            .foregroundStyle(BookLoomStyle.coral)
-                    }
+                    GoodreadsMetadataImportControls(
+                        title: $title,
+                        author: $author,
+                        isbn: $isbn,
+                        selectedMetadata: $selectedMetadata,
+                        importButtonTitle: "Import",
+                        importButtonSystemImage: "square.and.arrow.down",
+                        buttonStyle: .secondaryIndigo
+                    )
+                    .textFieldStyle(.roundedBorder)
                 }
                 .bookLoomCard(padding: 12)
                 .frame(maxWidth: 500)
@@ -116,46 +81,24 @@ struct AddSubmissionView: View {
                         #endif
 
                     #if os(iOS)
-                    HStack(spacing: 8) {
-                        TextField("ISBN (optional)", text: $isbn)
-                            .textInputAutocapitalization(.characters)
-                            .keyboardType(.numbersAndPunctuation)
-                            .autocorrectionDisabled()
-
-                        Button {
-                            showingISBNScanner = true
-                        } label: {
-                            Label("Scan", systemImage: "barcode.viewfinder")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isLookingUpISBN)
-                    }
-
-                    if isLookingUpISBN {
-                        ProgressView("Looking up ISBN...")
-                            .font(.caption)
-                    }
-
-                    if let isbnLookupError {
-                        Text(isbnLookupError)
-                            .font(.caption)
-                            .foregroundStyle(BookLoomStyle.coral)
-                    }
+                    ISBNMetadataLookupControls(
+                        title: $title,
+                        author: $author,
+                        isbn: $isbn,
+                        selectedMetadata: $selectedMetadata,
+                        layout: .fieldWithScan(placeholder: "ISBN (optional)", scanTitle: "Scan")
+                    )
                     #else
                     TextField("ISBN (optional)", text: $isbn)
                     #endif
 
-                    Button {
-                        showingMetadataSearch = true
-                    } label: {
-                        Label(selectedMetadata == nil ? "Find Cover & Details" : "Change Cover & Details", systemImage: "magnifyingglass")
-                    }
-                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
-                    .disabled(trimmedTitle.isEmpty)
-
-                    if let selectedMetadata {
-                        BookMetadataSummary(candidate: selectedMetadata)
-                    }
+                    BookMetadataSearchControls(
+                        title: $title,
+                        author: $author,
+                        isbn: $isbn,
+                        selectedMetadata: $selectedMetadata,
+                        buttonStyle: .secondaryIndigo
+                    )
 
                     Toggle(isOn: $saveCopyToLibrary) {
                         Label("Keep on my Shelf", systemImage: "books.vertical.fill")
@@ -212,22 +155,6 @@ struct AddSubmissionView: View {
         } message: {
             Text(saveError ?? "Please try again.")
         }
-        .sheet(isPresented: $showingMetadataSearch) {
-            BookMetadataSearchView(title: title, author: author) { candidate in
-                apply(candidate)
-            }
-        }
-        #if os(iOS)
-        .sheet(isPresented: $showingISBNScanner) {
-            ISBNScannerView { scannedISBN in
-                showingISBNScanner = false
-                Task { await applyScannedISBN(scannedISBN) }
-            } onCancel: {
-                showingISBNScanner = false
-            }
-            .ignoresSafeArea()
-        }
-        #endif
     }
 
     private var trimmedTitle: String { title.trimmed }
@@ -323,57 +250,112 @@ struct AddSubmissionView: View {
         dismiss()
     }
 
-    private func apply(_ candidate: BookMetadataCandidate) {
-        title = candidate.title
-        author = candidate.authorLine
-        if let isbn = candidate.isbn {
-            self.isbn = isbn
+}
+
+enum MetadataLookupButtonStyle {
+    case bordered
+    case secondaryIndigo
+}
+
+struct GoodreadsMetadataImportControls: View {
+    @Binding var title: String
+    @Binding var author: String
+    @Binding var isbn: String
+    @Binding var selectedMetadata: BookMetadataCandidate?
+
+    let importButtonTitle: String
+    let importButtonSystemImage: String
+    let buttonStyle: MetadataLookupButtonStyle
+
+    @State private var goodreadsURL = ""
+    @State private var isImporting = false
+    @State private var importError: String?
+
+    private let metadataService = BookMetadataService()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                TextField("Paste Goodreads share link", text: $goodreadsURL, prompt: Text("Paste Goodreads share link").foregroundStyle(.tertiary))
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    #endif
+
+                Button {
+                    pasteGoodreadsURL()
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 28, height: 22)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .accessibilityLabel("Paste Goodreads link from clipboard")
+            }
+
+            importButton
+
+            if let importError {
+                Text(importError)
+                    .font(.caption)
+                    .foregroundStyle(BookLoomStyle.coral)
+            }
         }
-        selectedMetadata = candidate
     }
 
-    #if os(iOS)
-    @MainActor
-    private func applyScannedISBN(_ scannedISBN: String) async {
-        isbn = scannedISBN
-        isbnLookupError = nil
-        isLookingUpISBN = true
-        defer { isLookingUpISBN = false }
+    @ViewBuilder
+    private var importButton: some View {
+        let button = Button {
+            Task { await importFromGoodreads() }
+        } label: {
+            Label(isImporting ? "Importing..." : importButtonTitle, systemImage: importButtonSystemImage)
+        }
+        .disabled(goodreadsURL.trimmed.isEmpty || isImporting)
 
-        do {
-            let candidate = try await metadataService.lookupISBN(scannedISBN)
-            apply(candidate)
-        } catch {
-            isbnLookupError = error.localizedDescription
+        switch buttonStyle {
+        case .bordered:
+            button.buttonStyle(.bordered)
+        case .secondaryIndigo:
+            button.buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
         }
     }
-    #endif
 
     private func importFromGoodreads() async {
         let trimmed = goodreadsURL.trimmed
         guard let url = URL(string: trimmed) else {
-            goodreadsError = BookMetadataError.invalidGoodreadsURL.localizedDescription
+            importError = BookMetadataError.invalidGoodreadsURL.localizedDescription
             return
         }
-        goodreadsError = nil
-        isImportingGoodreads = true
-        defer { isImportingGoodreads = false }
+        importError = nil
+        isImporting = true
+        defer { isImporting = false }
 
         do {
             let candidate = try await metadataService.importFromGoodreads(url: url)
             apply(candidate)
         } catch {
-            goodreadsError = error.localizedDescription
+            importError = error.localizedDescription
         }
     }
 
     private func pasteGoodreadsURL() {
         guard let pasted = Self.clipboardString()?.trimmed, !pasted.isEmpty else { return }
         goodreadsURL = pasted
-        goodreadsError = nil
+        importError = nil
         if URL(string: pasted) != nil {
             Task { await importFromGoodreads() }
         }
+    }
+
+    private func apply(_ candidate: BookMetadataCandidate) {
+        title = candidate.title
+        author = candidate.authorLine
+        if let candidateISBN = candidate.isbn {
+            isbn = candidateISBN
+        }
+        selectedMetadata = candidate
     }
 
     private static func clipboardString() -> String? {
@@ -387,7 +369,157 @@ struct AddSubmissionView: View {
     }
 }
 
-private struct BookMetadataSummary: View {
+#if os(iOS)
+enum ISBNMetadataLookupLayout {
+    case fieldWithScan(placeholder: String, scanTitle: String)
+    case scanButtonOnly(title: String)
+}
+
+struct ISBNMetadataLookupControls: View {
+    @Binding var title: String
+    @Binding var author: String
+    @Binding var isbn: String
+    @Binding var selectedMetadata: BookMetadataCandidate?
+
+    let layout: ISBNMetadataLookupLayout
+
+    @State private var showingScanner = false
+    @State private var isLookingUp = false
+    @State private var lookupError: String?
+
+    private let metadataService = BookMetadataService()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            switch layout {
+            case .fieldWithScan(let placeholder, let scanTitle):
+                HStack(spacing: 8) {
+                    isbnField(placeholder: placeholder)
+
+                    scanButton(title: scanTitle)
+                }
+            case .scanButtonOnly(let title):
+                scanButton(title: title)
+            }
+
+            if isLookingUp {
+                ProgressView("Looking up ISBN...")
+                    .font(.caption)
+            }
+
+            if let lookupError {
+                Text(lookupError)
+                    .font(.caption)
+                    .foregroundStyle(BookLoomStyle.coral)
+            }
+        }
+        .sheet(isPresented: $showingScanner) {
+            ISBNScannerView { scannedISBN in
+                showingScanner = false
+                Task { await applyScannedISBN(scannedISBN) }
+            } onCancel: {
+                showingScanner = false
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    private func isbnField(placeholder: String) -> some View {
+        TextField(placeholder, text: $isbn)
+            .textInputAutocapitalization(.characters)
+            .keyboardType(.numbersAndPunctuation)
+            .autocorrectionDisabled()
+    }
+
+    private func scanButton(title: String) -> some View {
+        Button {
+            showingScanner = true
+        } label: {
+            Label(title, systemImage: "barcode.viewfinder")
+        }
+        .buttonStyle(.bordered)
+        .disabled(isLookingUp)
+    }
+
+    @MainActor
+    private func applyScannedISBN(_ scannedISBN: String) async {
+        isbn = scannedISBN
+        lookupError = nil
+        isLookingUp = true
+        defer { isLookingUp = false }
+
+        do {
+            let candidate = try await metadataService.lookupISBN(scannedISBN)
+            apply(candidate)
+        } catch {
+            lookupError = error.localizedDescription
+        }
+    }
+
+    private func apply(_ candidate: BookMetadataCandidate) {
+        title = candidate.title
+        author = candidate.authorLine
+        if let candidateISBN = candidate.isbn {
+            isbn = candidateISBN
+        }
+        selectedMetadata = candidate
+    }
+}
+#endif
+
+struct BookMetadataSearchControls: View {
+    @Binding var title: String
+    @Binding var author: String
+    @Binding var isbn: String
+    @Binding var selectedMetadata: BookMetadataCandidate?
+
+    let buttonStyle: MetadataLookupButtonStyle
+
+    @State private var showingMetadataSearch = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            searchButton
+
+            if let selectedMetadata {
+                BookMetadataSummary(candidate: selectedMetadata)
+            }
+        }
+        .sheet(isPresented: $showingMetadataSearch) {
+            BookMetadataSearchView(title: title, author: author) { candidate in
+                apply(candidate)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var searchButton: some View {
+        let button = Button {
+            showingMetadataSearch = true
+        } label: {
+            Label(selectedMetadata == nil ? "Find Cover & Details" : "Change Cover & Details", systemImage: "magnifyingglass")
+        }
+        .disabled(title.trimmed.isEmpty)
+
+        switch buttonStyle {
+        case .bordered:
+            button.buttonStyle(.bordered)
+        case .secondaryIndigo:
+            button.buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
+        }
+    }
+
+    private func apply(_ candidate: BookMetadataCandidate) {
+        title = candidate.title
+        author = candidate.authorLine
+        if let candidateISBN = candidate.isbn {
+            isbn = candidateISBN
+        }
+        selectedMetadata = candidate
+    }
+}
+
+struct BookMetadataSummary: View {
     let candidate: BookMetadataCandidate
 
     var body: some View {
