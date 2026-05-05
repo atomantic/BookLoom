@@ -459,7 +459,7 @@ enum ScreenshotSampleData {
     }
 
     /// Pre-populate the screenshot-only import queue with two resolved
-    /// Goodreads shares so the Books → Shelf segment has visible content during
+    /// Goodreads shares so the Club → Imports segment has visible content during
     /// capture. Single batched write — replaces any prior queue, no merge with
     /// stale screenshot reruns.
     private static func seedShelfImports() {

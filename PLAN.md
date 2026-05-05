@@ -125,6 +125,9 @@ The macOS-style personal Shelf should come to iOS/iPad, but the mobile informati
 - [x] **Scale Shelf for hundreds/thousands of books** — initial iOS Shelf uses lazy rows and batched SwiftData fetches so 300, 500, or 1000 scanned books do not need to render in one pass.
 - [ ] **Push Shelf search/filter into SwiftData predicates** — the first iOS Shelf page batches record loading, but search/filter still applies to loaded records. Move search and filters into query predicates before large-shelf search is considered complete.
 - [x] **Clarify record relationships** — avoid one shared mutable object for club and personal shelf. Prefer copy/link semantics: club submissions can reference external metadata/ISBN, while personal shelf entries keep ownership, format, loan, gift, purchase, read, and listened state.
+- [x] **Rename pending imported books to Imports** — avoid showing two different "Shelf" sections. Pending Goodreads/shared/manual imports are a triage queue named "Imports"; permanent owned/borrowed/listened records stay in personal Shelf.
+- [x] **Add import destination review** — imported books can be saved to the personal Shelf and added to one or more clubs from the same import sheet, with completed/read status available for club history.
+- [ ] **Add multi-club destination picker from existing Shelf books** — existing Shelf detail still adds to the active club. Promote this to a destination picker so an owned book can be proposed to multiple clubs without re-importing.
 - [x] **CloudKit schema follow-up** — Development schema was primed from the signed macOS debug app on 2026-05-05 for the new `LibraryBook` Shelf fields and CKShare records. Production was deployed from CloudKit Console on 2026-05-05, and the Production record types list now includes `CD_LibraryBook` with 37 fields.
 
 ## Future — monetization strategy (deferred)

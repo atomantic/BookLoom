@@ -117,11 +117,13 @@ private struct MainTabs: View {
                 pendingItem: item,
                 clubs: visibleClubs,
                 initiallyActiveClub: activeClubStore.resolveActiveClub(from: visibleClubs)
-            ) { savedClub in
-                goodreadsInbox.dismiss(saved: savedClub != nil)
-                if let savedClub {
-                    activeClubStore.setActiveClub(savedClub)
+            ) { completion in
+                goodreadsInbox.dismiss(saved: completion.didSave)
+                if let primaryClub = completion.primaryClub {
+                    activeClubStore.setActiveClub(primaryClub)
                     selectedTab = .books
+                } else if completion.didSave {
+                    selectedTab = .library
                 }
             }
         }

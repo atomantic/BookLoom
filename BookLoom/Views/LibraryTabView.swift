@@ -25,11 +25,15 @@ struct LibraryTabView: View {
                     totalCount: books.count,
                     readCount: books.filter(\.didRead).count,
                     listenedCount: books.filter(\.didListenToAudiobook).count,
-                    shelfCount: goodreadsInbox.pending.count
+                    importCount: goodreadsInbox.pending.count
                 )
                 .bookLoomListRow(top: 6, bottom: 8)
 
-                LibrarySearchField(text: $searchText)
+                LibrarySearchField(
+                    text: $searchText,
+                    placeholder: "Search shelf books",
+                    clearAccessibilityLabel: "Clear shelf book search"
+                )
                     .bookLoomListRow(top: 4, bottom: 6)
 
                 Picker("Shelf filter", selection: $filter) {
@@ -53,7 +57,7 @@ struct LibraryTabView: View {
                         .bookLoomListRow()
                     }
                 } header: {
-                    SectionTitle(title: "Shelf", detail: "\(goodreadsInbox.pending.count)")
+                    SectionTitle(title: "Imports", detail: "\(goodreadsInbox.pending.count)")
                 }
             }
 
@@ -260,7 +264,7 @@ private struct MobileLibrarySummary: View {
     let totalCount: Int
     let readCount: Int
     let listenedCount: Int
-    let shelfCount: Int
+    let importCount: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -272,8 +276,8 @@ private struct MobileLibrarySummary: View {
                 MetricTile(value: "\(totalCount)", label: "books", systemImage: "books.vertical.fill", tint: BookLoomStyle.indigo)
                 MetricTile(value: "\(readCount)", label: "read", systemImage: "checkmark.seal.fill", tint: BookLoomStyle.sage)
                 MetricTile(value: "\(listenedCount)", label: "listened", systemImage: "headphones", tint: BookLoomStyle.plum)
-                if shelfCount > 0 {
-                    MetricTile(value: "\(shelfCount)", label: "shelf", systemImage: "tray.fill", tint: BookLoomStyle.gold)
+                if importCount > 0 {
+                    MetricTile(value: "\(importCount)", label: "imports", systemImage: "tray.fill", tint: BookLoomStyle.gold)
                 }
             }
         }
@@ -336,7 +340,7 @@ private struct MobileShelfImportRow: View {
                     height: 64
                 )
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.displayTitle ?? item.url.host() ?? "Shelf book")
+                    Text(item.displayTitle ?? item.url.host() ?? "Imported book")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(BookLoomStyle.ink)
                         .lineLimit(2)
@@ -352,19 +356,21 @@ private struct MobileShelfImportRow: View {
 
             HStack(spacing: 8) {
                 Button(action: onSaveToShelf) {
-                    Label("Save", systemImage: "tray.and.arrow.down.fill")
+                    Label("Save to Shelf", systemImage: "books.vertical.fill")
                 }
                 .buttonStyle(.borderedProminent)
 
                 Button(action: onAddToClub) {
-                    Label("Club", systemImage: "person.2.fill")
+                    Label("Add to Club", systemImage: "person.2.fill")
                 }
                 .buttonStyle(.bordered)
 
                 Button(role: .destructive, action: onRemove) {
-                    Label("Remove", systemImage: "trash")
+                    Image(systemName: "trash")
+                        .frame(minWidth: 32)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("Discard import")
             }
             .font(.caption.weight(.semibold))
         }

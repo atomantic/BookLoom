@@ -133,14 +133,14 @@ struct SubmissionDetailView: View {
             Text("This returns the book to the proposal list without recording a read.")
         }
         .confirmationDialog(
-            "Move this book to your Shelf?",
+            "Move this book to Imports?",
             isPresented: $showingMoveToShelfConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Move to Shelf") { moveToShelf() }
+            Button("Move to Imports") { moveToShelf() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the book from the club and returns it to your personal Shelf.")
+            Text("This removes the book from the club and parks it in Imports so you can choose Shelf and club destinations later.")
         }
     }
 
@@ -459,7 +459,7 @@ private struct StatusActionsCard: View {
                     actionButton("Set as Current Read", systemImage: "book.fill", prominent: true, action: onSetCurrent)
                     actionButton("Mark Already Read", systemImage: "checkmark.seal.fill", prominent: false, action: onMarkRead)
                     if canMoveToShelf {
-                        actionButton("Move to Shelf", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
+                        actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
                     }
                 case .current:
                     actionButton("Mark Read", systemImage: "checkmark.seal.fill", prominent: true, action: onMarkRead)
@@ -467,13 +467,13 @@ private struct StatusActionsCard: View {
                 case .completed:
                     actionButton("Move Back to Proposals", systemImage: "tray.full.fill", prominent: true, action: onMoveToProposals)
                     if canMoveToShelf {
-                        actionButton("Move to Shelf", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
+                        actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
                     }
                 case .skipped:
                     actionButton("Restore to Proposals", systemImage: "tray.full.fill", prominent: true, action: onMoveToProposals)
                     actionButton("Mark Already Read", systemImage: "checkmark.seal.fill", prominent: false, action: onMarkRead)
                     if canMoveToShelf {
-                        actionButton("Move to Shelf", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
+                        actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
                     }
                 }
             }

@@ -27,17 +27,17 @@ final class SharedImportInboxTests: XCTestCase {
         XCTAssertEqual(SharedImportInbox.peekNext(defaults: defaults), url)
     }
 
-    func test_shareConfirmationMessagePointsSingleShareToShelf() {
+    func test_shareConfirmationMessagePointsSingleShareToImports() {
         XCTAssertEqual(
             SharedImportInbox.shareConfirmationMessage(pendingCount: 1),
-            "This book is waiting on your Shelf on the Books screen. Open BookLoom to add it to a club."
+            "This book is waiting in Imports. Open BookLoom to choose Shelf and club destinations."
         )
     }
 
-    func test_shareConfirmationMessagePointsMultipleSharesToShelf() {
+    func test_shareConfirmationMessagePointsMultipleSharesToImports() {
         XCTAssertEqual(
             SharedImportInbox.shareConfirmationMessage(pendingCount: 5),
-            "5 books are waiting on your Shelf on the Books screen. Open BookLoom to add them to a club."
+            "5 books are waiting in Imports. Open BookLoom to choose Shelf and club destinations."
         )
     }
 

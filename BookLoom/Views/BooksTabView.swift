@@ -45,7 +45,7 @@ private struct BooksTabContent: View {
         let displayedSections = sections
         let filteredProposed = filteredSubmissions(displayedSections.proposed)
         let filteredCompleted = filteredSubmissions(displayedSections.completed)
-        let filteredShelf = filteredShelfItems(goodreadsInbox.pending)
+        let filteredImports = filteredImportItems(goodreadsInbox.pending)
 
         List {
             Section {
@@ -101,7 +101,7 @@ private struct BooksTabContent: View {
                     selection: $libraryTab,
                     proposedCount: displayedSections.proposed.count,
                     readCount: displayedSections.completed.count,
-                    shelfCount: goodreadsInbox.pending.count
+                    importCount: goodreadsInbox.pending.count
                 )
                 .bookLoomListRow(top: 4, bottom: 6)
 
@@ -154,9 +154,9 @@ private struct BooksTabContent: View {
                                 .swipeActions(edge: .leading) {
                                     if GoodreadsImportInbox.canMoveToShelf(submission) {
                                         Button {
-                                            moveSubmissionToShelf(submission)
+                                            moveSubmissionToImports(submission)
                                         } label: {
-                                            Label("Move to Shelf", systemImage: "tray.and.arrow.down.fill")
+                                            Label("Move to Imports", systemImage: "tray.and.arrow.down.fill")
                                         }
                                         .tint(BookLoomStyle.indigo)
                                     }
@@ -191,24 +191,24 @@ private struct BooksTabContent: View {
                             delete(filteredCompleted, at: offsets)
                         }
                     }
-                case .shelf:
+                case .imports:
                     if goodreadsInbox.pending.isEmpty {
                         InlineEmptyState(
                             systemImage: "tray",
-                            title: "Shelf is Empty",
-                            message: "Books shared from Goodreads (or pasted via Add Book) land here until you add them to the club."
+                            title: "No Imports",
+                            message: "Books shared from Goodreads, pasted into Add, or moved out of club proposals land here until you choose where they go."
                         )
                         .bookLoomListRow()
-                    } else if filteredShelf.isEmpty {
+                    } else if filteredImports.isEmpty {
                         InlineEmptyState(
                             systemImage: "magnifyingglass",
-                            title: "No Matching Shelf Books",
+                            title: "No Matching Imports",
                             message: "Try another title, author, or link."
                         )
                         .bookLoomListRow()
                     } else {
                         ImportInboxBanner(
-                            pending: filteredShelf,
+                            pending: filteredImports,
                             onTap: { url in goodreadsInbox.present(url) },
                             onRemove: { url in goodreadsInbox.remove(url) }
                         )
@@ -317,13 +317,13 @@ private struct BooksTabContent: View {
             await syncClubForCurrentRole()
         }
         .onChange(of: libraryTab) { _, tab in
-            guard tab == .shelf else { return }
+            guard tab == .imports else { return }
             refreshShelfFromSharedQueue(selectShelfWhenPending: false)
         }
         .onChange(of: goodreadsInbox.pending.count) { oldValue, newValue in
             guard screenshotInitialLibraryTab == nil else { return }
             if oldValue == 0, newValue > 0 {
-                libraryTab = .shelf
+                libraryTab = .imports
             }
         }
     }
@@ -337,7 +337,7 @@ private struct BooksTabContent: View {
     private var screenshotInitialLibraryTab: LibraryTab? {
         guard let route = AppLaunchOptions.screenshotRoute else { return nil }
         switch route {
-        case "shelf", "import": return .shelf
+        case "shelf", "import", "imports": return .imports
         case "books", "clubs", "clubHome": return .proposed
         default: return nil
         }
@@ -371,7 +371,7 @@ private struct BooksTabContent: View {
         }
     }
 
-    private func filteredShelfItems(_ items: [SharedImportInbox.PendingImport]) -> [SharedImportInbox.PendingImport] {
+    private func filteredImportItems(_ items: [SharedImportInbox.PendingImport]) -> [SharedImportInbox.PendingImport] {
         let query = librarySearchQuery
         guard !query.isEmpty else { return items }
         return items.filter { item in
@@ -399,7 +399,7 @@ private struct BooksTabContent: View {
         goodreadsInbox.refresh()
         goodreadsInbox.prefetchAll()
         if selectShelfWhenPending, !goodreadsInbox.pending.isEmpty {
-            libraryTab = .shelf
+            libraryTab = .imports
         }
     }
 
@@ -479,10 +479,10 @@ private struct BooksTabContent: View {
         saveClubChanges()
     }
 
-    private func moveSubmissionToShelf(_ submission: BookSubmission) {
+    private func moveSubmissionToImports(_ submission: BookSubmission) {
         guard goodreadsInbox.moveSubmissionToShelf(submission, context: context) else { return }
         saveClubChanges()
-        libraryTab = .shelf
+        libraryTab = .imports
     }
 
     private func saveClubChanges() {
@@ -775,12 +775,24 @@ private struct CurrentActionButton: View {
 
 struct LibrarySearchField: View {
     @Binding var text: String
+    let placeholder: String
+    let clearAccessibilityLabel: String
+
+    init(
+        text: Binding<String>,
+        placeholder: String = "Search club books",
+        clearAccessibilityLabel: String = "Clear club book search"
+    ) {
+        _text = text
+        self.placeholder = placeholder
+        self.clearAccessibilityLabel = clearAccessibilityLabel
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search club books", text: $text)
+            TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 #if os(iOS)
                 .textInputAutocapitalization(.never)
@@ -794,7 +806,7 @@ struct LibrarySearchField: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear club book search")
+                .accessibilityLabel(clearAccessibilityLabel)
             }
         }
         .font(.callout)
@@ -949,13 +961,13 @@ private struct SyncStatusBanner: View {
 private enum LibraryTab: CaseIterable, Identifiable {
     case proposed
     case read
-    case shelf
+    case imports
     var id: Self { self }
     var title: String {
         switch self {
         case .proposed: return "Proposed"
         case .read: return "Read"
-        case .shelf: return "Shelf"
+        case .imports: return "Imports"
         }
     }
 }
@@ -964,13 +976,13 @@ private struct LibraryTabPicker: View {
     @Binding var selection: LibraryTab
     let proposedCount: Int
     let readCount: Int
-    let shelfCount: Int
+    let importCount: Int
 
     var body: some View {
         Picker("Club book view", selection: $selection) {
             Text(label(for: .proposed, count: proposedCount)).tag(LibraryTab.proposed)
             Text(label(for: .read, count: readCount)).tag(LibraryTab.read)
-            Text(label(for: .shelf, count: shelfCount)).tag(LibraryTab.shelf)
+            Text(label(for: .imports, count: importCount)).tag(LibraryTab.imports)
         }
         .pickerStyle(.segmented)
     }

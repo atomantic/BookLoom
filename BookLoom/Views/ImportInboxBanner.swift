@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Rendered both inside the Books screen Shelf (when a club is active) and
+/// Rendered both inside the Club screen Imports bucket (when a club is active) and
 /// inside `NoActiveClubView` (when the user shared books before creating a
 /// club). Without the second placement, a user who shares from Goodreads before
 /// creating their first club sees no queued imports anywhere.
@@ -75,7 +75,7 @@ private struct ImportInboxRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Remove from Shelf")
+            .accessibilityLabel("Remove import")
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)

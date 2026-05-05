@@ -11,12 +11,12 @@ import os
 /// Two presentation paths feed `presentedItem`:
 ///   • `presentNextIfNeeded()` — used by auto-pop on app launch / foreground.
 ///     Only fires for items enqueued within the last `autoPresentMaxAge`
-///     window so books the user has chosen to keep on the Shelf without
-///     adding to a club don't pop every time the app comes back. Records
+///     window so books the user has parked in Imports without saving don't
+///     pop every time the app comes back. Records
 ///     URLs that were skipped (closed without saving) so the same book
 ///     doesn't pop again every time the app returns to active.
 ///   • `present(_:)` — used when the user explicitly taps a row in the
-///     visible Shelf list. Bypasses the skip set and the freshness window.
+///     visible Imports list. Bypasses the skip set and the freshness window.
 ///
 /// `prefetchAll()` resolves Goodreads metadata for unresolved entries in the
 /// background so the banner can show real titles/covers without the user
@@ -26,8 +26,8 @@ import os
 final class GoodreadsImportInbox {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "ImportInbox")
     /// How recently an entry must have been enqueued for the auto-pop path to
-    /// surface it. Items older than this stay quietly on the Shelf — the user
-    /// already chose to keep them there without adding to a club.
+    /// surface it. Items older than this stay quietly in Imports — the user
+    /// already chose not to save them during the first prompt.
     static let autoPresentMaxAge: TimeInterval = 60 * 10
 
     private(set) var pending: [SharedImportInbox.PendingImport] = []
@@ -46,10 +46,10 @@ final class GoodreadsImportInbox {
     func refresh() {
         let next = SharedImportInbox.peekAll(defaults: defaults)
         if next != pending {
-            Self.logger.info("Shelf refresh changed pending imports from \(self.pending.count, privacy: .public) to \(next.count, privacy: .public)")
+            Self.logger.info("Imports refresh changed pending imports from \(self.pending.count, privacy: .public) to \(next.count, privacy: .public)")
             pending = next
         } else {
-            Self.logger.debug("Shelf refresh saw \(next.count, privacy: .public) pending import(s)")
+            Self.logger.debug("Imports refresh saw \(next.count, privacy: .public) pending import(s)")
         }
     }
 
@@ -64,14 +64,14 @@ final class GoodreadsImportInbox {
         presentedItem = next
     }
 
-    /// Pull a club submission back to the Shelf. Removes the submission from
+    /// Pull a club submission back to Imports. Removes the submission from
     /// the club's SwiftData store and re-enqueues a `PendingImport` with the
     /// submission's metadata pre-populated. The new entry's `enqueuedAt` is
     /// set just outside the auto-present window so the move doesn't trigger
-    /// the import sheet — the user explicitly parked the book on their Shelf
+    /// the import sheet — the user explicitly parked the book in Imports
     /// rather than adding it. Returns `false` when the submission has no
     /// reconstructable Goodreads URL (e.g. it was added by manual search via
-    /// Open Library) and a Shelf entry can't be synthesized.
+    /// Open Library) and an import entry can't be synthesized.
     @discardableResult
     func moveSubmissionToShelf(
         _ submission: BookSubmission,

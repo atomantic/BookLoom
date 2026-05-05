@@ -9,22 +9,22 @@ struct GoodreadsImportSheet: View {
     let pendingItem: SharedImportInbox.PendingImport
     let clubs: [BookClub]
     let initiallyActiveClub: BookClub?
-    /// Called when the sheet is finishing. A non-nil club means the user
-    /// successfully added the book to that club (the caller should snap the
-    /// active-club selector to it). `nil` means the user cancelled, and the
-    /// URL stays in `SharedImportInbox` so they can return to it from the
-    /// visible Shelf list.
-    var onDismiss: (BookClub?) -> Void
+    /// Called when the sheet is finishing. `didSave == false` means the user
+    /// cancelled, and the URL stays in `SharedImportInbox` so they can return
+    /// to it from Imports.
+    var onDismiss: (GoodreadsImportCompletion) -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(MemberIdentity.self) private var memberIdentity
+    @Query(sort: \LibraryBook.updatedAt, order: .reverse) private var libraryBooks: [LibraryBook]
 
     @State private var candidate: BookMetadataCandidate?
     @State private var fetchError: String?
     @State private var saveError: String?
     @State private var isFetching: Bool
     @State private var isSaving = false
-    @State private var selectedClubID: PersistentIdentifier?
+    @State private var saveToShelf = true
+    @State private var selectedClubIDs: Set<PersistentIdentifier> = []
 
     private let metadataService = BookMetadataService()
 
@@ -32,7 +32,7 @@ struct GoodreadsImportSheet: View {
         pendingItem: SharedImportInbox.PendingImport,
         clubs: [BookClub],
         initiallyActiveClub: BookClub?,
-        onDismiss: @escaping (BookClub?) -> Void
+        onDismiss: @escaping (GoodreadsImportCompletion) -> Void
     ) {
         self.pendingItem = pendingItem
         self.clubs = clubs
@@ -66,14 +66,7 @@ struct GoodreadsImportSheet: View {
                             .padding(.vertical, 12)
                     }
 
-                    if !clubs.isEmpty {
-                        clubPicker
-                    } else {
-                        Label("Create a book club before importing.", systemImage: "person.3")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, 12)
-                    }
+                    destinationPicker
 
                     if let saveError {
                         Label(saveError, systemImage: "exclamationmark.triangle.fill")
@@ -95,11 +88,16 @@ struct GoodreadsImportSheet: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { onDismiss(nil) }
+                    Button("Close") {
+                        onDismiss(GoodreadsImportCompletion(didSave: false, primaryClub: nil))
+                    }
                 }
             }
         }
-        .task { await loadMetadataIfNeeded() }
+        .task {
+            seedSelectedDestinationsIfNeeded()
+            await loadMetadataIfNeeded()
+        }
     }
 
     private var goodreadsURL: URL { pendingItem.url }
@@ -110,7 +108,7 @@ struct GoodreadsImportSheet: View {
                 .font(.title2)
                 .foregroundStyle(BookLoomStyle.plum)
             VStack(alignment: .leading, spacing: 2) {
-                Text(isGoodreadsItem ? "Imported from Goodreads" : "Saved to Shelf")
+                Text(isGoodreadsItem ? "Imported from Goodreads" : "Imported Book")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(BookLoomStyle.ink)
                 if isLocalShelfItem {
@@ -140,22 +138,31 @@ struct GoodreadsImportSheet: View {
         goodreadsURL.scheme == "bookloom"
     }
 
-    private var clubPicker: some View {
+    private var destinationPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Add to club")
+            Text("Destinations")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(BookLoomStyle.ink)
-            Picker("Club", selection: Binding(
-                get: { selectedClubID ?? clubs.first?.persistentModelID },
-                set: { selectedClubID = $0 }
-            )) {
-                ForEach(clubs, id: \.persistentModelID) { club in
-                    Text(club.name).tag(Optional(club.persistentModelID))
-                }
+
+            Toggle(isOn: $saveToShelf) {
+                Label("Save to my Shelf", systemImage: "books.vertical.fill")
             }
-            #if os(iOS)
-            .pickerStyle(.menu)
-            #endif
+
+            if !clubs.isEmpty {
+                Divider()
+                Text("Add to clubs")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(clubs, id: \.persistentModelID) { club in
+                    Toggle(isOn: clubSelectionBinding(for: club)) {
+                        Label(club.name, systemImage: "person.2.fill")
+                    }
+                }
+            } else {
+                Label("Create a club later if you also want this in a club.", systemImage: "person.3")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
         .bookLoomCard(padding: 12)
     }
@@ -165,40 +172,46 @@ struct GoodreadsImportSheet: View {
             Button {
                 Task { await save(asRead: false) }
             } label: {
-                Label(isSaving ? "Adding…" : "Add to Proposals", systemImage: "plus.circle.fill")
+                Label(isSaving ? "Saving…" : primaryActionTitle, systemImage: "square.and.arrow.down.fill")
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .bookLoomActionWidth()
             .disabled(saveDisabled)
 
-            Button {
-                Task { await save(asRead: true) }
-            } label: {
-                Label(isSaving ? "Saving…" : "Save to Completed", systemImage: "checkmark.seal.fill")
+            if !selectedClubs.isEmpty {
+                Button {
+                    Task { await save(asRead: true) }
+                } label: {
+                    Label(isSaving ? "Saving…" : "Add as Completed", systemImage: "checkmark.seal.fill")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .bookLoomActionWidth()
+                .disabled(saveDisabled)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .bookLoomActionWidth()
-            .disabled(saveDisabled)
         }
+    }
+
+    private var primaryActionTitle: String {
+        if saveToShelf, selectedClubs.isEmpty {
+            return "Save to Shelf"
+        }
+        if saveToShelf {
+            return selectedClubs.count == 1 ? "Save to Shelf + Club" : "Save to Shelf + Clubs"
+        }
+        return selectedClubs.count == 1 ? "Add to Club" : "Add to Clubs"
     }
 
     private var saveDisabled: Bool {
-        candidate == nil || clubs.isEmpty || isSaving || isFetching
+        candidate == nil || (!saveToShelf && selectedClubs.isEmpty) || isSaving || isFetching
     }
 
-    private var resolvedClub: BookClub? {
-        if let selectedClubID, let match = clubs.first(where: { $0.persistentModelID == selectedClubID }) {
-            return match
-        }
-        return initiallyActiveClub ?? clubs.first
+    private var selectedClubs: [BookClub] {
+        clubs.filter { selectedClubIDs.contains($0.persistentModelID) }
     }
 
     private func loadMetadataIfNeeded() async {
-        if selectedClubID == nil {
-            selectedClubID = (initiallyActiveClub ?? clubs.first)?.persistentModelID
-        }
         guard candidate == nil else { return }
         isFetching = true
         fetchError = nil
@@ -212,13 +225,91 @@ struct GoodreadsImportSheet: View {
     }
 
     private func save(asRead: Bool) async {
-        guard let candidate, let club = resolvedClub else { return }
+        guard let candidate else { return }
         isSaving = true
         saveError = nil
         defer { isSaving = false }
 
         let now = Date.now
-        let submission = BookSubmission(
+
+        if saveToShelf {
+            saveCandidateToShelf(candidate, didRead: asRead, now: now)
+        }
+
+        let destinationClubs = selectedClubs
+        for club in destinationClubs {
+            let submission = BookSubmission(
+                title: candidate.title,
+                author: candidate.authorLine,
+                isbn: candidate.primaryISBN,
+                bookDescription: candidate.description ?? "",
+                publishedYear: candidate.publishedYear,
+                coverURL: candidate.coverURL?.absoluteString ?? "",
+                externalProvider: candidate.provider.rawValue,
+                externalID: candidate.externalID,
+                submittedBy: memberIdentity.name,
+                submittedByMemberID: memberIdentity.memberID,
+                submittedAt: now,
+                status: asRead ? .completed : .proposed
+            )
+            if asRead {
+                submission.completedAt = now
+            }
+            club.addSubmission(submission)
+            context.insert(submission)
+        }
+
+        do {
+            if destinationClubs.isEmpty {
+                try context.save()
+            } else {
+                for club in destinationClubs {
+                    try SharedClubSync.saveAndPublish(
+                        context: context,
+                        club: club,
+                        localMemberID: memberIdentity.memberID,
+                        localMemberName: memberIdentity.name
+                    )
+                }
+            }
+            onDismiss(GoodreadsImportCompletion(didSave: true, primaryClub: destinationClubs.first))
+        } catch {
+            saveError = error.localizedDescription
+        }
+    }
+
+    private func seedSelectedDestinationsIfNeeded() {
+        guard selectedClubIDs.isEmpty else { return }
+        if let initiallyActiveClub {
+            selectedClubIDs.insert(initiallyActiveClub.persistentModelID)
+        } else if !clubs.isEmpty {
+            selectedClubIDs.insert(clubs[0].persistentModelID)
+        }
+    }
+
+    private func clubSelectionBinding(for club: BookClub) -> Binding<Bool> {
+        Binding(
+            get: { selectedClubIDs.contains(club.persistentModelID) },
+            set: { isSelected in
+                if isSelected {
+                    selectedClubIDs.insert(club.persistentModelID)
+                } else {
+                    selectedClubIDs.remove(club.persistentModelID)
+                }
+            }
+        )
+    }
+
+    private func saveCandidateToShelf(_ candidate: BookMetadataCandidate, didRead: Bool, now: Date) {
+        if let existing = libraryBooks.first(where: {
+            $0.externalProvider == candidate.provider.rawValue && $0.externalID == candidate.externalID
+        }) {
+            existing.didRead = existing.didRead || didRead
+            existing.updatedAt = now
+            return
+        }
+
+        let book = LibraryBook(
             title: candidate.title,
             author: candidate.authorLine,
             isbn: candidate.primaryISBN,
@@ -227,30 +318,17 @@ struct GoodreadsImportSheet: View {
             coverURL: candidate.coverURL?.absoluteString ?? "",
             externalProvider: candidate.provider.rawValue,
             externalID: candidate.externalID,
-            submittedBy: memberIdentity.name,
-            submittedByMemberID: memberIdentity.memberID,
-            submittedAt: now,
-            status: asRead ? .completed : .proposed
+            sourceURLString: pendingItem.url.absoluteString,
+            addedAt: now
         )
-        if asRead {
-            submission.completedAt = now
-        }
-        club.addSubmission(submission)
-        context.insert(submission)
-
-        do {
-            try SharedClubSync.saveAndPublish(
-                context: context,
-                club: club,
-                localMemberID: memberIdentity.memberID,
-                localMemberName: memberIdentity.name
-            )
-            onDismiss(club)
-        } catch {
-            saveError = error.localizedDescription
-        }
+        book.didRead = didRead
+        context.insert(book)
     }
+}
 
+struct GoodreadsImportCompletion {
+    let didSave: Bool
+    let primaryClub: BookClub?
 }
 
 private struct BookCard: View {

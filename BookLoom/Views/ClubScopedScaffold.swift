@@ -170,8 +170,8 @@ private struct PendingImportInboxSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionTitle(title: "Shelf", detail: "\(inbox.pending.count)")
-            Text("Books you shared from Goodreads are waiting on your Shelf. Create a club, then tap a row to add them.")
+            SectionTitle(title: "Imports", detail: "\(inbox.pending.count)")
+            Text("Books you shared from Goodreads are waiting in Imports. Create a club, then tap a row to choose Shelf and club destinations.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -244,7 +244,7 @@ private struct LibrarySummaryHeader: View {
                 LibraryStatTile(value: "\(signedCount)", label: "signed", systemImage: "signature")
                 LibraryStatTile(value: "\(loanedCount)", label: "loaned", systemImage: "arrowshape.turn.up.right.fill")
                 LibraryStatTile(value: "\(giftCount)", label: "gifts", systemImage: "gift.fill")
-                LibraryStatTile(value: "\(shelfCount)", label: "shelf", systemImage: "tray.full.fill")
+                LibraryStatTile(value: "\(shelfCount)", label: "imports", systemImage: "tray.full.fill")
             }
         }
         .bookLoomCard(padding: 12)
@@ -284,7 +284,7 @@ private struct PendingShelfSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionTitle(title: "Shelf", detail: "\(pending.count)")
+            SectionTitle(title: "Imports", detail: "\(pending.count)")
 
             ForEach(pending.prefix(3)) { item in
                 PendingShelfRow(
@@ -329,15 +329,15 @@ private struct PendingShelfRow: View {
 
                 HStack(spacing: 6) {
                     Button(action: onAddToLibrary) {
-                        Label("Shelf", systemImage: "books.vertical.fill")
+                        Label("Save to Shelf", systemImage: "books.vertical.fill")
                     }
                     Button(action: onAddToClub) {
-                        Label("Club", systemImage: "person.2.fill")
+                        Label("Add to Club", systemImage: "person.2.fill")
                     }
                     Button(role: .destructive, action: onRemove) {
                         Image(systemName: "xmark")
                     }
-                    .accessibilityLabel("Remove from Shelf")
+                    .accessibilityLabel("Discard import")
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)

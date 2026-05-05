@@ -163,9 +163,9 @@ enum SharedImportInbox {
 
     static func shareConfirmationMessage(pendingCount: Int) -> String {
         if pendingCount > 1 {
-            return "\(pendingCount) books are waiting on your Shelf on the Books screen. Open BookLoom to add them to a club."
+            return "\(pendingCount) books are waiting in Imports. Open BookLoom to choose Shelf and club destinations."
         }
-        return "This book is waiting on your Shelf on the Books screen. Open BookLoom to add it to a club."
+        return "This book is waiting in Imports. Open BookLoom to choose Shelf and club destinations."
     }
 
     // MARK: - Internal
