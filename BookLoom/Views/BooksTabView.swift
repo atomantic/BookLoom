@@ -411,53 +411,125 @@ private struct BooksHeader: View {
 }
 
 private struct BooksTabRow: View {
+    @Environment(MemberIdentity.self) private var memberIdentity
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Bindable var submission: BookSubmission
 
     var body: some View {
         NavigationLink(value: submission) {
-            HStack(spacing: 12) {
-                BookCoverTile(
-                    title: submission.displayTitle,
-                    author: submission.displayAuthor,
-                    coverURL: submission.coverImageURL,
-                    width: 48,
-                    height: 64
-                )
+            HStack(alignment: .top, spacing: 14) {
+                ZStack(alignment: .topTrailing) {
+                    BookCoverTile(
+                        title: submission.displayTitle,
+                        author: submission.displayAuthor,
+                        coverURL: submission.coverImageURL,
+                        width: 74,
+                        height: 104
+                    )
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(submission.displayTitle)
-                                .font(.headline)
-                                .foregroundStyle(BookLoomStyle.ink)
-                                .lineLimit(2)
-                            if !submission.displayAuthor.isEmpty {
-                                Text(submission.displayAuthor)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
+                    CompactBookStatusBadge(status: submission.status)
+                        .offset(x: 8, y: -8)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(submission.displayTitle)
+                            .font(.headline.bold())
+                            .foregroundStyle(BookLoomStyle.ink)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 4)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !submission.displayAuthor.isEmpty {
+                            Text(submission.displayAuthor)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        Spacer(minLength: 10)
-                        StatusPill(status: submission.status)
                     }
 
-                    HStack(spacing: 10) {
+                    PersonalRatingLine(stars: ownRating?.stars)
+
+                    HStack(spacing: 12) {
                         Label(submission.displaySubmitter, systemImage: "person.fill")
-                        if submission.ratingSummary.count > 0 {
-                            Label(submission.ratingSummary.displayValue, systemImage: "star.fill")
-                        }
                         if !(submission.notes ?? []).isEmpty {
                             Label("\((submission.notes ?? []).count)", systemImage: "note.text")
+                        }
+                        if let completedAt = submission.completedAt, submission.status == .completed {
+                            Label(completedAt.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
                         }
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .buttonStyle(.plain)
-        .bookLoomCard(padding: 10)
+        .bookLoomCard(padding: 12)
+        .accessibilityHint(submission.status.displayName)
+    }
+
+    private var ownRating: Rating? {
+        (submission.ratings ?? [])
+            .first { $0.matches(memberID: memberIdentity.memberID, memberName: memberIdentity.name) }
+    }
+}
+
+private struct CompactBookStatusBadge: View {
+    let status: BookSubmissionStatus
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(tint)
+            .frame(width: 30, height: 30)
+            .background(BookLoomStyle.paper.opacity(0.94), in: Circle())
+            .overlay {
+                Circle()
+                    .stroke(tint.opacity(0.28), lineWidth: 1)
+            }
+            .shadow(color: BookLoomStyle.ink.opacity(0.16), radius: 4, y: 2)
+            .accessibilityLabel(status.displayName)
+    }
+
+    private var systemImage: String {
+        switch status {
+        case .proposed: "tray.full.fill"
+        case .current: "book.fill"
+        case .completed: "checkmark.seal.fill"
+        case .skipped: "forward.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch status {
+        case .proposed: BookLoomStyle.plum
+        case .current: BookLoomStyle.sage
+        case .completed: BookLoomStyle.indigo
+        case .skipped: BookLoomStyle.coral
+        }
+    }
+}
+
+private struct PersonalRatingLine: View {
+    let stars: Int?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("Your rating")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 2) {
+                ForEach(1...5, id: \.self) { index in
+                    Image(systemName: index <= (stars ?? 0) ? "star.fill" : "star")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(index <= (stars ?? 0) ? BookLoomStyle.gold : Color.secondary.opacity(0.32))
+                }
+            }
+            .accessibilityLabel(stars.map { "\($0) out of 5 stars" } ?? "Not rated")
+        }
     }
 }
 
