@@ -125,7 +125,7 @@ The macOS-style personal Shelf should come to iOS/iPad, but the mobile informati
 - [x] **Scale Shelf for hundreds/thousands of books** — initial iOS Shelf uses lazy rows and batched SwiftData fetches so 300, 500, or 1000 scanned books do not need to render in one pass.
 - [ ] **Push Shelf search/filter into SwiftData predicates** — the first iOS Shelf page batches record loading, but search/filter still applies to loaded records. Move search and filters into query predicates before large-shelf search is considered complete.
 - [x] **Clarify record relationships** — avoid one shared mutable object for club and personal shelf. Prefer copy/link semantics: club submissions can reference external metadata/ISBN, while personal shelf entries keep ownership, format, loan, gift, purchase, read, and listened state.
-- [ ] **CloudKit schema follow-up** — Development schema was primed from the signed macOS debug app on 2026-05-05 for the new `LibraryBook` Shelf fields and CKShare records. Production still needs CloudKit Dashboard "Deploy Schema Changes..." or a `cktool` management token before relying on iOS/iPad Shelf sync in TestFlight.
+- [x] **CloudKit schema follow-up** — Development schema was primed from the signed macOS debug app on 2026-05-05 for the new `LibraryBook` Shelf fields and CKShare records. Production was deployed from CloudKit Console on 2026-05-05, and the Production record types list now includes `CD_LibraryBook` with 37 fields.
 
 ## Future — monetization strategy (deferred)
 
