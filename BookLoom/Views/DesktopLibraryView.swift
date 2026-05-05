@@ -31,7 +31,7 @@ struct DesktopLibraryView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .bookLoomScreenBackground()
-        .navigationTitle("Library")
+        .navigationTitle("Shelf")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -78,7 +78,7 @@ struct DesktopLibraryView: View {
             DesktopLibrarySearchField(text: $searchText)
                 .padding(.horizontal, 14)
 
-            Picker("Library filter", selection: $filter) {
+            Picker("Shelf filter", selection: $filter) {
                 ForEach(LibraryFilter.allCases) { filter in
                     Text(filter.title).tag(filter)
                 }
@@ -198,7 +198,7 @@ private struct DesktopLibrarySearchField: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search personal library", text: $text)
+            TextField("Search personal shelf", text: $text)
                 .textFieldStyle(.plain)
             if !text.isEmpty {
                 Button {
@@ -208,7 +208,7 @@ private struct DesktopLibrarySearchField: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear library search")
+                .accessibilityLabel("Clear shelf search")
             }
         }
         .font(.callout)
@@ -230,7 +230,7 @@ private struct LibrarySummaryHeader: View {
             HStack(alignment: .center, spacing: 10) {
                 BrandBadge(size: 42)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Personal Library")
+                    Text("Personal Shelf")
                         .font(.headline.bold())
                         .foregroundStyle(BookLoomStyle.ink)
                     Text("\(totalCount) books managed")
@@ -329,7 +329,7 @@ private struct PendingShelfRow: View {
 
                 HStack(spacing: 6) {
                     Button(action: onAddToLibrary) {
-                        Label("Library", systemImage: "books.vertical.fill")
+                        Label("Shelf", systemImage: "books.vertical.fill")
                     }
                     Button(action: onAddToClub) {
                         Label("Club", systemImage: "person.2.fill")
@@ -686,7 +686,7 @@ private struct LibraryBookEmptyState: View {
         VStack(spacing: 16) {
             BrandBadge(size: 68)
             VStack(spacing: 5) {
-                Text("Build Your Library")
+                Text("Build Your Shelf")
                     .font(.title.bold())
                     .foregroundStyle(BookLoomStyle.ink)
                 Text("Track owned copies, signed editions, loaned books, gift plans, purchase details, and shelf locations.")
@@ -734,7 +734,7 @@ private struct NewLibraryBookView: View {
                             height: 118
                         )
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Add to Library")
+                            Text("Add to Shelf")
                                 .font(.title2.bold())
                                 .foregroundStyle(BookLoomStyle.ink)
                             TextField("Title", text: $title)
@@ -768,7 +768,7 @@ private struct NewLibraryBookView: View {
                     Button {
                         save()
                     } label: {
-                        Label("Save to Library", systemImage: "books.vertical.fill")
+                        Label("Save to Shelf", systemImage: "books.vertical.fill")
                     }
                     .buttonStyle(.borderedProminent)
                     .bookLoomActionWidth(minWidth: 190)
@@ -780,7 +780,7 @@ private struct NewLibraryBookView: View {
                 .frame(maxWidth: .infinity)
             }
             .bookLoomScreenBackground()
-            .navigationTitle("New Library Book")
+            .navigationTitle("New Shelf Book")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

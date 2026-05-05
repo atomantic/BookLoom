@@ -91,7 +91,7 @@ struct SubmissionDetailView: View {
                 Button {
                     saveToPersonalLibrary()
                 } label: {
-                    Label(isSavedToPersonalLibrary ? "In Library" : "Save to Library", systemImage: "books.vertical.fill")
+                    Label(isSavedToPersonalLibrary ? "On Shelf" : "Save to Shelf", systemImage: "books.vertical.fill")
                 }
                 .disabled(isSavedToPersonalLibrary)
             }

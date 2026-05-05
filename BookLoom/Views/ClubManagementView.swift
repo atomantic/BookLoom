@@ -79,6 +79,8 @@ struct ClubManagementView: View {
                         showingInvite = true
                     } label: {
                         Label("Invite Members", systemImage: "person.2.fill")
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(.white)
                     }
                     .buttonStyle(.borderedProminent)
                     .bookLoomActionWidth()
@@ -367,6 +369,8 @@ private struct ClubDeleteCard: View {
                             .controlSize(.small)
                     }
                     Label(buttonTitle, systemImage: "trash.fill")
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.white)
                 }
             }
             .buttonStyle(.borderedProminent)

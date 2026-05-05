@@ -29,6 +29,8 @@ final class LibraryBookTests: XCTestCase {
 
     func test_ownershipBadgesSummarizeDesktopManagementState() {
         let book = LibraryBook(title: "Piranesi", author: "Susanna Clarke")
+        book.didRead = true
+        book.didListenToAudiobook = true
         book.isSigned = true
         book.isOnLoan = true
         book.loanedTo = "Owen"
@@ -36,6 +38,8 @@ final class LibraryBookTests: XCTestCase {
         book.purchasePriceCents = 2800
         book.purchaseCurrencyCode = "USD"
 
+        XCTAssertTrue(book.ownershipBadges.contains("Read"))
+        XCTAssertTrue(book.ownershipBadges.contains("Listened"))
         XCTAssertTrue(book.ownershipBadges.contains("Signed"))
         XCTAssertTrue(book.ownershipBadges.contains("On loan"))
         XCTAssertTrue(book.ownershipBadges.contains("Gift planned"))

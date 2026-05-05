@@ -26,6 +26,15 @@ struct BookLoomApp: App {
         LegacyDefaultsMigration.migrateBookLoomKeys()
         let importInboxDefaults = AppLaunchOptions.isSampleDataEnabled ? UserDefaults.standard : SharedImportInbox.defaults
         _goodreadsInbox = State(initialValue: GoodreadsImportInbox(defaults: importInboxDefaults))
+
+        #if DEBUG
+        if CloudKitSchemaPrimer.isRequested {
+            let container = sharedModelContainer
+            Task { @MainActor in
+                await CloudKitSchemaPrimer.runIfRequested(context: container.mainContext)
+            }
+        }
+        #endif
     }
 
     private static let appSchema = Schema([
@@ -90,7 +99,7 @@ struct BookLoomApp: App {
                 }
                 .task {
                     #if DEBUG
-                    await CloudKitSchemaPrimer.runIfRequested()
+                    await CloudKitSchemaPrimer.runIfRequested(context: sharedModelContainer.mainContext)
                     #endif
 
                     SchemaPrimeDataCleanup.removeSchemaPrimeData(from: sharedModelContainer.mainContext)

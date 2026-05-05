@@ -68,6 +68,8 @@ final class LibraryBook {
     var loanedTo: String = ""
     var loanedAt: Date? = nil
     var loanDueDate: Date? = nil
+    var didRead: Bool = false
+    var didListenToAudiobook: Bool = false
     var intendedRecipient: String = ""
     var giftOccasion: String = ""
     var giftByDate: Date? = nil
@@ -129,6 +131,8 @@ extension LibraryBook {
 
     var ownershipBadges: [String] {
         var badges: [String] = []
+        if didRead { badges.append("Read") }
+        if didListenToAudiobook { badges.append("Listened") }
         if isSigned { badges.append("Signed") }
         if isOnLoan { badges.append("On loan") }
         if hasGiftPlan { badges.append("Gift planned") }

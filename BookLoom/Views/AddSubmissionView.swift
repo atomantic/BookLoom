@@ -13,6 +13,7 @@ struct AddSubmissionView: View {
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
 
     @Bindable var club: BookClub
+    @Query(sort: \LibraryBook.updatedAt, order: .reverse) private var libraryBooks: [LibraryBook]
 
     @State private var title: String = ""
     @State private var author: String = ""
@@ -24,6 +25,9 @@ struct AddSubmissionView: View {
     @State private var goodreadsURL: String = ""
     @State private var isImportingGoodreads = false
     @State private var goodreadsError: String?
+    @State private var saveCopyToLibrary = false
+    @State private var markLibraryCopyRead = false
+    @State private var markLibraryCopyListened = false
     #if os(iOS)
     @State private var showingISBNScanner = false
     @State private var isLookingUpISBN = false
@@ -153,6 +157,20 @@ struct AddSubmissionView: View {
                         BookMetadataSummary(candidate: selectedMetadata)
                     }
 
+                    Toggle(isOn: $saveCopyToLibrary) {
+                        Label("Keep on my Shelf", systemImage: "books.vertical.fill")
+                    }
+
+                    if saveCopyToLibrary {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle("I read this", isOn: $markLibraryCopyRead)
+                            Toggle("I listened to the audiobook", isOn: $markLibraryCopyListened)
+                        }
+                        .font(.subheadline)
+                        .padding(10)
+                        .background(BookLoomStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+
                     Button {
                         Task { await addSubmission(asRead: false) }
                     } label: {
@@ -250,6 +268,9 @@ struct AddSubmissionView: View {
         }
         club.addSubmission(submission)
         context.insert(submission)
+        if saveCopyToLibrary {
+            saveLibraryCopy(from: submission, asRead: asRead)
+        }
         do {
             try SharedClubSync.saveAndPublish(
                 context: context,
@@ -261,6 +282,20 @@ struct AddSubmissionView: View {
         } catch {
             saveError = error.localizedDescription
         }
+    }
+
+    private func saveLibraryCopy(from submission: BookSubmission, asRead: Bool) {
+        if let existing = libraryBooks.first(where: { $0.matchesSubmission(submission) }) {
+            existing.didRead = existing.didRead || asRead || markLibraryCopyRead
+            existing.didListenToAudiobook = existing.didListenToAudiobook || markLibraryCopyListened
+            existing.updatedAt = .now
+            return
+        }
+
+        let book = LibraryBook.fromSubmission(submission)
+        book.didRead = asRead || markLibraryCopyRead
+        book.didListenToAudiobook = markLibraryCopyListened
+        context.insert(book)
     }
 
     private func saveToShelf() {

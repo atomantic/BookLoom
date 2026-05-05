@@ -1,15 +1,21 @@
 import SwiftUI
 import SwiftData
 
-/// Top-level Books tab. Scoped to the currently active club via the
+/// Top-level Club tab. Scoped to the currently active club via the
 /// ActiveClubStore. Replaces the per-club home page that used to be reached
-/// by drilling into a club from a top-level Clubs list — now Books is the
+/// by drilling into a club from a top-level Clubs list — now Club is the
 /// primary destination and clubs are switched via the toolbar account-style
 /// switcher.
 struct BooksTabView: View {
+    @Binding private var path: NavigationPath
+
+    init(path: Binding<NavigationPath> = .constant(NavigationPath())) {
+        _path = path
+    }
+
     var body: some View {
-        ClubScopedScaffold(title: "Books") { club in
-            BooksTabContent(club: club)
+        ClubScopedScaffold(title: "Club") { club in
+            BooksTabContent(club: club, path: $path)
         }
     }
 }
@@ -19,13 +25,18 @@ private struct BooksTabContent: View {
     @Environment(MemberIdentity.self) private var memberIdentity
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
     @Bindable var club: BookClub
+    @Binding var path: NavigationPath
     @ObservedObject private var syncStatus = SharedClubSyncStatus.shared
     @Query(sort: \BookSubmission.submittedAt) private var submissions: [BookSubmission]
+    @Query(sort: \SelectionPoll.createdAt, order: .reverse) private var polls: [SelectionPoll]
+    @Query(sort: \LibraryBook.updatedAt, order: .reverse) private var libraryBooks: [LibraryBook]
 
     @State private var showingPickConfirmation: Bool = false
     @State private var showingCompleteConfirmation: Bool = false
     @State private var showingMoveCurrentToProposalsConfirmation: Bool = false
     @State private var showingAddBook: Bool = false
+    @State private var showingKeepInLibraryConfirmation: Bool = false
+    @State private var pendingLibrarySubmission: BookSubmission?
     @State private var libraryTab: LibraryTab = .proposed
     @State private var librarySearchText: String = ""
     @State private var didResolveInitialLibraryTab = false
@@ -78,6 +89,11 @@ private struct BooksTabContent: View {
                     .bookLoomListRow(top: 10, bottom: 10)
                 }
 
+                if let poll = activePoll {
+                    ActivePollCard(poll: poll, candidates: clubSubmissions)
+                        .bookLoomListRow(top: 2, bottom: 8)
+                }
+
                 LibrarySearchField(text: $librarySearchText)
                     .bookLoomListRow(top: 8, bottom: 6)
 
@@ -92,8 +108,10 @@ private struct BooksTabContent: View {
                 LibraryActionBar(
                     selectedTab: libraryTab,
                     canPickRandom: !displayedSections.proposed.isEmpty,
+                    canVote: activePoll != nil || displayedSections.proposed.count >= 2,
                     onAddBook: { showingAddBook = true },
-                    onPickRandom: { showingPickConfirmation = true }
+                    onPickRandom: { showingPickConfirmation = true },
+                    onVote: openOrCreatePoll
                 )
                 .bookLoomListRow(top: 2, bottom: 6)
 
@@ -127,6 +145,7 @@ private struct BooksTabContent: View {
                                     Button {
                                         markComplete(submission)
                                         libraryTab = .read
+                                        offerToKeepInLibrary(submission)
                                     } label: {
                                         Label("Mark Read", systemImage: "checkmark.seal.fill")
                                     }
@@ -208,6 +227,9 @@ private struct BooksTabContent: View {
         .navigationDestination(for: BookSubmission.self) { sub in
             SubmissionDetailView(submission: sub)
         }
+        .navigationDestination(for: SelectionPoll.self) { poll in
+            SelectionPollDetailView(poll: poll, candidates: clubSubmissions)
+        }
         .navigationDestination(isPresented: $showingAddBook) {
             AddSubmissionView(club: club)
         }
@@ -246,6 +268,7 @@ private struct BooksTabContent: View {
             Button("Mark Read") {
                 if let current = sections.current {
                     markComplete(current)
+                    offerToKeepInLibrary(current)
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -265,6 +288,23 @@ private struct BooksTabContent: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This clears the current book and returns it to the proposal list.")
+        }
+        .confirmationDialog(
+            "Keep this book on your Shelf?",
+            isPresented: $showingKeepInLibraryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Save to Shelf") {
+                if let pendingLibrarySubmission {
+                    saveToPersonalLibrary(pendingLibrarySubmission)
+                }
+                pendingLibrarySubmission = nil
+            }
+            Button("Not Now", role: .cancel) {
+                pendingLibrarySubmission = nil
+            }
+        } message: {
+            Text("Club read history and your Shelf are separate. Save a Shelf copy if you own, borrowed, or listened to this book.")
         }
         .task(id: club.cloudZoneName) {
             if let forced = screenshotInitialLibraryTab {
@@ -292,7 +332,7 @@ private struct BooksTabContent: View {
         BookClubSubmissionSections(submissions: clubSubmissions)
     }
 
-    /// During screenshot capture (`-screenshotRoute`), pin the Library segment
+    /// During screenshot capture (`-screenshotRoute`), pin the club book segment
     /// so each screen captures the same view regardless of pending Shelf items.
     private var screenshotInitialLibraryTab: LibraryTab? {
         guard let route = AppLaunchOptions.screenshotRoute else { return nil }
@@ -305,6 +345,14 @@ private struct BooksTabContent: View {
 
     private var clubSubmissions: [BookSubmission] {
         submissions.filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+    }
+
+    private var clubPolls: [SelectionPoll] {
+        polls.filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+    }
+
+    private var activePoll: SelectionPoll? {
+        clubPolls.first(where: \.isOpen)
     }
 
     private var librarySearchQuery: String {
@@ -360,6 +408,26 @@ private struct BooksTabContent: View {
         assignCurrent(pick)
     }
 
+    private func openOrCreatePoll() {
+        if let activePoll {
+            path.append(activePoll)
+            return
+        }
+
+        let proposed = sections.proposed
+        guard proposed.count >= 2 else { return }
+        let poll = SelectionPoll(
+            title: "Next Book Vote",
+            candidates: proposed,
+            isAnonymousResults: true
+        )
+        poll.createdByMemberID = memberIdentity.memberID
+        context.insert(poll)
+        club.addSelectionPoll(poll)
+        saveClubChanges()
+        path.append(poll)
+    }
+
     private func assignCurrent(_ submission: BookSubmission) {
         SelectionPollCoordinator.promoteWinner(submission, in: club, actorMemberID: memberIdentity.memberID)
         DiscussionPromptLibrary.ensureStarterPrompts(for: submission, context: context)
@@ -369,6 +437,34 @@ private struct BooksTabContent: View {
     private func markComplete(_ submission: BookSubmission) {
         BookSubmissionStatusEditor.markComplete(submission, in: club, actorMemberID: memberIdentity.memberID)
         saveClubChanges()
+    }
+
+    private func offerToKeepInLibrary(_ submission: BookSubmission) {
+        guard !libraryBooks.contains(where: { $0.matchesSubmission(submission) }) else { return }
+        pendingLibrarySubmission = submission
+        showingKeepInLibraryConfirmation = true
+    }
+
+    private func saveToPersonalLibrary(_ submission: BookSubmission) {
+        if let existing = libraryBooks.first(where: { $0.matchesSubmission(submission) }) {
+            existing.didRead = true
+            existing.updatedAt = .now
+            savePersonalLibraryChanges()
+            return
+        }
+
+        let book = LibraryBook.fromSubmission(submission)
+        book.didRead = true
+        context.insert(book)
+        savePersonalLibraryChanges()
+    }
+
+    private func savePersonalLibraryChanges() {
+        do {
+            try context.save()
+        } catch {
+            assertionFailure("Failed to save personal library changes: \(error.localizedDescription)")
+        }
     }
 
     private func moveCurrentToProposals(_ submission: BookSubmission) {
@@ -677,14 +773,14 @@ private struct CurrentActionButton: View {
     }
 }
 
-private struct LibrarySearchField: View {
+struct LibrarySearchField: View {
     @Binding var text: String
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search library", text: $text)
+            TextField("Search club books", text: $text)
                 .textFieldStyle(.plain)
                 #if os(iOS)
                 .textInputAutocapitalization(.never)
@@ -698,7 +794,7 @@ private struct LibrarySearchField: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear library search")
+                .accessibilityLabel("Clear club book search")
             }
         }
         .font(.callout)
@@ -711,8 +807,10 @@ private struct LibrarySearchField: View {
 private struct LibraryActionBar: View {
     let selectedTab: LibraryTab
     let canPickRandom: Bool
+    let canVote: Bool
     let onAddBook: () -> Void
     let onPickRandom: () -> Void
+    let onVote: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -723,7 +821,7 @@ private struct LibraryActionBar: View {
         layout {
             Button(action: onAddBook) {
                 actionLabel(
-                    title: "Add Book",
+                    title: "Add",
                     systemImage: "plus",
                     background: BookLoomStyle.indigo,
                     foreground: Color.white
@@ -734,7 +832,7 @@ private struct LibraryActionBar: View {
             if selectedTab == .proposed {
                 Button(action: onPickRandom) {
                     actionLabel(
-                        title: "Pick Random",
+                        title: "Random",
                         systemImage: "shuffle",
                         background: canPickRandom ? BookLoomStyle.plum.opacity(0.16) : Color.secondary.opacity(0.10),
                         foreground: canPickRandom ? BookLoomStyle.plum : Color.secondary
@@ -742,6 +840,17 @@ private struct LibraryActionBar: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canPickRandom)
+
+                Button(action: onVote) {
+                    actionLabel(
+                        title: "Vote",
+                        systemImage: "checklist",
+                        background: canVote ? BookLoomStyle.sage.opacity(0.18) : Color.secondary.opacity(0.10),
+                        foreground: canVote ? BookLoomStyle.sage : Color.secondary
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canVote)
             }
         }
     }
@@ -758,6 +867,52 @@ private struct LibraryActionBar: View {
             .frame(minHeight: 40)
             .background(background, in: Capsule())
             .foregroundStyle(foreground)
+    }
+}
+
+private struct ActivePollCard: View {
+    @Bindable var poll: SelectionPoll
+    let candidates: [BookSubmission]
+
+    var body: some View {
+        let tally = SelectionPollScorer.tally(votes: poll.votes ?? [], candidateIDs: poll.candidateIDs)
+        let leader = tally.leader.flatMap { result in
+            candidates.first { $0.selectionID == result.id }
+        }
+
+        NavigationLink(value: poll) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("Voting Open", systemImage: "checklist")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BookLoomStyle.ink)
+                    Spacer()
+                    TintedCapsuleLabel(
+                        text: "\(poll.candidateIDs.count) books",
+                        tint: BookLoomStyle.sage,
+                        horizontalPadding: 7,
+                        verticalPadding: 3
+                    )
+                }
+
+                if let leader {
+                    Text(tally.hasTie ? "Current tie includes \(leader.displayTitle)." : "Current leader: \(leader.displayTitle).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                } else {
+                    Text("Rank the proposed books to help choose the next read.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Label("\((poll.votes ?? []).count) ballots cast", systemImage: "person.2.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            .bookLoomCard(padding: 12)
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -812,7 +967,7 @@ private struct LibraryTabPicker: View {
     let shelfCount: Int
 
     var body: some View {
-        Picker("Library view", selection: $selection) {
+        Picker("Club book view", selection: $selection) {
             Text(label(for: .proposed, count: proposedCount)).tag(LibraryTab.proposed)
             Text(label(for: .read, count: readCount)).tag(LibraryTab.read)
             Text(label(for: .shelf, count: shelfCount)).tag(LibraryTab.shelf)

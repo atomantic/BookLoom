@@ -26,7 +26,6 @@ private struct MainTabs: View {
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
     @State private var selectedTab = MainTab.defaultSelection
     @State private var booksPath = NavigationPath()
-    @State private var pollsPath = NavigationPath()
     @State private var schedulePath = NavigationPath()
     @State private var discussionsPath = NavigationPath()
     private let sharedSyncTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
@@ -38,27 +37,26 @@ private struct MainTabs: View {
             DesktopMainView(
                 selectedTab: $selectedTab,
                 booksPath: $booksPath,
-                pollsPath: $pollsPath,
                 discussionsPath: $discussionsPath,
                 schedulePath: $schedulePath
             )
             #else
             TabView(selection: $selectedTab) {
-                NavigationStack(path: $booksPath) {
-                    BooksTabView()
+                NavigationStack {
+                    LibraryTabView()
                 }
                 .tabItem {
-                    Label("Books", systemImage: "books.vertical.fill")
+                    Label("Shelf", systemImage: "books.vertical.fill")
+                }
+                .tag(MainTab.library)
+
+                NavigationStack(path: $booksPath) {
+                    BooksTabView(path: $booksPath)
+                }
+                .tabItem {
+                    Label("Club", systemImage: "person.2.fill")
                 }
                 .tag(MainTab.books)
-
-                NavigationStack(path: $pollsPath) {
-                    PollsTabView()
-                }
-                .tabItem {
-                    Label("Polls", systemImage: "list.number")
-                }
-                .tag(MainTab.polls)
 
                 NavigationStack(path: $discussionsPath) {
                     DiscussionsTabView()
@@ -179,7 +177,6 @@ private struct MainTabs: View {
 
     private func navigateToScreenshotRoute(_ route: String) {
         booksPath = NavigationPath()
-        pollsPath = NavigationPath()
         schedulePath = NavigationPath()
         discussionsPath = NavigationPath()
 
@@ -205,11 +202,11 @@ private struct MainTabs: View {
                 booksPath.append(current)
             }
         case "polls":
-            selectedTab = .polls
+            selectedTab = .books
         case "poll", "vote":
-            selectedTab = .polls
+            selectedTab = .books
             if let poll = club.recentSelectionPolls.first {
-                pollsPath.append(poll)
+                booksPath.append(poll)
             }
         case "schedule":
             selectedTab = .schedule
@@ -246,8 +243,8 @@ private enum MainTab: Hashable {
 
     var title: String {
         switch self {
-        case .library: return "Library"
-        case .books: return "Books"
+        case .library: return "Shelf"
+        case .books: return "Club"
         case .polls: return "Polls"
         case .discussions: return "Discussions"
         case .schedule: return "Schedule"
@@ -271,14 +268,13 @@ private enum MainTab: Hashable {
 private struct DesktopMainView: View {
     @Binding var selectedTab: MainTab
     @Binding var booksPath: NavigationPath
-    @Binding var pollsPath: NavigationPath
     @Binding var discussionsPath: NavigationPath
     @Binding var schedulePath: NavigationPath
 
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedTab) {
-                Section("Library") {
+                Section("Shelf") {
                     DesktopSidebarRow(tab: .library)
                         .tag(MainTab.library)
                 }
@@ -310,10 +306,10 @@ private struct DesktopMainView: View {
                 }
             case .books:
                 NavigationStack(path: $booksPath) {
-                    BooksTabView()
+                    BooksTabView(path: $booksPath)
                 }
             case .polls:
-                NavigationStack(path: $pollsPath) {
+                NavigationStack {
                     PollsTabView()
                 }
             case .discussions:

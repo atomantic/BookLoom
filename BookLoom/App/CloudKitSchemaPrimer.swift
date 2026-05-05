@@ -2,6 +2,7 @@ import CloudKit
 import Darwin
 import Foundation
 import os
+import SwiftData
 
 #if DEBUG
 @MainActor
@@ -11,13 +12,20 @@ enum CloudKitSchemaPrimer {
     private static let launchArgument = "--prime-cloudkit-schema"
     private static let containerID = "iCloud.net.shadowpuppet.PlotLoom"
     private static let rootRecordType = "BookClubShareRoot"
+    private static var hasRun = false
 
-    static func runIfRequested() async {
-        guard shouldRun else { return }
+    static var isRequested: Bool {
+        shouldRun
+    }
+
+    static func runIfRequested(context: ModelContext) async {
+        guard shouldRun, !hasRun else { return }
+        hasRun = true
 
         var exitCode: Int32 = 0
         do {
             log("Starting CloudKit Development schema prime")
+            try primeShelfSchema(context: context)
             try await primeShareSchema()
             log("Finished CloudKit Development schema prime")
         } catch {
@@ -35,6 +43,43 @@ enum CloudKitSchemaPrimer {
     private static var shouldRun: Bool {
         ProcessInfo.processInfo.environment[environmentKey] == "1"
         || ProcessInfo.processInfo.arguments.contains(launchArgument)
+    }
+
+    private static func primeShelfSchema(context: ModelContext) throws {
+        let book = LibraryBook(
+            title: "Schema Prime Shelf Book",
+            author: "BookLoom",
+            isbn: "9780000000002",
+            bookDescription: SchemaPrimeIdentity.proposalDescription,
+            publishedYear: 2026,
+            coverURL: "https://example.com/bookloom-schema-prime-cover.jpg",
+            externalProvider: "SchemaPrime",
+            externalID: "shelf-\(UUID().uuidString)",
+            sourceURLString: "bookloom://schema-prime/shelf",
+            addedAt: .now
+        )
+        book.format = .hardcover
+        book.condition = .veryGood
+        book.shelfLocation = "Schema Prime Shelf"
+        book.isSigned = true
+        book.purchasePriceCents = 4200
+        book.purchaseCurrencyCode = "USD"
+        book.purchaseSource = "Schema Prime"
+        book.purchaseDate = .now
+        book.isOnLoan = true
+        book.loanedTo = "Schema Prime Reader"
+        book.loanedAt = .now
+        book.loanDueDate = .now.addingTimeInterval(7 * 24 * 60 * 60)
+        book.didRead = true
+        book.didListenToAudiobook = true
+        book.intendedRecipient = "Schema Prime Recipient"
+        book.giftOccasion = "Schema Prime Gift"
+        book.giftByDate = .now.addingTimeInterval(30 * 24 * 60 * 60)
+        book.privateNotes = "Development-only record used to register personal Shelf fields in CloudKit."
+
+        context.insert(book)
+        try context.save()
+        log("Saved SwiftData Shelf schema-prime record")
     }
 
     private static func primeShareSchema() async throws {
