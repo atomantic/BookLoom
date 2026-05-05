@@ -213,9 +213,9 @@ struct MeetingDetailView: View {
                         saveRSVP()
                     } label: {
                         Label("Save RSVP", systemImage: "checkmark.circle")
-                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .bookLoomActionWidth()
                 }
                 .bookLoomCard(padding: 12)
             } header: {

@@ -140,7 +140,7 @@ struct SelectionPollDetailView: View {
 
             if poll.isOpen {
                 Section {
-                    VStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 10) {
                         rankPicker("First choice", selection: $firstPickID, candidates: orderedCandidates, allowEmpty: false)
                         rankPicker("Second choice", selection: $secondPickID, candidates: orderedCandidates, allowEmpty: true)
                         rankPicker("Third choice", selection: $thirdPickID, candidates: orderedCandidates, allowEmpty: true)
@@ -149,9 +149,9 @@ struct SelectionPollDetailView: View {
                             saveVote()
                         } label: {
                             Label("Save Ballot", systemImage: "checkmark.circle")
-                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
+                        .bookLoomActionWidth()
                         .disabled(firstPickID.isEmpty)
                     }
                     .bookLoomCard(padding: 12)

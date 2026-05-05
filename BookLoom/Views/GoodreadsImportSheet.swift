@@ -161,25 +161,25 @@ struct GoodreadsImportSheet: View {
     }
 
     private var actionButtons: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
             Button {
                 Task { await save(asRead: false) }
             } label: {
                 Label(isSaving ? "Adding…" : "Add to Proposals", systemImage: "plus.circle.fill")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .bookLoomActionWidth()
             .disabled(saveDisabled)
 
             Button {
                 Task { await save(asRead: true) }
             } label: {
                 Label(isSaving ? "Saving…" : "Save to Completed", systemImage: "checkmark.seal.fill")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
+            .bookLoomActionWidth()
             .disabled(saveDisabled)
         }
     }

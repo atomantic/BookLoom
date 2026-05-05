@@ -295,6 +295,48 @@ final class BookMetadataServiceTests: XCTestCase {
         XCTAssertGreaterThan(candidate.description?.count ?? 0, "Short blurb…".count)
     }
 
+    func test_lookupISBN_fetchesGoogleBooksMetadata() async throws {
+        let googleResponse = """
+        {"items":[{"id":"isbn-book","volumeInfo":{"title":"The Story of Art Without Men","authors":["Katy Hessel"],"publishedDate":"2022-09-08","description":"A fresh history of art.","imageLinks":{"thumbnail":"http://example.com/cover.jpg"},"industryIdentifiers":[{"type":"ISBN_13","identifier":"9781419707742"}]}}]}
+        """
+
+        MockURLProtocol.responses = [
+            "https://www.googleapis.com/books/v1/volumes?q=isbn:9781419707742&maxResults=1&printType=books": googleResponse.data(using: .utf8)!
+        ]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        let candidate = try await service.lookupISBN("978-1-4197-0774-2")
+
+        XCTAssertEqual(candidate.provider, .googleBooks)
+        XCTAssertEqual(candidate.externalID, "isbn-book")
+        XCTAssertEqual(candidate.title, "The Story of Art Without Men")
+        XCTAssertEqual(candidate.authorLine, "Katy Hessel")
+        XCTAssertEqual(candidate.publishedYear, 2022)
+        XCTAssertEqual(candidate.isbn, "9781419707742")
+        XCTAssertEqual(candidate.coverURL?.absoluteString, "https://example.com/cover.jpg")
+    }
+
+    func test_normalizedISBN_acceptsISBN10AndBooklandISBN13Only() {
+        XCTAssertEqual(BookMetadataService.normalizedISBN("ISBN 978-1-4197-0774-2"), "9781419707742")
+        XCTAssertEqual(BookMetadataService.normalizedISBN("0-306-40615-2"), "0306406152")
+        XCTAssertNil(BookMetadataService.normalizedISBN("54000"))
+        XCTAssertNil(BookMetadataService.normalizedISBN("0123456789012"))
+    }
+
+    #if os(iOS)
+    func test_isbnScannerParser_extractsPrintedISBNAndIgnoresPriceBarcode() {
+        let printedLabel = """
+        U.S. $40.00 Can. $49.95 U.K. £25.00
+        ISBN 978-1-4197-0774-2
+        9781419707742 54000
+        """
+
+        XCTAssertEqual(ISBNScannerParser.isbn(in: printedLabel), "9781419707742")
+        XCTAssertEqual(ISBNScannerParser.isbn(in: "978141970774254000"), "9781419707742")
+        XCTAssertNil(ISBNScannerParser.isbn(in: "54000"))
+    }
+    #endif
+
     func test_importFromGoodreads_keepsFullGoodreadsDescriptionWithoutEnrichment() async throws {
         let fullDescription = String(repeating: "A long full description from Goodreads itself. ", count: 12)
         let goodreadsHTML = """

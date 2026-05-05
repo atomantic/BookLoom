@@ -107,6 +107,17 @@ Discovered while building marketing comparison pages at `bookloom.shadowpuppet.n
 - [ ] **Export / import club history** (already in PLAN above; comparison pages explicitly call out "your data, exportable" as a BookLoom win — needs to actually exist before the messaging is honest).
 - [ ] **Audiobook / Kindle / e-reader compatibility note** — no integration needed; just messaging on the marketing site (and possibly an in-app onboarding line) that BookLoom is format-agnostic. Some of the comparison-table rows around progress assume page-count tracking, which excludes audiobook listeners; explicit "any format works" copy fixes that.
 
+## Future — monetization strategy (deferred)
+
+Decision for now: keep BookLoom free while the basic app, sharing flows, and desktop/iPad library experience are still being flushed out. Do not add paywalls, premium service checks, or entitlement gates in the current v1.x work.
+
+- [ ] **Protect the free core** — users should always be able to create and manage clubs, proposals, votes, meetings, personal library records, and their existing private data without a subscription.
+- [ ] **Always allow data access and export** — because BookLoom stores private collection and club data, cancellation or lack of purchase must never lock users out of viewing, editing, deleting, or exporting their own records.
+- [ ] **Prefer one-time Pro over subscription for local/private features** — if monetization is needed later, use a non-consumable "BookLoom Pro" unlock for advanced app features like the full desktop/iPad library workspace, smart shelves, custom tags, collection value summaries, richer export formats, barcode/metadata tools, and advanced loan/gift planning.
+- [ ] **Reserve subscriptions for real ongoing costs** — only consider recurring pricing for services with continuing expenses, such as hosted web sharing, server-side notifications, AI recommendations/summaries, price tracking, or external metadata enrichment at scale.
+- [ ] **No data hostage behavior** — if a subscription is ever added and later canceled, existing premium-created records remain visible/editable/exportable. Only future premium-only creation, automation, or hosted-service usage should stop.
+- [ ] **Family-friendly pricing expectation** — if a Pro unlock ships, evaluate Family Sharing and a simple price point before adding multiple tiers.
+
 ## Notes
 
 - Use existing Claudeception skills when implementing:

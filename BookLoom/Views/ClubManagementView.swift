@@ -79,9 +79,9 @@ struct ClubManagementView: View {
                         showingInvite = true
                     } label: {
                         Label("Invite Members", systemImage: "person.2.fill")
-                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .bookLoomActionWidth()
 
                     PermissionsHelpRow(
                         message: canManageAdmins
@@ -368,10 +368,10 @@ private struct ClubDeleteCard: View {
                     }
                     Label(buttonTitle, systemImage: "trash.fill")
                 }
-                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(.red)
+            .bookLoomActionWidth()
             .disabled(isDeleting)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

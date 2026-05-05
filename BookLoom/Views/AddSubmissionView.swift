@@ -24,6 +24,11 @@ struct AddSubmissionView: View {
     @State private var goodreadsURL: String = ""
     @State private var isImportingGoodreads = false
     @State private var goodreadsError: String?
+    #if os(iOS)
+    @State private var showingISBNScanner = false
+    @State private var isLookingUpISBN = false
+    @State private var isbnLookupError: String?
+    #endif
 
     private let metadataService = BookMetadataService()
 
@@ -96,14 +101,44 @@ struct AddSubmissionView: View {
                 .frame(maxWidth: 500)
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Group {
-                        TextField("Title", text: $title)
-                        TextField("Author", text: $author)
-                        TextField("ISBN (optional)", text: $isbn)
-                    }
-                    .textFieldStyle(.roundedBorder)
+                    TextField("Title", text: $title)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.words)
+                        #endif
+
+                    TextField("Author", text: $author)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.words)
+                        #endif
+
                     #if os(iOS)
-                    .textInputAutocapitalization(.words)
+                    HStack(spacing: 8) {
+                        TextField("ISBN (optional)", text: $isbn)
+                            .textInputAutocapitalization(.characters)
+                            .keyboardType(.numbersAndPunctuation)
+                            .autocorrectionDisabled()
+
+                        Button {
+                            showingISBNScanner = true
+                        } label: {
+                            Label("Scan", systemImage: "barcode.viewfinder")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isLookingUpISBN)
+                    }
+
+                    if isLookingUpISBN {
+                        ProgressView("Looking up ISBN...")
+                            .font(.caption)
+                    }
+
+                    if let isbnLookupError {
+                        Text(isbnLookupError)
+                            .font(.caption)
+                            .foregroundStyle(BookLoomStyle.coral)
+                    }
+                    #else
+                    TextField("ISBN (optional)", text: $isbn)
                     #endif
 
                     Button {
@@ -122,10 +157,10 @@ struct AddSubmissionView: View {
                         Task { await addSubmission(asRead: false) }
                     } label: {
                         Label(isSaving ? "Adding..." : "Add to Proposals", systemImage: "plus.circle.fill")
-                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .bookLoomActionWidth()
                     .disabled(trimmedTitle.isEmpty || isSaving)
 
                     Button {
@@ -144,6 +179,7 @@ struct AddSubmissionView: View {
                     .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.plum))
                     .disabled(trimmedTitle.isEmpty || isSaving)
                 }
+                .textFieldStyle(.roundedBorder)
                 .bookLoomCard(padding: 12)
                 .frame(maxWidth: 500)
             }
@@ -163,6 +199,17 @@ struct AddSubmissionView: View {
                 apply(candidate)
             }
         }
+        #if os(iOS)
+        .sheet(isPresented: $showingISBNScanner) {
+            ISBNScannerView { scannedISBN in
+                showingISBNScanner = false
+                Task { await applyScannedISBN(scannedISBN) }
+            } onCancel: {
+                showingISBNScanner = false
+            }
+            .ignoresSafeArea()
+        }
+        #endif
     }
 
     private var trimmedTitle: String { title.trimmed }
@@ -249,6 +296,23 @@ struct AddSubmissionView: View {
         }
         selectedMetadata = candidate
     }
+
+    #if os(iOS)
+    @MainActor
+    private func applyScannedISBN(_ scannedISBN: String) async {
+        isbn = scannedISBN
+        isbnLookupError = nil
+        isLookingUpISBN = true
+        defer { isLookingUpISBN = false }
+
+        do {
+            let candidate = try await metadataService.lookupISBN(scannedISBN)
+            apply(candidate)
+        } catch {
+            isbnLookupError = error.localizedDescription
+        }
+    }
+    #endif
 
     private func importFromGoodreads() async {
         let trimmed = goodreadsURL.trimmed

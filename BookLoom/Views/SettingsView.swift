@@ -259,9 +259,9 @@ private struct RelaunchWelcomeCard: View {
                 replayWelcome = true
             } label: {
                 Label("Relaunch Welcome", systemImage: "sparkles.rectangle.stack")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .bookLoomActionWidth(minWidth: 190)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .bookLoomCard(padding: 12)
@@ -315,10 +315,10 @@ private struct DataResetCard: View {
                     }
                     Label(isResetting ? "Resetting…" : "Delete All My Data", systemImage: "trash.fill")
                 }
-                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(.red)
+            .bookLoomActionWidth(minWidth: 190)
             .disabled(isResetting)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

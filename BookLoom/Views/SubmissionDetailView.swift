@@ -8,6 +8,7 @@ struct SubmissionDetailView: View {
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
 
     @Bindable var submission: BookSubmission
+    @Query(sort: \LibraryBook.updatedAt, order: .reverse) private var libraryBooks: [LibraryBook]
 
     @State private var draftNote: String = ""
     @State private var draftPrompt: String = ""
@@ -84,6 +85,18 @@ struct SubmissionDetailView: View {
         .bookLoomScreenBackground()
         .navigationTitle(submission.displayTitle)
         .bookLoomNavigationBar()
+        #if os(macOS)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    saveToPersonalLibrary()
+                } label: {
+                    Label(isSavedToPersonalLibrary ? "In Library" : "Save to Library", systemImage: "books.vertical.fill")
+                }
+                .disabled(isSavedToPersonalLibrary)
+            }
+        }
+        #endif
         .sheet(isPresented: $showingDiscussionMode) {
             DiscussionModeView(submissionTitle: submission.displayTitle, prompts: prompts)
         }
@@ -133,6 +146,10 @@ struct SubmissionDetailView: View {
 
     private var hasDisplayableDetails: Bool {
         !submission.isbn.isEmpty || submission.publishedYear != nil || !submission.displayDescription.isEmpty
+    }
+
+    private var isSavedToPersonalLibrary: Bool {
+        libraryBooks.contains { $0.matchesSubmission(submission) }
     }
 
     private var markReadConfirmationTitle: String {
@@ -194,6 +211,17 @@ struct SubmissionDetailView: View {
             assertionFailure("Failed to save after moving submission to Shelf: \(error.localizedDescription)")
         }
         dismiss()
+    }
+
+    private func saveToPersonalLibrary() {
+        guard !isSavedToPersonalLibrary else { return }
+        let book = LibraryBook.fromSubmission(submission)
+        context.insert(book)
+        do {
+            try context.save()
+        } catch {
+            assertionFailure("Failed to save personal library book: \(error.localizedDescription)")
+        }
     }
 
     private func bindingForOwnRating() -> Binding<Int> {
@@ -425,7 +453,7 @@ private struct StatusActionsCard: View {
                     .lineLimit(2)
             }
 
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
                 switch submission.status {
                 case .proposed:
                     actionButton("Set as Current Read", systemImage: "book.fill", prominent: true, action: onSetCurrent)
@@ -457,12 +485,15 @@ private struct StatusActionsCard: View {
     private func actionButton(_ title: String, systemImage: String, prominent: Bool, action: @escaping () -> Void) -> some View {
         let button = Button(action: action) {
             Label(title, systemImage: systemImage)
-                .frame(maxWidth: .infinity)
         }
         if prominent {
-            button.buttonStyle(.borderedProminent)
+            button
+                .buttonStyle(.borderedProminent)
+                .bookLoomActionWidth(minWidth: 210)
         } else {
-            button.buttonStyle(.bordered)
+            button
+                .buttonStyle(.bordered)
+                .bookLoomActionWidth(minWidth: 210)
         }
     }
 }

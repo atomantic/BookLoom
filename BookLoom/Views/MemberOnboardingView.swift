@@ -55,10 +55,10 @@ struct MemberOnboardingView: View {
 
                     Button(action: saveName) {
                         Label(isReplay ? "Return to App" : "Continue", systemImage: "arrow.right.circle.fill")
-                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .bookLoomActionWidth()
                     .disabled(trimmedName.isEmpty)
                 }
                 .bookLoomCard(padding: 12)

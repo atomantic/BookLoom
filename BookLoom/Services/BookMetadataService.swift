@@ -50,6 +50,8 @@ struct BookMetadataCandidate: Identifiable, Equatable, Hashable, Codable, Sendab
 
 enum BookMetadataError: LocalizedError {
     case missingTitle
+    case invalidISBN
+    case isbnNotFound
     case requestFailed
     case invalidGoodreadsURL
     case goodreadsParseFailed
@@ -58,6 +60,10 @@ enum BookMetadataError: LocalizedError {
         switch self {
         case .missingTitle:
             return "Enter a title before searching."
+        case .invalidISBN:
+            return "That doesn't look like an ISBN. Scan or enter the ISBN barcode from the back of the book."
+        case .isbnNotFound:
+            return "Couldn't find book details for that ISBN. You can still enter the book manually."
         case .requestFailed:
             return "Couldn't search for book details. Check your connection and try again."
         case .invalidGoodreadsURL:
@@ -104,6 +110,18 @@ struct BookMetadataService: Sendable {
             await cache.store(results, title: trimmedTitle, author: trimmedAuthor)
         }
         return results
+    }
+
+    func lookupISBN(_ isbn: String) async throws -> BookMetadataCandidate {
+        guard let cleanISBN = Self.normalizedISBN(isbn) else {
+            throw BookMetadataError.invalidISBN
+        }
+
+        let candidates = try await searchGoogleBooksByISBN(cleanISBN)
+        guard let candidate = candidates.first else {
+            throw BookMetadataError.isbnNotFound
+        }
+        return candidate
     }
 
     private func searchOpenLibrary(title: String, author: String) async throws -> [BookMetadataCandidate] {
@@ -167,11 +185,18 @@ struct BookMetadataService: Sendable {
         if !author.isEmpty {
             query += " inauthor:\(author)"
         }
+        return try await searchGoogleBooks(query: query, maxResults: 5)
+    }
 
+    private func searchGoogleBooksByISBN(_ isbn: String) async throws -> [BookMetadataCandidate] {
+        try await searchGoogleBooks(query: "isbn:\(isbn)", maxResults: 1)
+    }
+
+    private func searchGoogleBooks(query: String, maxResults: Int) async throws -> [BookMetadataCandidate] {
         var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes")!
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "maxResults", value: "5"),
+            URLQueryItem(name: "maxResults", value: "\(maxResults)"),
             URLQueryItem(name: "printType", value: "books")
         ]
 
@@ -192,6 +217,22 @@ struct BookMetadataService: Sendable {
                 sourceURL: URL(string: "https://books.google.com/books?id=\(item.id)")
             )
         } ?? []
+    }
+
+    static func normalizedISBN(_ value: String) -> String? {
+        let clean = value
+            .uppercased()
+            .filter { $0.isNumber || $0 == "X" }
+            .map(String.init)
+            .joined()
+
+        if clean.count == 10 {
+            return clean
+        }
+        if clean.count == 13, clean.hasPrefix("978") || clean.hasPrefix("979") {
+            return clean
+        }
+        return nil
     }
 
     private func fetch<T: Decodable>(_ url: URL) async throws -> T {

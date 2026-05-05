@@ -30,9 +30,9 @@ struct DiscussionPromptCard: View {
                     saveDiscussionChanges()
                 } label: {
                     Label("Add Starter Prompts", systemImage: "text.bubble")
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .bookLoomActionWidth()
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(prompts) { prompt in
@@ -48,9 +48,9 @@ struct DiscussionPromptCard: View {
 
                 Button(action: onStartDiscussion) {
                     Label("Discussion Mode", systemImage: "rectangle.on.rectangle.angled")
-                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .bookLoomActionWidth()
             }
         }
         .bookLoomCard(padding: 12)

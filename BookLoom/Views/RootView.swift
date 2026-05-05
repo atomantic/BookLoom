@@ -24,7 +24,7 @@ private struct MainTabs: View {
     @Environment(ActiveClubStore.self) private var activeClubStore
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
-    @State private var selectedTab = MainTab.books
+    @State private var selectedTab = MainTab.defaultSelection
     @State private var booksPath = NavigationPath()
     @State private var pollsPath = NavigationPath()
     @State private var schedulePath = NavigationPath()
@@ -33,53 +33,67 @@ private struct MainTabs: View {
 
     var body: some View {
         @Bindable var goodreadsInbox = goodreadsInbox
-        return TabView(selection: $selectedTab) {
-            NavigationStack(path: $booksPath) {
-                BooksTabView()
-            }
-            .tabItem {
-                Label("Books", systemImage: "books.vertical.fill")
-            }
-            .tag(MainTab.books)
+        return Group {
+            #if os(macOS)
+            DesktopMainView(
+                selectedTab: $selectedTab,
+                booksPath: $booksPath,
+                pollsPath: $pollsPath,
+                discussionsPath: $discussionsPath,
+                schedulePath: $schedulePath
+            )
+            #else
+            TabView(selection: $selectedTab) {
+                NavigationStack(path: $booksPath) {
+                    BooksTabView()
+                }
+                .tabItem {
+                    Label("Books", systemImage: "books.vertical.fill")
+                }
+                .tag(MainTab.books)
 
-            NavigationStack(path: $pollsPath) {
-                PollsTabView()
-            }
-            .tabItem {
-                Label("Polls", systemImage: "list.number")
-            }
-            .tag(MainTab.polls)
+                NavigationStack(path: $pollsPath) {
+                    PollsTabView()
+                }
+                .tabItem {
+                    Label("Polls", systemImage: "list.number")
+                }
+                .tag(MainTab.polls)
 
-            NavigationStack(path: $discussionsPath) {
-                DiscussionsTabView()
-            }
-            .tabItem {
-                Label("Discussions", systemImage: "text.bubble.fill")
-            }
-            .tag(MainTab.discussions)
+                NavigationStack(path: $discussionsPath) {
+                    DiscussionsTabView()
+                }
+                .tabItem {
+                    Label("Discussions", systemImage: "text.bubble.fill")
+                }
+                .tag(MainTab.discussions)
 
-            NavigationStack(path: $schedulePath) {
-                ScheduleTabView()
-            }
-            .tabItem {
-                Label("Schedule", systemImage: "calendar")
-            }
-            .tag(MainTab.schedule)
+                NavigationStack(path: $schedulePath) {
+                    ScheduleTabView()
+                }
+                .tabItem {
+                    Label("Schedule", systemImage: "calendar")
+                }
+                .tag(MainTab.schedule)
 
-            NavigationStack {
-                SettingsView()
+                NavigationStack {
+                    SettingsView()
+                }
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape.fill")
+                }
+                .tag(MainTab.settings)
             }
-            .tabItem {
-                Label("Settings", systemImage: "gearshape.fill")
-            }
-            .tag(MainTab.settings)
+            #endif
         }
         .task {
             activeClubStore.reconcileWithVisibleClubs(visibleClubs)
             await refreshSharedClubs()
             goodreadsInbox.refresh()
             goodreadsInbox.prefetchAll()
+            #if os(iOS)
             goodreadsInbox.presentNextIfNeeded()
+            #endif
             guard let route = AppLaunchOptions.screenshotRoute else { return }
             try? await Task.sleep(nanoseconds: 350_000_000)
             navigateToScreenshotRoute(route)
@@ -89,7 +103,9 @@ private struct MainTabs: View {
             Task { await refreshSharedClubs() }
             goodreadsInbox.refresh()
             goodreadsInbox.prefetchAll()
+            #if os(iOS)
             goodreadsInbox.presentNextIfNeeded()
+            #endif
         }
         .onReceive(sharedSyncTimer) { _ in
             guard scenePhase == .active else { return }
@@ -134,10 +150,16 @@ private struct MainTabs: View {
             return
         }
         SharedImportInbox.enqueue(canonical)
+        #if os(macOS)
+        selectedTab = .library
+        goodreadsInbox.refresh()
+        goodreadsInbox.prefetchAll()
+        #else
         selectedTab = .books
         goodreadsInbox.refresh()
         goodreadsInbox.prefetchAll()
         goodreadsInbox.present(canonical)
+        #endif
     }
 
     private var visibleClubs: [BookClub] {
@@ -168,6 +190,8 @@ private struct MainTabs: View {
         activeClubStore.setActiveClub(club)
 
         switch route {
+        case "library":
+            selectedTab = .library
         case "books", "clubs", "clubHome", "shelf":
             selectedTab = .books
         case "import":
@@ -205,9 +229,115 @@ private struct MainTabs: View {
 }
 
 private enum MainTab: Hashable {
+    case library
     case books
     case polls
     case discussions
     case schedule
     case settings
+
+    static var defaultSelection: MainTab {
+        #if os(macOS)
+        return .library
+        #else
+        return .books
+        #endif
+    }
+
+    var title: String {
+        switch self {
+        case .library: return "Library"
+        case .books: return "Books"
+        case .polls: return "Polls"
+        case .discussions: return "Discussions"
+        case .schedule: return "Schedule"
+        case .settings: return "Settings"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .library: return "books.vertical.fill"
+        case .books: return "person.2.fill"
+        case .polls: return "list.number"
+        case .discussions: return "text.bubble.fill"
+        case .schedule: return "calendar"
+        case .settings: return "gearshape.fill"
+        }
+    }
 }
+
+#if os(macOS)
+private struct DesktopMainView: View {
+    @Binding var selectedTab: MainTab
+    @Binding var booksPath: NavigationPath
+    @Binding var pollsPath: NavigationPath
+    @Binding var discussionsPath: NavigationPath
+    @Binding var schedulePath: NavigationPath
+
+    var body: some View {
+        NavigationSplitView {
+            List(selection: $selectedTab) {
+                Section("Library") {
+                    DesktopSidebarRow(tab: .library)
+                        .tag(MainTab.library)
+                }
+
+                Section("Book Club") {
+                    DesktopSidebarRow(tab: .books)
+                        .tag(MainTab.books)
+                    DesktopSidebarRow(tab: .polls)
+                        .tag(MainTab.polls)
+                    DesktopSidebarRow(tab: .discussions)
+                        .tag(MainTab.discussions)
+                    DesktopSidebarRow(tab: .schedule)
+                        .tag(MainTab.schedule)
+                }
+
+                Section {
+                    DesktopSidebarRow(tab: .settings)
+                        .tag(MainTab.settings)
+                }
+            }
+            .listStyle(.sidebar)
+            .navigationTitle("BookLoom")
+            .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 280)
+        } detail: {
+            switch selectedTab {
+            case .library:
+                NavigationStack {
+                    DesktopLibraryView()
+                }
+            case .books:
+                NavigationStack(path: $booksPath) {
+                    BooksTabView()
+                }
+            case .polls:
+                NavigationStack(path: $pollsPath) {
+                    PollsTabView()
+                }
+            case .discussions:
+                NavigationStack(path: $discussionsPath) {
+                    DiscussionsTabView()
+                }
+            case .schedule:
+                NavigationStack(path: $schedulePath) {
+                    ScheduleTabView()
+                }
+            case .settings:
+                NavigationStack {
+                    SettingsView()
+                }
+            }
+        }
+    }
+}
+
+private struct DesktopSidebarRow: View {
+    let tab: MainTab
+
+    var body: some View {
+        Label(tab.title, systemImage: tab.systemImage)
+    }
+}
+#endif

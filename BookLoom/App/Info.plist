@@ -37,6 +37,8 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.lifestyle</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan ISBN barcodes and printed ISBNs to find book details.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

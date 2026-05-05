@@ -10,7 +10,7 @@ options:
 settings:
   base:
     DEVELOPMENT_TEAM: TYQ32QCF6K
-    MARKETING_VERSION: "1.1.0"
+    MARKETING_VERSION: "1.2.0"
     CURRENT_PROJECT_VERSION: 33
     SWIFT_VERSION: "6.0"
     DEAD_CODE_STRIPPING: YES
@@ -69,6 +69,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: BookLoom
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.lifestyle
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
+        INFOPLIST_KEY_NSCameraUsageDescription: Scan ISBN barcodes and printed ISBNs to find book details.
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: false
@@ -87,6 +88,7 @@ targets:
         LSApplicationCategoryType: public.app-category.lifestyle
         UILaunchScreen: {}
         ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: Scan ISBN barcodes and printed ISBNs to find book details.
         CKSharingSupported: true
         UIBackgroundModes:
           - fetch

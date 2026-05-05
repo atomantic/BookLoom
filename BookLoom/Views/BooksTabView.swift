@@ -668,7 +668,8 @@ private struct CurrentActionButton: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, minHeight: 40)
+                .bookLoomActionWidth(minWidth: 128)
+                .frame(minHeight: 40)
                 .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
                 .foregroundStyle(prominent ? Color.white : tint)
         }
@@ -753,7 +754,8 @@ private struct LibraryActionBar: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 40)
+            .bookLoomActionWidth(minWidth: 132)
+            .frame(minHeight: 40)
             .background(background, in: Capsule())
             .foregroundStyle(foreground)
     }

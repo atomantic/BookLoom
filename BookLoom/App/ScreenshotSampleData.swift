@@ -187,6 +187,7 @@ enum ScreenshotSampleData {
         completed[1].pickedAt = calendar.date(byAdding: .day, value: -126, to: .now)
         completed[1].completedAt = calendar.date(byAdding: .day, value: -84, to: .now)
         completed.forEach { insert($0, into: club, context: context) }
+        seedLibraryBooks(context: context)
 
         addRatingsAndNotes(to: current, context: context)
         addCompletedBookNotes(to: completed, context: context)
@@ -230,6 +231,114 @@ enum ScreenshotSampleData {
     private static func insert(_ submission: BookSubmission, into club: BookClub, context: ModelContext) {
         context.insert(submission)
         club.addSubmission(submission)
+    }
+
+    private static func seedLibraryBooks(context: ModelContext) {
+        let books = [
+            makeLibraryBook(
+                title: "Piranesi",
+                author: "Susanna Clarke",
+                isbn: "9781635575637",
+                description: "A keeper copy for marginalia during Riverside Reading Circle discussions.",
+                year: 2020,
+                coverID: 10226290,
+                addedDaysAgo: 122,
+                shelfLocation: "Living Room - Favorites",
+                format: .hardcover,
+                isSigned: true,
+                priceCents: 2800
+            ),
+            makeLibraryBook(
+                title: "Dungeon Crawler Carl",
+                author: "Matt Dinniman",
+                isbn: "9798988744405",
+                description: "Loaned after Priya's pitch for the next chaotic group read.",
+                year: 2020,
+                coverID: 15143022,
+                addedDaysAgo: 35,
+                shelfLocation: "Office - TBR",
+                format: .paperback,
+                isSigned: false,
+                priceCents: 1899,
+                loanedTo: "Owen Brooks"
+            ),
+            makeLibraryBook(
+                title: "Project Hail Mary",
+                author: "Andy Weir",
+                isbn: "9780593135204",
+                description: "Backup copy for gifting when the shortlist lands with new members.",
+                year: 2021,
+                coverID: 11200092,
+                addedDaysAgo: 62,
+                shelfLocation: "Hallway - Sci-Fi",
+                format: .hardcover,
+                isSigned: false,
+                priceCents: 2495,
+                intendedRecipient: "Sam Rivera",
+                giftOccasion: "Birthday"
+            ),
+            makeLibraryBook(
+                title: "Circe",
+                author: "Madeline Miller",
+                isbn: "9780316556347",
+                description: "Personal copy parked on the desktop Shelf after a Goodreads share.",
+                year: 2018,
+                coverID: 8739376,
+                addedDaysAgo: 18,
+                shelfLocation: "Bedroom - Myth",
+                format: .paperback,
+                isSigned: false,
+                priceCents: 1599
+            )
+        ]
+
+        for book in books {
+            book.purchaseSource = "Local bookshop"
+            book.purchaseDate = book.addedAt
+            context.insert(book)
+        }
+    }
+
+    private static func makeLibraryBook(
+        title: String,
+        author: String,
+        isbn: String,
+        description: String,
+        year: Int,
+        coverID: Int,
+        addedDaysAgo: Int,
+        shelfLocation: String,
+        format: LibraryBookFormat,
+        isSigned: Bool,
+        priceCents: Int,
+        loanedTo: String = "",
+        intendedRecipient: String = "",
+        giftOccasion: String = ""
+    ) -> LibraryBook {
+        let addedAt = Calendar.current.date(byAdding: .day, value: -addedDaysAgo, to: .now) ?? .now
+        let book = LibraryBook(
+            title: title,
+            author: author,
+            isbn: isbn,
+            bookDescription: description,
+            publishedYear: year,
+            coverURL: BookMetadataProvider.openLibraryCoverURL(coverID: coverID)?.absoluteString ?? "",
+            externalProvider: BookMetadataProvider.openLibrary.rawValue,
+            externalID: "/covers/\(coverID)",
+            addedAt: addedAt
+        )
+        book.format = format
+        book.shelfLocation = shelfLocation
+        book.isSigned = isSigned
+        book.purchasePriceCents = priceCents
+        if !loanedTo.isEmpty {
+            book.isOnLoan = true
+            book.loanedTo = loanedTo
+            book.loanedAt = Calendar.current.date(byAdding: .day, value: -7, to: .now)
+        }
+        book.intendedRecipient = intendedRecipient
+        book.giftOccasion = giftOccasion
+        return book
     }
 
     private static func addRatingsAndNotes(to submission: BookSubmission, context: ModelContext) {
@@ -349,8 +458,8 @@ enum ScreenshotSampleData {
         BookCoverCache.seedSync(mappings)
     }
 
-    /// Pre-populate the App Group import queue with two resolved Goodreads
-    /// shares so the Books → Shelf segment has visible content during screenshot
+    /// Pre-populate the screenshot-only import queue with two resolved
+    /// Goodreads shares so the Books → Shelf segment has visible content during
     /// capture. Single batched write — replaces any prior queue, no merge with
     /// stale screenshot reruns.
     private static func seedShelfImports() {
@@ -394,7 +503,7 @@ enum ScreenshotSampleData {
             entry.apply(input.candidate, fetchedAt: enqueuedAt)
             return entry
         }
-        SharedImportInbox.replaceAll(entries)
+        SharedImportInbox.replaceAll(entries, defaults: .standard, fileURL: nil)
     }
 
     private static func addPoll(to club: BookClub, proposals: [BookSubmission], context: ModelContext) {

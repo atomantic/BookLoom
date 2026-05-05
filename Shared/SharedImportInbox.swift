@@ -230,6 +230,7 @@ enum SharedImportInbox {
 
     private static func resolvedQueueFileURL(defaults: UserDefaults?, explicitFileURL: URL?) -> URL? {
         if let explicitFileURL { return explicitFileURL }
+        if ProcessInfo.processInfo.arguments.contains("-SeedSampleData") { return nil }
         guard defaults === SharedImportInbox.defaults else { return nil }
         return FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?

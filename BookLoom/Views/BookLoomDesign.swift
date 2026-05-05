@@ -129,6 +129,10 @@ extension View {
         self
         #endif
     }
+
+    func bookLoomActionWidth(minWidth: CGFloat = 180) -> some View {
+        modifier(BookLoomActionWidthModifier(minWidth: minWidth))
+    }
 }
 
 struct BookLoomSecondaryButtonStyle: ButtonStyle {
@@ -141,7 +145,6 @@ struct BookLoomSecondaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.body.weight(.semibold))
             .foregroundStyle(isEnabled ? tint : Color.secondary)
-            .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
             .background(background(pressed: configuration.isPressed))
@@ -150,6 +153,7 @@ struct BookLoomSecondaryButtonStyle: ButtonStyle {
                     .stroke(strokeColor, lineWidth: 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .modifier(BookLoomActionWidthModifier(minWidth: 190))
             .opacity(isEnabled ? 1 : 0.5)
     }
 
@@ -171,6 +175,31 @@ struct BookLoomSecondaryButtonStyle: ButtonStyle {
             return tint.opacity(colorScheme == .dark ? 0.18 : 0.20)
         }
         return tint.opacity(colorScheme == .dark ? 0.55 : 0.45)
+    }
+}
+
+private struct BookLoomActionWidthModifier: ViewModifier {
+    let minWidth: CGFloat
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
+    func body(content: Content) -> some View {
+        if shouldFillAvailableWidth {
+            content.frame(maxWidth: .infinity)
+        } else {
+            content
+                .frame(minWidth: minWidth)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var shouldFillAvailableWidth: Bool {
+        #if os(iOS)
+        return horizontalSizeClass == .compact
+        #else
+        return false
+        #endif
     }
 }
 
