@@ -67,7 +67,7 @@ private struct PollsTabContent: View {
                 }
             }
         }
-        .listStyle(.plain)
+        .bookLoomListStyle()
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationDestination(for: SelectionPoll.self) { poll in

@@ -79,7 +79,7 @@ private struct DiscussionsTabContent: View {
                 }
             }
         }
-        .listStyle(.plain)
+        .bookLoomListStyle()
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationDestination(for: BookSubmission.self) { submission in

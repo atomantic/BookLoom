@@ -60,7 +60,7 @@ struct ClubSwitcherView: View {
                     .bookLoomListRow()
                 }
             }
-            .listStyle(.plain)
+            .bookLoomListStyle()
             .scrollContentBackground(.hidden)
             .bookLoomScreenBackground()
             .navigationTitle("Switch Club")

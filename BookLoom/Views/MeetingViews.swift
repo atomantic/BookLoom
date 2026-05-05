@@ -266,7 +266,7 @@ struct MeetingDetailView: View {
             }
             .bookLoomListRow()
         }
-        .listStyle(.plain)
+        .bookLoomListStyle()
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle("Meeting")

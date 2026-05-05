@@ -10,6 +10,7 @@ struct AddSubmissionView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(MemberIdentity.self) private var memberIdentity
+    @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
 
     @Bindable var club: BookClub
 
@@ -134,6 +135,14 @@ struct AddSubmissionView: View {
                     }
                     .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.sage))
                     .disabled(trimmedTitle.isEmpty || isSaving)
+
+                    Button {
+                        saveToShelf()
+                    } label: {
+                        Label(isSaving ? "Saving..." : "Save to Shelf", systemImage: "tray.and.arrow.down.fill")
+                    }
+                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.plum))
+                    .disabled(trimmedTitle.isEmpty || isSaving)
                 }
                 .bookLoomCard(padding: 12)
                 .frame(maxWidth: 500)
@@ -205,6 +214,31 @@ struct AddSubmissionView: View {
         } catch {
             saveError = error.localizedDescription
         }
+    }
+
+    private func saveToShelf() {
+        guard let title = title.trimmedOrNil else { return }
+        isSaving = true
+        saveError = nil
+        defer { isSaving = false }
+
+        let now = Date.now
+        let url = selectedMetadata?.sourceURL ?? URL(string: "bookloom://shelf/\(UUID().uuidString)")!
+        let enqueueDate = now.addingTimeInterval(-GoodreadsImportInbox.autoPresentMaxAge - 1)
+        SharedImportInbox.enqueue(url, now: enqueueDate)
+        SharedImportInbox.update(url, now: now) { entry in
+            entry.title = title
+            entry.author = author.trimmedOrNil
+            entry.coverURLString = selectedMetadata?.coverURL?.absoluteString
+            entry.bookDescription = selectedMetadata?.description
+            entry.publishedYear = selectedMetadata?.publishedYear
+            entry.isbn = selectedMetadata?.primaryISBN.trimmedOrNil ?? isbn.trimmedOrNil
+            entry.externalProvider = selectedMetadata?.provider.rawValue
+            entry.externalID = selectedMetadata?.externalID ?? url.lastPathComponent
+            entry.metadataFetchedAt = now
+        }
+        goodreadsInbox.refresh()
+        dismiss()
     }
 
     private func apply(_ candidate: BookMetadataCandidate) {

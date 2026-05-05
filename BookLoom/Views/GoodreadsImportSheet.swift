@@ -110,18 +110,34 @@ struct GoodreadsImportSheet: View {
                 .font(.title2)
                 .foregroundStyle(BookLoomStyle.plum)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Imported from Goodreads")
+                Text(isGoodreadsItem ? "Imported from Goodreads" : "Saved to Shelf")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(BookLoomStyle.ink)
-                Text(goodreadsURL.absoluteString)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if isLocalShelfItem {
+                    Text(pendingItem.externalProvider ?? "BookLoom Shelf")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text(goodreadsURL.absoluteString)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
             Spacer(minLength: 0)
         }
         .bookLoomCard(padding: 12)
+    }
+
+    private var isGoodreadsItem: Bool {
+        pendingItem.externalProvider == BookMetadataProvider.goodreads.rawValue
+            || goodreadsURL.host?.localizedCaseInsensitiveContains("goodreads.com") == true
+    }
+
+    private var isLocalShelfItem: Bool {
+        goodreadsURL.scheme == "bookloom"
     }
 
     private var clubPicker: some View {

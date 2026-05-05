@@ -110,7 +110,7 @@ struct ClubManagementView: View {
             }
             .bookLoomListRow()
         }
-        .listStyle(.plain)
+        .bookLoomListStyle()
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle("Manage Club")

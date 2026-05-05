@@ -25,26 +25,27 @@ private struct BooksTabContent: View {
     @State private var showingPickConfirmation: Bool = false
     @State private var showingCompleteConfirmation: Bool = false
     @State private var showingMoveCurrentToProposalsConfirmation: Bool = false
-    @State private var libraryTab: LibraryTab = .read
+    @State private var showingAddBook: Bool = false
+    @State private var libraryTab: LibraryTab = .proposed
+    @State private var librarySearchText: String = ""
     @State private var didResolveInitialLibraryTab = false
 
     var body: some View {
         let displayedSections = sections
+        let filteredProposed = filteredSubmissions(displayedSections.proposed)
+        let filteredCompleted = filteredSubmissions(displayedSections.completed)
+        let filteredShelf = filteredShelfItems(goodreadsInbox.pending)
 
         List {
             Section {
                 BooksHeader(club: club, sections: displayedSections)
                     .bookLoomListRow(top: 6, bottom: 8)
-            }
 
-            if let syncIssue = syncStatus.issue(for: club) {
-                Section {
+                if let syncIssue = syncStatus.issue(for: club) {
                     SyncStatusBanner(issue: syncIssue)
                         .bookLoomListRow(top: 4, bottom: 8)
                 }
-            }
 
-            Section {
                 if let current = displayedSections.current {
                     CurrentSubmissionRow(
                         submission: current,
@@ -67,81 +68,86 @@ private struct BooksTabContent: View {
                         }
                         .tint(BookLoomStyle.plum)
                     }
+                    .bookLoomListRow(top: 10, bottom: 10)
                 } else {
                     InlineEmptyState(
                         systemImage: "shuffle.circle.fill",
                         title: "No Current Book",
                         message: "Add proposals, then pick one when the group is ready."
                     )
+                    .bookLoomListRow(top: 10, bottom: 10)
                 }
-            } header: {
-                SectionTitle(title: "Currently Reading")
-            }
-            .bookLoomListRow()
 
-            Section {
-                ProposedActionBar(
-                    club: club,
-                    canPickRandom: !displayedSections.proposed.isEmpty,
-                    onPickRandom: { showingPickConfirmation = true }
-                )
-                .bookLoomListRow(top: 4, bottom: 6)
+                LibrarySearchField(text: $librarySearchText)
+                    .bookLoomListRow(top: 8, bottom: 6)
 
-                if displayedSections.proposed.isEmpty {
-                    InlineEmptyState(
-                        systemImage: "tray.full",
-                        title: "No Proposals",
-                        message: "Tap Add Book to build the next pick list."
-                    )
-                    .bookLoomListRow()
-                } else {
-                    ForEach(displayedSections.proposed) { submission in
-                        BooksTabRow(submission: submission)
-                            .swipeActions(edge: .trailing) {
-                                Button {
-                                    assignCurrent(submission)
-                                } label: {
-                                    Label("Set Current", systemImage: "book.fill")
-                                }
-                                .tint(BookLoomStyle.sage)
-
-                                Button {
-                                    markComplete(submission)
-                                    libraryTab = .read
-                                } label: {
-                                    Label("Mark Read", systemImage: "checkmark.seal.fill")
-                                }
-                                .tint(BookLoomStyle.indigo)
-                            }
-                            .swipeActions(edge: .leading) {
-                                if GoodreadsImportInbox.canMoveToShelf(submission) {
-                                    Button {
-                                        moveSubmissionToShelf(submission)
-                                    } label: {
-                                        Label("Move to Shelf", systemImage: "tray.and.arrow.down.fill")
-                                    }
-                                    .tint(BookLoomStyle.indigo)
-                                }
-                            }
-                            .bookLoomListRow()
-                    }
-                    .onDelete { offsets in
-                        delete(displayedSections.proposed, at: offsets)
-                    }
-                }
-            } header: {
-                SectionTitle(title: "Proposed", detail: "\(displayedSections.proposed.count)")
-            }
-
-            Section {
                 LibraryTabPicker(
                     selection: $libraryTab,
+                    proposedCount: displayedSections.proposed.count,
                     readCount: displayedSections.completed.count,
                     shelfCount: goodreadsInbox.pending.count
                 )
                 .bookLoomListRow(top: 4, bottom: 6)
 
+                LibraryActionBar(
+                    selectedTab: libraryTab,
+                    canPickRandom: !displayedSections.proposed.isEmpty,
+                    onAddBook: { showingAddBook = true },
+                    onPickRandom: { showingPickConfirmation = true }
+                )
+                .bookLoomListRow(top: 2, bottom: 6)
+
                 switch libraryTab {
+                case .proposed:
+                    if displayedSections.proposed.isEmpty {
+                        InlineEmptyState(
+                            systemImage: "tray.full",
+                            title: "No Proposals",
+                            message: "Tap Add Book to build the next pick list."
+                        )
+                        .bookLoomListRow()
+                    } else if filteredProposed.isEmpty {
+                        InlineEmptyState(
+                            systemImage: "magnifyingglass",
+                            title: "No Matching Proposals",
+                            message: "Try another title, author, or member."
+                        )
+                        .bookLoomListRow()
+                    } else {
+                        ForEach(filteredProposed) { submission in
+                            BooksTabRow(submission: submission)
+                                .swipeActions(edge: .trailing) {
+                                    Button {
+                                        assignCurrent(submission)
+                                    } label: {
+                                        Label("Set Current", systemImage: "book.fill")
+                                    }
+                                    .tint(BookLoomStyle.sage)
+
+                                    Button {
+                                        markComplete(submission)
+                                        libraryTab = .read
+                                    } label: {
+                                        Label("Mark Read", systemImage: "checkmark.seal.fill")
+                                    }
+                                    .tint(BookLoomStyle.indigo)
+                                }
+                                .swipeActions(edge: .leading) {
+                                    if GoodreadsImportInbox.canMoveToShelf(submission) {
+                                        Button {
+                                            moveSubmissionToShelf(submission)
+                                        } label: {
+                                            Label("Move to Shelf", systemImage: "tray.and.arrow.down.fill")
+                                        }
+                                        .tint(BookLoomStyle.indigo)
+                                    }
+                                }
+                                .bookLoomListRow()
+                        }
+                        .onDelete { offsets in
+                            delete(filteredProposed, at: offsets)
+                        }
+                    }
                 case .read:
                     if displayedSections.completed.isEmpty {
                         InlineEmptyState(
@@ -150,13 +156,20 @@ private struct BooksTabContent: View {
                             message: "Books the club finishes show up here."
                         )
                         .bookLoomListRow()
+                    } else if filteredCompleted.isEmpty {
+                        InlineEmptyState(
+                            systemImage: "magnifyingglass",
+                            title: "No Matching Read Books",
+                            message: "Try another title, author, or member."
+                        )
+                        .bookLoomListRow()
                     } else {
-                        ForEach(displayedSections.completed) { submission in
+                        ForEach(filteredCompleted) { submission in
                             BooksTabRow(submission: submission)
                                 .bookLoomListRow()
                         }
                         .onDelete { offsets in
-                            delete(displayedSections.completed, at: offsets)
+                            delete(filteredCompleted, at: offsets)
                         }
                     }
                 case .shelf:
@@ -167,20 +180,25 @@ private struct BooksTabContent: View {
                             message: "Books shared from Goodreads (or pasted via Add Book) land here until you add them to the club."
                         )
                         .bookLoomListRow()
+                    } else if filteredShelf.isEmpty {
+                        InlineEmptyState(
+                            systemImage: "magnifyingglass",
+                            title: "No Matching Shelf Books",
+                            message: "Try another title, author, or link."
+                        )
+                        .bookLoomListRow()
                     } else {
                         ImportInboxBanner(
-                            pending: goodreadsInbox.pending,
+                            pending: filteredShelf,
                             onTap: { url in goodreadsInbox.present(url) },
                             onRemove: { url in goodreadsInbox.remove(url) }
                         )
                         .bookLoomListRow()
                     }
                 }
-            } header: {
-                SectionTitle(title: "Library")
             }
         }
-        .listStyle(.plain)
+        .bookLoomListStyle()
         .refreshable {
             refreshShelfFromSharedQueue(selectShelfWhenPending: false)
             await syncClubForCurrentRole()
@@ -189,6 +207,9 @@ private struct BooksTabContent: View {
         .bookLoomScreenBackground()
         .navigationDestination(for: BookSubmission.self) { sub in
             SubmissionDetailView(submission: sub)
+        }
+        .navigationDestination(isPresented: $showingAddBook) {
+            AddSubmissionView(club: club)
         }
         .toolbar {
             if club.shareIsActive {
@@ -277,13 +298,44 @@ private struct BooksTabContent: View {
         guard let route = AppLaunchOptions.screenshotRoute else { return nil }
         switch route {
         case "shelf", "import": return .shelf
-        case "books", "clubs", "clubHome": return .read
+        case "books", "clubs", "clubHome": return .proposed
         default: return nil
         }
     }
 
     private var clubSubmissions: [BookSubmission] {
         submissions.filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+    }
+
+    private var librarySearchQuery: String {
+        librarySearchText.trimmed
+    }
+
+    private func filteredSubmissions(_ submissions: [BookSubmission]) -> [BookSubmission] {
+        let query = librarySearchQuery
+        guard !query.isEmpty else { return submissions }
+        return submissions.filter { submission in
+            matchesSearch(submission.displayTitle, query: query)
+                || matchesSearch(submission.displayAuthor, query: query)
+                || matchesSearch(submission.displaySubmitter, query: query)
+                || matchesSearch(submission.isbn, query: query)
+                || matchesSearch(submission.externalID, query: query)
+        }
+    }
+
+    private func filteredShelfItems(_ items: [SharedImportInbox.PendingImport]) -> [SharedImportInbox.PendingImport] {
+        let query = librarySearchQuery
+        guard !query.isEmpty else { return items }
+        return items.filter { item in
+            matchesSearch(item.displayTitle, query: query)
+                || matchesSearch(item.displayAuthor, query: query)
+                || matchesSearch(item.url.absoluteString, query: query)
+        }
+    }
+
+    private func matchesSearch(_ value: String?, query: String) -> Bool {
+        guard let value, !value.trimmed.isEmpty else { return false }
+        return value.localizedCaseInsensitiveContains(query)
     }
 
     private func syncClubForCurrentRole() async {
@@ -382,11 +434,11 @@ private struct BooksHeader: View {
                 NavigationLink {
                     ClubManagementView(club: club)
                 } label: {
-                    MetricTile(value: "\(memberCount)", label: "members", systemImage: "person.2.fill", tint: BookLoomStyle.sage)
+                    MetricTile(value: "\(memberCount)", label: memberMetricLabel(for: memberCount), systemImage: "person.2.fill", tint: BookLoomStyle.sage)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Manage club, \(memberCount) members")
+                .accessibilityLabel("Manage club, \(memberCount) \(memberMetricLabel(for: memberCount))")
             }
         }
         .bookLoomCard(padding: 12)
@@ -398,6 +450,10 @@ private struct BooksHeader: View {
         dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(spacing: 8))
             : AnyLayout(HStackLayout(spacing: 10))
+    }
+
+    private func memberMetricLabel(for count: Int) -> String {
+        count == 1 ? "member" : "members"
     }
 
     private var sharingDescriptor: (label: String, icon: String) {
@@ -620,9 +676,41 @@ private struct CurrentActionButton: View {
     }
 }
 
-private struct ProposedActionBar: View {
-    let club: BookClub
+private struct LibrarySearchField: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search library", text: $text)
+                .textFieldStyle(.plain)
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                #endif
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear library search")
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(BookLoomStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct LibraryActionBar: View {
+    let selectedTab: LibraryTab
     let canPickRandom: Bool
+    let onAddBook: () -> Void
     let onPickRandom: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -632,9 +720,7 @@ private struct ProposedActionBar: View {
             : AnyLayout(HStackLayout(spacing: 8))
 
         layout {
-            NavigationLink {
-                AddSubmissionView(club: club)
-            } label: {
+            Button(action: onAddBook) {
                 actionLabel(
                     title: "Add Book",
                     systemImage: "plus",
@@ -644,16 +730,18 @@ private struct ProposedActionBar: View {
             }
             .buttonStyle(.plain)
 
-            Button(action: onPickRandom) {
-                actionLabel(
-                    title: "Pick Random",
-                    systemImage: "shuffle",
-                    background: canPickRandom ? BookLoomStyle.plum.opacity(0.16) : Color.secondary.opacity(0.10),
-                    foreground: canPickRandom ? BookLoomStyle.plum : Color.secondary
-                )
+            if selectedTab == .proposed {
+                Button(action: onPickRandom) {
+                    actionLabel(
+                        title: "Pick Random",
+                        systemImage: "shuffle",
+                        background: canPickRandom ? BookLoomStyle.plum.opacity(0.16) : Color.secondary.opacity(0.10),
+                        foreground: canPickRandom ? BookLoomStyle.plum : Color.secondary
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canPickRandom)
             }
-            .buttonStyle(.plain)
-            .disabled(!canPickRandom)
         }
     }
 
@@ -702,11 +790,13 @@ private struct SyncStatusBanner: View {
 }
 
 private enum LibraryTab: CaseIterable, Identifiable {
+    case proposed
     case read
     case shelf
     var id: Self { self }
     var title: String {
         switch self {
+        case .proposed: return "Proposed"
         case .read: return "Read"
         case .shelf: return "Shelf"
         }
@@ -715,11 +805,13 @@ private enum LibraryTab: CaseIterable, Identifiable {
 
 private struct LibraryTabPicker: View {
     @Binding var selection: LibraryTab
+    let proposedCount: Int
     let readCount: Int
     let shelfCount: Int
 
     var body: some View {
         Picker("Library view", selection: $selection) {
+            Text(label(for: .proposed, count: proposedCount)).tag(LibraryTab.proposed)
             Text(label(for: .read, count: readCount)).tag(LibraryTab.read)
             Text(label(for: .shelf, count: shelfCount)).tag(LibraryTab.shelf)
         }

@@ -100,6 +100,23 @@ extension View {
             .listRowSeparator(.hidden)
     }
 
+    @ViewBuilder
+    func bookLoomListStyle(sectionSpacing: CGFloat = 14) -> some View {
+        #if os(iOS)
+        if #available(iOS 17.0, *) {
+            listStyle(.plain)
+                .listSectionSpacing(sectionSpacing)
+                .environment(\.defaultMinListRowHeight, 0)
+        } else {
+            listStyle(.plain)
+                .environment(\.defaultMinListRowHeight, 0)
+        }
+        #else
+        listStyle(.plain)
+            .environment(\.defaultMinListRowHeight, 0)
+        #endif
+    }
+
     /// Inline navigation title + opaque toolbar background. Without an opaque
     /// background, `bookLoomScreenBackground()` content scrolls under the
     /// transparent navbar and the inline title overlaps the first card text.
@@ -454,31 +471,50 @@ struct MetricTile: View {
     var tint: Color = BookLoomStyle.indigo
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(tint)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value)
-                    .font(.headline.bold())
-                    .foregroundStyle(BookLoomStyle.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text(label)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
-        }
+        compactLayout
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .background(
             colorScheme == .dark ? .white.opacity(0.08) : .white.opacity(0.34),
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+    }
+
+    private var compactLayout: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                metricIcon
+                valueText
+            }
+            labelText
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var metricIcon: some View {
+        Image(systemName: systemImage)
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(tint)
+            .imageScale(.medium)
+    }
+
+    private var valueText: some View {
+        Text(value)
+            .font(.headline.bold())
+            .foregroundStyle(BookLoomStyle.ink)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .allowsTightening(true)
+    }
+
+    private var labelText: some View {
+        Text(label)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.55)
+            .allowsTightening(true)
     }
 }
 

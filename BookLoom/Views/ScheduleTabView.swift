@@ -70,7 +70,7 @@ private struct ScheduleTabContent: View {
                 }
             }
         }
-        .listStyle(.plain)
+        .bookLoomListStyle()
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationDestination(for: ClubMeeting.self) { meeting in

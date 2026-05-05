@@ -58,7 +58,7 @@ struct BookMetadataSearchView: View {
                         .buttonStyle(.plain)
                         .bookLoomListRow()
                     }
-                    .listStyle(.plain)
+                    .bookLoomListStyle()
                     .scrollContentBackground(.hidden)
                 }
             }

@@ -206,7 +206,7 @@ struct SelectionPollDetailView: View {
                 .bookLoomListRow()
             }
         }
-        .listStyle(.plain)
+        .bookLoomListStyle()
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle("Poll")

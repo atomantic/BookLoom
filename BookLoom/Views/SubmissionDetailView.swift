@@ -79,7 +79,7 @@ struct SubmissionDetailView: View {
             }
             .bookLoomListRow()
         }
-        .listStyle(.plain)
+        .bookLoomListStyle()
         .scrollContentBackground(.hidden)
         .bookLoomScreenBackground()
         .navigationTitle(submission.displayTitle)
