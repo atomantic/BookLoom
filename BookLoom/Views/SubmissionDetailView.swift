@@ -343,25 +343,37 @@ private struct SubmissionBookEditCard: View {
     let onFindDetails: () -> Void
     let onSave: () -> Void
 
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SubmissionTextField("Title", text: $submission.title)
             SubmissionTextField("Author", text: $submission.author)
             SubmissionTextField("ISBN", text: $submission.isbn)
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
+            if stackButtonsVertically {
+                VStack(alignment: .leading, spacing: 8) {
                     metadataButton
                     saveButton
                 }
-
-                VStack(alignment: .leading, spacing: 8) {
+            } else {
+                HStack(spacing: 8) {
                     metadataButton
                     saveButton
                 }
             }
         }
         .bookLoomCard(padding: 12)
+    }
+
+    private var stackButtonsVertically: Bool {
+        #if os(iOS)
+        return horizontalSizeClass == .compact
+        #else
+        return false
+        #endif
     }
 
     private var metadataButtonTitle: String {
