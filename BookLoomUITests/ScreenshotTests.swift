@@ -94,23 +94,14 @@ final class ScreenshotTests: XCTestCase {
         saveScreenshot(name, suffix: outputSuffix)
     }
 
-    /// The Library → Shelf segment lives at the bottom of the Books screen.
-    /// Swipe up until the seeded Goodreads import is on-screen so the capture
-    /// shows the import banner instead of the page header again.
+    /// Captures the top-level personal Shelf with seeded ownership and reading
+    /// indicators, separate from the club Imports screenshot.
     @MainActor
     private func captureShelf() {
         let name = "02_shelf"
         guard shouldCapture(name) else { return }
-        launch(route: "shelf")
-        waitForText("Library")
-
-        let target = app.staticTexts["Circe"]
-        var attempts = 0
-        while !target.isHittable && attempts < 8 {
-            app.swipeUp()
-            attempts += 1
-        }
-        sleep(1)
+        launch(route: "library")
+        waitForText("Personal Shelf")
         saveScreenshot(name)
     }
 

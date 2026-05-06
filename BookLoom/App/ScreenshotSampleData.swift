@@ -62,7 +62,11 @@ enum ScreenshotSampleData {
 
     static func populate(context: ModelContext) {
         seedBundledCovers()
-        seedShelfImports()
+        if AppLaunchOptions.screenshotRoute == "library" {
+            clearShelfImports()
+        } else {
+            seedShelfImports()
+        }
 
         let calendar = Calendar.current
         let club = BookClub(
@@ -246,7 +250,9 @@ enum ScreenshotSampleData {
                 shelfLocation: "Living Room - Favorites",
                 format: .hardcover,
                 isSigned: true,
-                priceCents: 2800
+                priceCents: 2800,
+                ratingStars: 5,
+                didRead: true
             ),
             makeLibraryBook(
                 title: "Dungeon Crawler Carl",
@@ -260,7 +266,10 @@ enum ScreenshotSampleData {
                 format: .paperback,
                 isSigned: false,
                 priceCents: 1899,
-                loanedTo: "Owen Brooks"
+                loanedTo: "Owen Brooks",
+                ratingStars: 4,
+                didRead: true,
+                didListen: true
             ),
             makeLibraryBook(
                 title: "Project Hail Mary",
@@ -275,7 +284,10 @@ enum ScreenshotSampleData {
                 isSigned: false,
                 priceCents: 2495,
                 intendedRecipient: "Sam Rivera",
-                giftOccasion: "Birthday"
+                giftOccasion: "Birthday",
+                ratingStars: 5,
+                didRead: true,
+                didListen: true
             ),
             makeLibraryBook(
                 title: "Circe",
@@ -288,7 +300,9 @@ enum ScreenshotSampleData {
                 shelfLocation: "Bedroom - Myth",
                 format: .paperback,
                 isSigned: false,
-                priceCents: 1599
+                priceCents: 1599,
+                ratingStars: 4,
+                didRead: true
             )
         ]
 
@@ -313,7 +327,10 @@ enum ScreenshotSampleData {
         priceCents: Int,
         loanedTo: String = "",
         intendedRecipient: String = "",
-        giftOccasion: String = ""
+        giftOccasion: String = "",
+        ratingStars: Int = 0,
+        didRead: Bool = false,
+        didListen: Bool = false
     ) -> LibraryBook {
         let addedAt = Calendar.current.date(byAdding: .day, value: -addedDaysAgo, to: .now) ?? .now
         let book = LibraryBook(
@@ -331,6 +348,9 @@ enum ScreenshotSampleData {
         book.shelfLocation = shelfLocation
         book.isSigned = isSigned
         book.purchasePriceCents = priceCents
+        book.personalRatingStars = min(max(ratingStars, 0), 5)
+        book.didRead = didRead
+        book.didListenToAudiobook = didListen
         if !loanedTo.isEmpty {
             book.isOnLoan = true
             book.loanedTo = loanedTo
@@ -504,6 +524,11 @@ enum ScreenshotSampleData {
             return entry
         }
         SharedImportInbox.replaceAll(entries, defaults: .standard, fileURL: nil)
+    }
+
+    private static func clearShelfImports() {
+        SharedImportInbox.clear(defaults: .standard, fileURL: nil)
+        SharedImportInbox.clear(defaults: SharedImportInbox.defaults, fileURL: nil)
     }
 
     private static func addPoll(to club: BookClub, proposals: [BookSubmission], context: ModelContext) {

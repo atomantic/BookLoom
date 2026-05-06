@@ -82,7 +82,7 @@ struct ClubManagementView: View {
                             .symbolRenderingMode(.monochrome)
                             .foregroundStyle(.white)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BookLoomProminentButtonStyle())
                     .bookLoomActionWidth()
 
                     PermissionsHelpRow(
@@ -324,8 +324,7 @@ private struct ClubInfoCard: View {
                                 systemImage: nameSaved ? "checkmark.circle.fill" : "checkmark.circle"
                             )
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(nameSaved ? .green : nil)
+                        .buttonStyle(BookLoomProminentButtonStyle(tint: nameSaved ? .green : BookLoomStyle.plum))
                         .disabled(saveDisabled)
                     }
                 }
@@ -373,8 +372,7 @@ private struct ClubDeleteCard: View {
                         .foregroundStyle(.white)
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
+            .buttonStyle(BookLoomProminentButtonStyle(tint: .red))
             .bookLoomActionWidth()
             .disabled(isDeleting)
         }

@@ -54,7 +54,7 @@ struct ClubSwitcherView: View {
                     } label: {
                         Label("Create New Club", systemImage: "plus.circle.fill")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BookLoomProminentButtonStyle())
                     .controlSize(.large)
                     .bookLoomActionWidth(minWidth: 190)
                     .bookLoomListRow()

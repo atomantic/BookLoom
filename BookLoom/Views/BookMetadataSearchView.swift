@@ -3,6 +3,7 @@ import SwiftUI
 struct BookMetadataSearchView: View {
     let title: String
     let author: String
+    var isbn: String = ""
     let onSelect: (BookMetadataCandidate) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -37,7 +38,7 @@ struct BookMetadataSearchView: View {
                         } label: {
                             Label("Try Again", systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(BookLoomProminentButtonStyle())
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if candidates.isEmpty {
@@ -83,7 +84,11 @@ struct BookMetadataSearchView: View {
         isSearching = true
         errorMessage = nil
         do {
-            candidates = try await service.search(title: title, author: author)
+            if title.trimmed.isEmpty, !isbn.trimmed.isEmpty {
+                candidates = [try await service.lookupISBN(isbn)]
+            } else {
+                candidates = try await service.search(title: title, author: author)
+            }
         } catch {
             candidates = []
             errorMessage = error.localizedDescription

@@ -143,6 +143,29 @@ extension LibraryBook {
         return badges
     }
 
+    func setPersonalRatingStars(_ stars: Int) {
+        personalRatingStars = min(max(stars, 0), 5)
+        if personalRatingStars > 0 {
+            didRead = true
+        }
+        updatedAt = .now
+    }
+
+    func applyMetadata(_ candidate: BookMetadataCandidate) {
+        title = candidate.title
+        author = candidate.authorLine
+        if let candidateISBN = candidate.isbn {
+            isbn = candidateISBN
+        }
+        bookDescription = candidate.description ?? ""
+        publishedYear = candidate.publishedYear
+        coverURL = candidate.coverURL?.absoluteString ?? ""
+        externalProvider = candidate.provider.rawValue
+        externalID = candidate.externalID
+        sourceURLString = candidate.sourceURL?.absoluteString ?? sourceURLString
+        updatedAt = .now
+    }
+
     static func fromPendingImport(_ item: SharedImportInbox.PendingImport, now: Date = .now) -> LibraryBook {
         LibraryBook(
             title: item.displayTitle ?? "",

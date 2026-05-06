@@ -411,7 +411,7 @@ private struct LibraryBookDetailView: View {
             .frame(maxWidth: 1180, alignment: .topLeading)
         }
         .sheet(isPresented: $showingMetadataSearch) {
-            BookMetadataSearchView(title: book.title, author: book.author) { candidate in
+            BookMetadataSearchView(title: book.title, author: book.author, isbn: book.isbn) { candidate in
                 apply(candidate)
             }
         }
@@ -439,7 +439,7 @@ private struct LibraryBookDetailView: View {
             } label: {
                 Label("Save Details", systemImage: "square.and.arrow.down")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(BookLoomProminentButtonStyle())
             .bookLoomActionWidth(minWidth: 170)
         }
         .textFieldStyle(.roundedBorder)
@@ -546,22 +546,13 @@ private struct LibraryBookDetailView: View {
         Binding(
             get: { min(max(book.personalRatingStars, 0), 5) },
             set: {
-                book.personalRatingStars = min(max($0, 0), 5)
-                book.updatedAt = .now
+                book.setPersonalRatingStars($0)
             }
         )
     }
 
     private func apply(_ candidate: BookMetadataCandidate) {
-        book.title = candidate.title
-        book.author = candidate.authorLine
-        book.isbn = candidate.isbn ?? book.isbn
-        book.bookDescription = candidate.description ?? ""
-        book.publishedYear = candidate.publishedYear
-        book.coverURL = candidate.coverURL?.absoluteString ?? ""
-        book.externalProvider = candidate.provider.rawValue
-        book.externalID = candidate.externalID
-        book.sourceURLString = candidate.sourceURL?.absoluteString ?? book.sourceURLString
+        book.applyMetadata(candidate)
         saveChanges()
     }
 
@@ -718,7 +709,7 @@ private struct LibraryBookEmptyState: View {
             Button(action: onAddBook) {
                 Label("Add Book", systemImage: "plus.circle.fill")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(BookLoomProminentButtonStyle())
             .controlSize(.large)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -790,7 +781,7 @@ private struct NewLibraryBookView: View {
                     } label: {
                         Label("Save to Shelf", systemImage: "books.vertical.fill")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BookLoomProminentButtonStyle())
                     .bookLoomActionWidth(minWidth: 190)
                     .disabled(title.trimmed.isEmpty)
                 }

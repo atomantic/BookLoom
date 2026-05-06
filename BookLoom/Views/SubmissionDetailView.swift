@@ -352,7 +352,7 @@ private struct NotesCard: View {
                 Button(action: onSaveNote) {
                     Label("Save", systemImage: "square.and.pencil")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(BookLoomProminentButtonStyle())
                 .disabled(draftNote.trimmed.isEmpty)
             }
 
@@ -463,16 +463,21 @@ private struct StatusActionsCard: View {
     @ViewBuilder
     private func actionButton(_ title: String, systemImage: String, prominent: Bool, action: @escaping () -> Void) -> some View {
         let button = Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: systemImage)
+                    .symbolRenderingMode(.monochrome)
+            }
+            .foregroundStyle(prominent ? Color.white : BookLoomStyle.plum)
         }
         if prominent {
             button
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(BookLoomProminentButtonStyle())
                 .bookLoomActionWidth(minWidth: 210)
         } else {
             button
-                .buttonStyle(.bordered)
-                .bookLoomActionWidth(minWidth: 210)
+                .buttonStyle(BookLoomSecondaryButtonStyle())
         }
     }
 }

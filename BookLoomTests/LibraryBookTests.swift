@@ -63,4 +63,38 @@ final class LibraryBookTests: XCTestCase {
         XCTAssertEqual(book.isbn, submission.isbn)
         XCTAssertTrue(book.matchesSubmission(submission))
     }
+
+    func test_ratingMarksBookRead() {
+        let book = LibraryBook(title: "Piranesi", author: "Susanna Clarke")
+
+        book.setPersonalRatingStars(4)
+
+        XCTAssertEqual(book.personalRatingStars, 4)
+        XCTAssertTrue(book.didRead)
+    }
+
+    func test_applyingMetadataRefreshesBookDetails() {
+        let sourceURL = URL(string: "https://openlibrary.org/works/OL20893680W")!
+        let coverURL = URL(string: "https://covers.openlibrary.org/b/id/10226290-L.jpg")!
+        let candidate = BookMetadataCandidate(
+            provider: .openLibrary,
+            externalID: "/works/OL20893680W",
+            title: "Piranesi",
+            authors: ["Susanna Clarke"],
+            publishedYear: 2020,
+            isbn: "9781635575637",
+            coverURL: coverURL,
+            description: "A house with endless halls.",
+            sourceURL: sourceURL
+        )
+        let book = LibraryBook(title: "Wrong title", author: "Wrong author")
+
+        book.applyMetadata(candidate)
+
+        XCTAssertEqual(book.title, "Piranesi")
+        XCTAssertEqual(book.author, "Susanna Clarke")
+        XCTAssertEqual(book.isbn, "9781635575637")
+        XCTAssertEqual(book.coverURL, coverURL.absoluteString)
+        XCTAssertEqual(book.sourceURLString, sourceURL.absoluteString)
+    }
 }

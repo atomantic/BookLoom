@@ -97,7 +97,7 @@ struct InviteView: View {
             } label: {
                 Label("Try Again", systemImage: "arrow.clockwise")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(BookLoomProminentButtonStyle())
             .controlSize(.large)
             .disabled(isLoading)
         }
@@ -306,7 +306,7 @@ private struct CopyInviteLinkView: View {
                     systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc"
                 )
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(BookLoomProminentButtonStyle())
             Text("Send this link via Messages, email, or any channel. The recipient must be signed into iCloud and have BookLoom installed. Only the club creator can revoke or re-issue links.")
                 .font(.footnote)
                 .multilineTextAlignment(.center)

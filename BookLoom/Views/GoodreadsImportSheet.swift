@@ -174,7 +174,7 @@ struct GoodreadsImportSheet: View {
             } label: {
                 Label(isSaving ? "Saving…" : primaryActionTitle, systemImage: "square.and.arrow.down.fill")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(BookLoomProminentButtonStyle())
             .controlSize(.large)
             .bookLoomActionWidth()
             .disabled(saveDisabled)

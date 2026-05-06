@@ -144,7 +144,7 @@ struct NoActiveClubView: View {
                     Label("Create New Club", systemImage: "plus.circle.fill")
                         .frame(maxWidth: 260)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(BookLoomProminentButtonStyle())
                 .controlSize(.large)
                 ClubDataPrivacyNote()
                     .frame(maxWidth: 420)

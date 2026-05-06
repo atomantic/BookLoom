@@ -56,7 +56,7 @@ struct MemberOnboardingView: View {
                     Button(action: saveName) {
                         Label(isReplay ? "Return to App" : "Continue", systemImage: "arrow.right.circle.fill")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BookLoomProminentButtonStyle())
                     .controlSize(.large)
                     .bookLoomActionWidth()
                     .disabled(trimmedName.isEmpty)

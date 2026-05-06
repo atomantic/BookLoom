@@ -31,7 +31,7 @@ struct DiscussionPromptCard: View {
                 } label: {
                     Label("Add Starter Prompts", systemImage: "text.bubble")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(BookLoomProminentButtonStyle())
                 .bookLoomActionWidth()
             } else {
                 VStack(alignment: .leading, spacing: 8) {
@@ -49,7 +49,7 @@ struct DiscussionPromptCard: View {
                 Button(action: onStartDiscussion) {
                     Label("Discussion Mode", systemImage: "rectangle.on.rectangle.angled")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(BookLoomProminentButtonStyle())
                 .bookLoomActionWidth()
             }
         }
@@ -130,7 +130,7 @@ struct DiscussionModeView: View {
                     }
                     .disabled(index >= prompts.count - 1)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(BookLoomProminentButtonStyle())
                 .frame(maxWidth: 620)
             }
             .padding(20)

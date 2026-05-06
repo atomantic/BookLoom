@@ -219,8 +219,7 @@ private struct SettingsPreferencesCard: View {
                             systemImage: nameSaved ? "checkmark.circle.fill" : "checkmark.circle"
                         )
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(nameSaved ? .green : nil)
+                    .buttonStyle(BookLoomProminentButtonStyle(tint: nameSaved ? .green : BookLoomStyle.plum))
                     .disabled(saveDisabled)
                 }
             }
@@ -316,8 +315,7 @@ private struct DataResetCard: View {
                     Label(isResetting ? "Resetting…" : "Delete All My Data", systemImage: "trash.fill")
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
+            .buttonStyle(BookLoomProminentButtonStyle(tint: .red))
             .bookLoomActionWidth(minWidth: 190)
             .disabled(isResetting)
         }

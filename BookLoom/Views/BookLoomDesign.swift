@@ -178,6 +178,37 @@ struct BookLoomSecondaryButtonStyle: ButtonStyle {
     }
 }
 
+struct BookLoomProminentButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
+
+    var tint: Color = BookLoomStyle.plum
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(isEnabled ? Color.white : Color.secondary)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .background(background(pressed: configuration.isPressed))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .opacity(isEnabled ? 1 : 0.55)
+    }
+
+    private func background(pressed: Bool) -> some View {
+        let opacity: Double
+        if !isEnabled {
+            opacity = colorScheme == .dark ? 0.14 : 0.12
+        } else if pressed {
+            opacity = colorScheme == .dark ? 0.78 : 0.82
+        } else {
+            opacity = 1
+        }
+        return RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(tint.opacity(opacity))
+    }
+}
+
 private struct BookLoomActionWidthModifier: ViewModifier {
     let minWidth: CGFloat
     #if os(iOS)

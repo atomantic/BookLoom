@@ -119,7 +119,7 @@ struct AddSubmissionView: View {
                     } label: {
                         Label(isSaving ? "Adding..." : "Add to Proposals", systemImage: "plus.circle.fill")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BookLoomProminentButtonStyle())
                     .controlSize(.large)
                     .bookLoomActionWidth()
                     .disabled(trimmedTitle.isEmpty || isSaving)
@@ -487,7 +487,7 @@ struct BookMetadataSearchControls: View {
             }
         }
         .sheet(isPresented: $showingMetadataSearch) {
-            BookMetadataSearchView(title: title, author: author) { candidate in
+            BookMetadataSearchView(title: title, author: author, isbn: isbn) { candidate in
                 apply(candidate)
             }
         }

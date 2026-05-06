@@ -214,7 +214,7 @@ struct MeetingDetailView: View {
                     } label: {
                         Label("Save RSVP", systemImage: "checkmark.circle")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BookLoomProminentButtonStyle())
                     .bookLoomActionWidth()
                 }
                 .bookLoomCard(padding: 12)

@@ -150,7 +150,7 @@ struct SelectionPollDetailView: View {
                         } label: {
                             Label("Save Ballot", systemImage: "checkmark.circle")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(BookLoomProminentButtonStyle())
                         .bookLoomActionWidth()
                         .disabled(firstPickID.isEmpty)
                     }

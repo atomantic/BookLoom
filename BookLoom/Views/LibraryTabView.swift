@@ -410,8 +410,7 @@ private struct MobileShelfImportRow: View {
                     }
                     .foregroundStyle(.white)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(BookLoomStyle.plum)
+                .buttonStyle(BookLoomProminentButtonStyle())
 
                 Button(action: onAddToClub) {
                     Label("Add to Club", systemImage: "person.2.fill")
@@ -438,6 +437,7 @@ private struct MobileLibraryBookDetailView: View {
     let onAddToClub: () -> Void
     let onSave: () -> Void
     @State private var priceText: String
+    @State private var showingMetadataSearch = false
 
     init(book: LibraryBook, activeClub: BookClub?, onAddToClub: @escaping () -> Void, onSave: @escaping () -> Void) {
         self.book = book
@@ -467,6 +467,11 @@ private struct MobileLibraryBookDetailView: View {
         .bookLoomNavigationBar()
         .safeAreaInset(edge: .bottom) {
             actionBar
+        }
+        .sheet(isPresented: $showingMetadataSearch) {
+            BookMetadataSearchView(title: book.title, author: book.author, isbn: book.isbn) { candidate in
+                apply(candidate)
+            }
         }
     }
 
@@ -535,6 +540,13 @@ private struct MobileLibraryBookDetailView: View {
                 }
             }
             MobileBookTextField("Shelf or room", text: $book.shelfLocation)
+            Button {
+                showingMetadataSearch = true
+            } label: {
+                Label(metadataButtonTitle, systemImage: "magnifyingglass")
+            }
+            .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
+            .disabled(book.title.trimmed.isEmpty && book.isbn.trimmed.isEmpty)
         }
     }
 
@@ -627,8 +639,7 @@ private struct MobileLibraryBookDetailView: View {
                 Label("Save Changes", systemImage: "square.and.arrow.down")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(BookLoomStyle.plum)
+            .buttonStyle(BookLoomProminentButtonStyle())
             .controlSize(.large)
         }
         .padding(.horizontal, 16)
@@ -643,6 +654,10 @@ private struct MobileLibraryBookDetailView: View {
 
     private var hasGiftDetails: Bool {
         book.hasGiftPlan || !book.intendedRecipient.trimmed.isEmpty || !book.giftOccasion.trimmed.isEmpty
+    }
+
+    private var metadataButtonTitle: String {
+        book.coverImageURL == nil && book.externalProvider.trimmed.isEmpty ? "Find Cover & Details" : "Change Cover & Details"
     }
 
     private var formatBinding: Binding<LibraryBookFormat> {
@@ -669,10 +684,14 @@ private struct MobileLibraryBookDetailView: View {
         Binding(
             get: { min(max(book.personalRatingStars, 0), 5) },
             set: {
-                book.personalRatingStars = min(max($0, 0), 5)
-                book.updatedAt = .now
+                book.setPersonalRatingStars($0)
             }
         )
+    }
+
+    private func apply(_ candidate: BookMetadataCandidate) {
+        book.applyMetadata(candidate)
+        onSave()
     }
 
     private func applyPrice() {
@@ -942,7 +961,7 @@ private struct MobileNewShelfBookView: View {
                     HStack {
                         Text("Rating")
                         Spacer(minLength: 12)
-                        StarRatingPicker(stars: $personalRatingStars)
+                        StarRatingPicker(stars: newBookRatingBinding)
                     }
                     Toggle("I read this", isOn: $didRead)
                     Toggle("I listened to the audiobook", isOn: $didListen)
@@ -985,9 +1004,9 @@ private struct MobileNewShelfBookView: View {
                             externalID: selectedMetadata?.externalID ?? "",
                             sourceURLString: selectedMetadata?.sourceURL?.absoluteString ?? ""
                         )
-                        book.didRead = didRead
                         book.didListenToAudiobook = didListen
-                        book.personalRatingStars = personalRatingStars
+                        book.setPersonalRatingStars(personalRatingStars)
+                        book.didRead = book.didRead || didRead
                         book.format = format
                         book.condition = condition
                         book.shelfLocation = shelfLocation.trimmed
@@ -1011,6 +1030,18 @@ private struct MobileNewShelfBookView: View {
             .replacingOccurrences(of: ",", with: "")
         guard let value = Double(normalized) else { return nil }
         return Int((value * 100).rounded())
+    }
+
+    private var newBookRatingBinding: Binding<Int> {
+        Binding(
+            get: { personalRatingStars },
+            set: {
+                personalRatingStars = min(max($0, 0), 5)
+                if personalRatingStars > 0 {
+                    didRead = true
+                }
+            }
+        )
     }
 }
 #endif

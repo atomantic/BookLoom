@@ -70,7 +70,7 @@ Useful variants:
 ./take_screenshots_macos.sh
 ```
 
-Captured screens (in order): `01_books`, `02_shelf`, `03_import`, `04_current_read`, `05_polls`, `06_vote`, `07_discussions`, `08_schedule`, `09_meeting`, `10_add_book`. Each maps to a `-screenshotRoute` value handled by `RootView.navigateToScreenshotRoute`. The Shelf and Import screens rely on two pre-seeded Goodreads pending imports (`ScreenshotSampleData.seedShelfImports`); to add or rename screens, update both `BookLoomUITests/ScreenshotTests.swift` and the route switch in `RootView.swift`.
+Captured screens (in order): `01_books`, `02_shelf`, `03_import`, `04_current_read`, `05_polls`, `06_vote`, `07_discussions`, `08_schedule`, `09_meeting`, `10_add_book`. Each maps to a `-screenshotRoute` value handled by `RootView.navigateToScreenshotRoute`. The Shelf screen uses seeded personal `LibraryBook` records, while the Import screen relies on two pre-seeded Goodreads pending imports (`ScreenshotSampleData.seedShelfImports`); to add or rename screens, update both `BookLoomUITests/ScreenshotTests.swift` and the route switch in `RootView.swift`.
 
 Run the Dynamic Type stress test (largest accessibility text) with:
 
