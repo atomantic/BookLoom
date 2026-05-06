@@ -448,138 +448,201 @@ private struct MobileLibraryBookDetailView: View {
     }
 
     var body: some View {
-        List {
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 14) {
-                        BookCoverTile(
-                            title: book.displayTitle,
-                            author: book.displayAuthor,
-                            coverURL: book.coverImageURL,
-                            width: 76,
-                            height: 108
-                        )
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(book.displayTitle)
-                                .font(.headline.bold())
-                                .foregroundStyle(BookLoomStyle.ink)
-                            if !book.displayAuthor.isEmpty {
-                                Text(book.displayAuthor)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                .bookLoomCard(padding: 12)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                heroCard
+                bookCard
+                trackingCard
+                purchaseCard
+                giftCard
+                notesCard
             }
-            .bookLoomListRow()
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 22)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .bookLoomScreenBackground()
+        .navigationTitle("Book")
+        .bookLoomNavigationBar()
+        .safeAreaInset(edge: .bottom) {
+            actionBar
+        }
+    }
 
-            Section {
-                TextField("Title", text: $book.title)
-                TextField("Author", text: $book.author)
-                TextField("ISBN", text: $book.isbn)
-                Picker("Format", selection: formatBinding) {
-                    ForEach(LibraryBookFormat.allCases) { format in
-                        Text(format.displayName).tag(format)
+    private var heroCard: some View {
+        HStack(spacing: 16) {
+            BookCoverTile(
+                title: book.displayTitle,
+                author: book.displayAuthor,
+                coverURL: book.coverImageURL,
+                width: 92,
+                height: 132
+            )
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(book.displayTitle)
+                    .font(.title3.bold())
+                    .foregroundStyle(BookLoomStyle.ink)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !book.displayAuthor.isEmpty {
+                    Text(book.displayAuthor)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                HStack(spacing: 6) {
+                    TintedCapsuleLabel(text: book.format.cardLabel, tint: BookLoomStyle.indigo, systemImage: book.format.cardSystemImage)
+                    if book.personalRatingStars > 0 {
+                        TintedCapsuleLabel(text: "\(min(book.personalRatingStars, 5))/5", tint: BookLoomStyle.gold, systemImage: "star.fill")
                     }
                 }
-                Picker("Condition", selection: conditionBinding) {
-                    ForEach(LibraryBookCondition.allCases) { condition in
-                        Text(condition.displayName).tag(condition)
-                    }
-                }
-                TextField("Shelf or room", text: $book.shelfLocation)
-            } header: {
-                SectionTitle(title: "Book")
             }
-            .bookLoomListRow()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .bookLoomCard(padding: 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            Section {
-                HStack {
-                    Text("Rating")
-                    Spacer(minLength: 12)
-                    StarRatingPicker(stars: ratingBinding)
-                }
-                Toggle("I read this", isOn: $book.didRead)
-                Toggle("I listened to the audiobook", isOn: $book.didListenToAudiobook)
-                Toggle("Signed copy", isOn: $book.isSigned)
-                Toggle("On loan", isOn: $book.isOnLoan)
-                if book.isOnLoan {
-                    TextField("Loaned to", text: $book.loanedTo)
-                    Button {
-                        markReturned()
-                    } label: {
-                        Label("Mark Returned", systemImage: "arrow.uturn.left.circle.fill")
+    private var bookCard: some View {
+        MobileBookEditCard(title: "Book", systemImage: "book.closed.fill") {
+            MobileBookTextField("Title", text: $book.title)
+            MobileBookTextField("Author", text: $book.author)
+            MobileBookTextField("ISBN", text: $book.isbn, keyboardType: .numbersAndPunctuation)
+            MobileBookMenuRow(
+                title: "Format",
+                value: book.format.displayName,
+                systemImage: book.format.cardSystemImage
+            ) {
+                ForEach(LibraryBookFormat.allCases) { format in
+                    Button(format.displayName) {
+                        formatBinding.wrappedValue = format
                     }
                 }
-            } header: {
-                SectionTitle(title: "Personal Tracking")
             }
-            .bookLoomListRow()
+            MobileBookMenuRow(
+                title: "Condition",
+                value: book.condition.displayName,
+                systemImage: "sparkles"
+            ) {
+                ForEach(LibraryBookCondition.allCases) { condition in
+                    Button(condition.displayName) {
+                        conditionBinding.wrappedValue = condition
+                    }
+                }
+            }
+            MobileBookTextField("Shelf or room", text: $book.shelfLocation)
+        }
+    }
 
-            Section {
-                TextField("Paid", text: $priceText, prompt: Text("$0.00"))
-                    .keyboardType(.decimalPad)
-                TextField("Purchased from", text: $book.purchaseSource)
+    private var trackingCard: some View {
+        MobileBookEditCard(title: "Personal Tracking", systemImage: "checkmark.seal.fill") {
+            HStack(alignment: .center) {
+                MobileBookRowLabel(title: "Rating", systemImage: "star.fill")
+                Spacer(minLength: 12)
+                StarRatingPicker(stars: ratingBinding)
+            }
+            .padding(.vertical, 3)
+
+            MobileBookToggleRow(title: "I read this", systemImage: "checkmark.seal.fill", isOn: $book.didRead)
+            MobileBookToggleRow(title: "I listened to the audiobook", systemImage: "headphones", isOn: $book.didListenToAudiobook)
+            MobileBookToggleRow(title: "Signed copy", systemImage: "signature", isOn: $book.isSigned)
+            MobileBookToggleRow(title: "On loan", systemImage: "person.crop.circle.badge.clock", isOn: $book.isOnLoan)
+
+            if book.isOnLoan {
+                MobileBookTextField("Loaned to", text: $book.loanedTo)
+                Button {
+                    markReturned()
+                } label: {
+                    Label("Mark Returned", systemImage: "arrow.uturn.left.circle.fill")
+                }
+                .buttonStyle(BookLoomSecondaryButtonStyle())
+            }
+        }
+    }
+
+    private var purchaseCard: some View {
+        MobileBookEditCard(title: "Purchase", systemImage: "creditcard.fill") {
+            MobileBookTextField("Paid", text: $priceText, placeholder: "$0.00", keyboardType: .decimalPad)
+            MobileBookTextField("Purchased from", text: $book.purchaseSource)
+
+            if hasPurchaseDetails {
                 Button {
                     clearPrice()
                 } label: {
-                    Label("Clear Price", systemImage: "xmark.circle")
+                    Label("Clear Purchase Details", systemImage: "xmark.circle")
                 }
-                .disabled(priceText.trimmed.isEmpty && book.purchasePriceCents == nil)
-            } header: {
-                SectionTitle(title: "Purchase")
+                .buttonStyle(BookLoomSecondaryButtonStyle())
             }
-            .bookLoomListRow()
+        }
+    }
 
-            Section {
-                TextField("Give to", text: $book.intendedRecipient)
-                TextField("Occasion", text: $book.giftOccasion)
+    private var giftCard: some View {
+        MobileBookEditCard(title: "Gift Plan", systemImage: "gift.fill") {
+            MobileBookTextField("Give to", text: $book.intendedRecipient)
+            MobileBookTextField("Occasion", text: $book.giftOccasion)
+
+            if hasGiftDetails {
                 Button {
                     clearGiftPlan()
                 } label: {
                     Label("Clear Gift Plan", systemImage: "gift")
                 }
-                .disabled(!book.hasGiftPlan && book.giftOccasion.trimmed.isEmpty)
-            } header: {
-                SectionTitle(title: "Gift Plan")
+                .buttonStyle(BookLoomSecondaryButtonStyle())
             }
-            .bookLoomListRow()
-
-            Section {
-                TextField("Edition notes, provenance, repairs, reminders...", text: $book.privateNotes, axis: .vertical)
-                    .lineLimit(4...8)
-            } header: {
-                SectionTitle(title: "Private Notes")
-            }
-            .bookLoomListRow()
-
-            Section {
-                Button {
-                    onAddToClub()
-                } label: {
-                    Label(activeClub.map { "Add to \($0.name)" } ?? "Add to Club", systemImage: "person.2.fill")
-                }
-                .disabled(activeClub == nil)
-
-                Button {
-                    applyPrice()
-                    book.updatedAt = .now
-                    onSave()
-                    dismiss()
-                } label: {
-                    Label("Save Changes", systemImage: "square.and.arrow.down")
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            .bookLoomListRow()
         }
-        .bookLoomListStyle()
-        .scrollContentBackground(.hidden)
-        .bookLoomScreenBackground()
-        .navigationTitle("Book")
-        .bookLoomNavigationBar()
+    }
+
+    private var notesCard: some View {
+        MobileBookEditCard(title: "Private Notes", systemImage: "note.text") {
+            MobileBookTextField(
+                "Notes",
+                text: $book.privateNotes,
+                placeholder: "Edition notes, provenance, repairs, reminders...",
+                isMultiline: true
+            )
+        }
+    }
+
+    private var actionBar: some View {
+        VStack(spacing: 10) {
+            Button {
+                onAddToClub()
+            } label: {
+                Label(activeClub.map { "Add to \($0.name)" } ?? "Add to Club", systemImage: "person.2.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(BookLoomSecondaryButtonStyle())
+            .disabled(activeClub == nil)
+
+            Button {
+                applyPrice()
+                book.updatedAt = .now
+                onSave()
+                dismiss()
+            } label: {
+                Label("Save Changes", systemImage: "square.and.arrow.down")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(BookLoomStyle.plum)
+            .controlSize(.large)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .background(.regularMaterial)
+    }
+
+    private var hasPurchaseDetails: Bool {
+        !priceText.trimmed.isEmpty || book.purchasePriceCents != nil || !book.purchaseSource.trimmed.isEmpty
+    }
+
+    private var hasGiftDetails: Bool {
+        book.hasGiftPlan || !book.intendedRecipient.trimmed.isEmpty || !book.giftOccasion.trimmed.isEmpty
     }
 
     private var formatBinding: Binding<LibraryBookFormat> {
@@ -628,6 +691,7 @@ private struct MobileLibraryBookDetailView: View {
     private func clearPrice() {
         priceText = ""
         book.purchasePriceCents = nil
+        book.purchaseSource = ""
         book.updatedAt = .now
         onSave()
     }
@@ -652,6 +716,145 @@ private struct MobileLibraryBookDetailView: View {
     private static func priceText(for book: LibraryBook) -> String {
         guard let cents = book.purchasePriceCents else { return "" }
         return String(format: "%.2f", Double(cents) / 100)
+    }
+}
+
+private struct MobileBookEditCard<Content: View>: View {
+    let title: String
+    let systemImage: String
+    let content: Content
+
+    init(title: String, systemImage: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.systemImage = systemImage
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: systemImage)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(BookLoomStyle.ink)
+
+            VStack(spacing: 10) {
+                content
+            }
+        }
+        .bookLoomCard(padding: 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct MobileBookRowLabel: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(BookLoomStyle.ink)
+            .labelStyle(.titleAndIcon)
+    }
+}
+
+private struct MobileBookTextField: View {
+    let title: String
+    @Binding var text: String
+    var placeholder: String?
+    var keyboardType: UIKeyboardType = .default
+    var isMultiline = false
+
+    init(
+        _ title: String,
+        text: Binding<String>,
+        placeholder: String? = nil,
+        keyboardType: UIKeyboardType = .default,
+        isMultiline: Bool = false
+    ) {
+        self.title = title
+        _text = text
+        self.placeholder = placeholder
+        self.keyboardType = keyboardType
+        self.isMultiline = isMultiline
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            TextField("", text: $text, prompt: Text(placeholder ?? title), axis: isMultiline ? .vertical : .horizontal)
+                .font(.body)
+                .foregroundStyle(BookLoomStyle.ink)
+                .keyboardType(keyboardType)
+                .autocorrectionDisabled(title == "ISBN")
+                .textInputAutocapitalization(title == "ISBN" ? .characters : .sentences)
+                .lineLimit(isMultiline ? 4...8 : 1...1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                }
+        }
+    }
+}
+
+private struct MobileBookMenuRow<Content: View>: View {
+    let title: String
+    let value: String
+    let systemImage: String
+    let content: Content
+
+    init(title: String, value: String, systemImage: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.value = value
+        self.systemImage = systemImage
+        self.content = content()
+    }
+
+    var body: some View {
+        Menu {
+            content
+        } label: {
+            HStack(spacing: 12) {
+                MobileBookRowLabel(title: title, systemImage: systemImage)
+                Spacer(minLength: 12)
+                Text(value)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(BookLoomStyle.plum)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(BookLoomStyle.plum)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct MobileBookToggleRow: View {
+    let title: String
+    let systemImage: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            MobileBookRowLabel(title: title, systemImage: systemImage)
+        }
+        .toggleStyle(.switch)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
