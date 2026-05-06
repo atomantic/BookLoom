@@ -311,6 +311,8 @@ enum SharedClubSync {
         let zoneName = club.cloudZoneName
         SharedClubSyncStatus.shared.clearFailure(zoneName: zoneName)
         StatusOverrideStore.clear(forZone: zoneName)
+        SubmissionDetailsOverrideStore.clear(forZone: zoneName)
+        SubmissionDeletionStore.clear(forZone: zoneName)
 
         guard Features.cloudKitSharing, club.shareIsActive else { return }
         do {

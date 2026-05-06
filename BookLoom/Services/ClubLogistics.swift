@@ -142,6 +142,46 @@ enum BookSubmissionStatusEditor {
     }
 }
 
+enum BookSubmissionDetailsEditor {
+    static func recordDetailsOverride(
+        _ submission: BookSubmission,
+        in club: BookClub,
+        actorMemberID: String = "",
+        updatedAt: Date = .now
+    ) {
+        club.recordSubmissionDetailsOverride(
+            SubmissionDetailsOverrideEntry(
+                submissionSelectionID: submission.selectionID,
+                title: submission.title,
+                author: submission.author,
+                isbn: submission.isbn,
+                bookDescription: submission.bookDescription,
+                publishedYear: submission.publishedYear,
+                coverURL: submission.coverURL,
+                externalProvider: submission.externalProvider,
+                externalID: submission.externalID,
+                updatedAt: updatedAt,
+                actorMemberID: actorMemberID
+            )
+        )
+    }
+
+    static func recordDeletion(
+        _ submission: BookSubmission,
+        in club: BookClub,
+        actorMemberID: String = "",
+        deletedAt: Date = .now
+    ) {
+        club.recordSubmissionDeletion(
+            SubmissionDeletionEntry(
+                submissionSelectionID: submission.selectionID,
+                deletedAt: deletedAt,
+                actorMemberID: actorMemberID
+            )
+        )
+    }
+}
+
 enum DiscussionPromptLibrary {
     static let starterQuestions: [String] = [
         "What scene or idea stayed with you after finishing?",
@@ -289,4 +329,3 @@ enum MeetingReminderScheduler {
         return "Your book club meeting is coming up."
     }
 }
-

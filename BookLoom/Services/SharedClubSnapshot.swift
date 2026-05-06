@@ -24,6 +24,8 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
     let nameProposal: NameProposal?
     let submissions: [SubmissionPayload]
     let statusOverrides: [StatusOverride]
+    let detailsOverrides: [SubmissionDetailsOverride]?
+    let deletedSubmissions: [SubmissionDeletion]?
     let ratings: [RatingPayload]
     let notes: [NotePayload]
     let prompts: [PromptPayload]
@@ -41,6 +43,8 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
         nameProposal: NameProposal? = nil,
         submissions: [SubmissionPayload] = [],
         statusOverrides: [StatusOverride] = [],
+        detailsOverrides: [SubmissionDetailsOverride] = [],
+        deletedSubmissions: [SubmissionDeletion] = [],
         ratings: [RatingPayload] = [],
         notes: [NotePayload] = [],
         prompts: [PromptPayload] = [],
@@ -57,6 +61,8 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
         self.nameProposal = nameProposal
         self.submissions = submissions
         self.statusOverrides = statusOverrides
+        self.detailsOverrides = detailsOverrides
+        self.deletedSubmissions = deletedSubmissions
         self.ratings = ratings
         self.notes = notes
         self.prompts = prompts
@@ -117,6 +123,26 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
         let pickedAt: Date?
         let completedAt: Date?
         let occurredAt: Date
+    }
+
+    struct SubmissionDetailsOverride: Codable, Equatable, Sendable {
+        let submissionSelectionID: String
+        let title: String
+        let author: String
+        let isbn: String
+        let bookDescription: String
+        let publishedYear: Int?
+        let coverURL: String
+        let externalProvider: String
+        let externalID: String
+        let updatedAt: Date
+        let actorMemberID: String
+    }
+
+    struct SubmissionDeletion: Codable, Equatable, Sendable {
+        let submissionSelectionID: String
+        let deletedAt: Date
+        let actorMemberID: String
     }
 
     struct RatingPayload: Codable, Equatable, Sendable {
@@ -348,6 +374,32 @@ enum MemberShareSnapshotStore {
                     occurredAt: $0.occurredAt
                 )
             }
+        let detailsOverrides = club.submissionDetailsOverrideLog
+            .filter { isAuthor(authorMemberID, of: $0.actorMemberID) }
+            .map {
+                MemberShareSnapshot.SubmissionDetailsOverride(
+                    submissionSelectionID: $0.submissionSelectionID,
+                    title: $0.title,
+                    author: $0.author,
+                    isbn: $0.isbn,
+                    bookDescription: $0.bookDescription,
+                    publishedYear: $0.publishedYear,
+                    coverURL: $0.coverURL,
+                    externalProvider: $0.externalProvider,
+                    externalID: $0.externalID,
+                    updatedAt: $0.updatedAt,
+                    actorMemberID: $0.actorMemberID
+                )
+            }
+        let deletedSubmissions = club.submissionDeletionLog
+            .filter { isAuthor(authorMemberID, of: $0.actorMemberID) }
+            .map {
+                MemberShareSnapshot.SubmissionDeletion(
+                    submissionSelectionID: $0.submissionSelectionID,
+                    deletedAt: $0.deletedAt,
+                    actorMemberID: $0.actorMemberID
+                )
+            }
 
         return MemberShareSnapshot(
             capturedAt: capturedAt,
@@ -357,6 +409,8 @@ enum MemberShareSnapshotStore {
             nameProposal: nameProposal,
             submissions: submissionPayloads,
             statusOverrides: statusOverrides,
+            detailsOverrides: detailsOverrides,
+            deletedSubmissions: deletedSubmissions,
             ratings: ratingPayloads,
             notes: notePayloads,
             prompts: promptPayloads,
@@ -454,6 +508,8 @@ enum MemberShareSnapshotStore {
         // 3. Compute canonical sets from snapshots.
         var canonicalSubmissions: [String: MemberShareSnapshot.SubmissionPayload] = [:]
         var statusOverridesByID: [String: [MemberShareSnapshot.StatusOverride]] = [:]
+        var detailsOverridesByID: [String: [MemberShareSnapshot.SubmissionDetailsOverride]] = [:]
+        var deletionsByID: [String: [MemberShareSnapshot.SubmissionDeletion]] = [:]
         var canonicalPrompts: [String: MemberShareSnapshot.PromptPayload] = [:]
         var canonicalPolls: [String: MemberShareSnapshot.PollPayload] = [:]
         var canonicalMeetings: [String: MemberShareSnapshot.MeetingPayload] = [:]
@@ -469,6 +525,12 @@ enum MemberShareSnapshotStore {
             }
             for ov in snap.statusOverrides {
                 statusOverridesByID[ov.submissionSelectionID, default: []].append(ov)
+            }
+            for override in snap.detailsOverrides ?? [] {
+                detailsOverridesByID[override.submissionSelectionID, default: []].append(override)
+            }
+            for deletion in snap.deletedSubmissions ?? [] {
+                deletionsByID[deletion.submissionSelectionID, default: []].append(deletion)
             }
             for prompt in snap.prompts {
                 canonicalPrompts[prompt.promptID] = prompt
@@ -503,8 +565,16 @@ enum MemberShareSnapshotStore {
             }
         }
 
+        let deletedSubmissionIDs = Set(deletionsByID.keys)
+        for selectionID in deletedSubmissionIDs {
+            if let sub = submissionsByID.removeValue(forKey: selectionID) {
+                context.delete(sub)
+            }
+        }
+
         // 4. Upsert submissions.
         for (selectionID, payload) in canonicalSubmissions {
+            if deletedSubmissionIDs.contains(selectionID) { continue }
             let submission: BookSubmission
             if let existing = submissionsByID[selectionID] {
                 submission = existing
@@ -527,6 +597,18 @@ enum MemberShareSnapshotStore {
             submission.externalProvider = payload.externalProvider
             submission.externalID = payload.externalID
             submission.coverData = nil
+
+            if let latestDetails = detailsOverridesByID[selectionID]?.max(by: { $0.updatedAt < $1.updatedAt }) {
+                submission.title = latestDetails.title
+                submission.author = latestDetails.author
+                submission.isbn = latestDetails.isbn
+                submission.bookDescription = latestDetails.bookDescription
+                submission.publishedYear = latestDetails.publishedYear
+                submission.coverURL = latestDetails.coverURL
+                submission.externalProvider = latestDetails.externalProvider
+                submission.externalID = latestDetails.externalID
+                submission.coverData = nil
+            }
 
             let overrides = statusOverridesByID[selectionID] ?? []
             if let latest = overrides.max(by: { $0.occurredAt < $1.occurredAt }) {
@@ -691,6 +773,10 @@ enum MemberShareSnapshotStore {
         // longer need to keep echoing it from local cache.
         let allOverrides = statusOverridesByID.values.flatMap { $0 }
         club.pruneAcknowledgedStatusOverrides(merged: allOverrides)
+        let allDetailsOverrides = detailsOverridesByID.values.flatMap { $0 }
+        club.pruneAcknowledgedSubmissionDetailsOverrides(merged: allDetailsOverrides)
+        let allDeletions = deletionsByID.values.flatMap { $0 }
+        club.pruneAcknowledgedSubmissionDeletions(merged: allDeletions)
 
         try context.save()
 
@@ -1004,6 +1090,26 @@ struct StatusOverrideEntry: Codable, Equatable {
     let actorMemberID: String
 }
 
+struct SubmissionDetailsOverrideEntry: Codable, Equatable {
+    let submissionSelectionID: String
+    let title: String
+    let author: String
+    let isbn: String
+    let bookDescription: String
+    let publishedYear: Int?
+    let coverURL: String
+    let externalProvider: String
+    let externalID: String
+    let updatedAt: Date
+    let actorMemberID: String
+}
+
+struct SubmissionDeletionEntry: Codable, Equatable {
+    let submissionSelectionID: String
+    let deletedAt: Date
+    let actorMemberID: String
+}
+
 extension BookClub {
     /// In-memory cache of recent status overrides that haven't yet been
     /// observed in a remote snapshot for confirmation. Backed by UserDefaults
@@ -1012,8 +1118,24 @@ extension BookClub {
         StatusOverrideStore.entries(forZone: cloudZoneName)
     }
 
+    var submissionDetailsOverrideLog: [SubmissionDetailsOverrideEntry] {
+        SubmissionDetailsOverrideStore.entries(forZone: cloudZoneName)
+    }
+
+    var submissionDeletionLog: [SubmissionDeletionEntry] {
+        SubmissionDeletionStore.entries(forZone: cloudZoneName)
+    }
+
     func recordStatusOverride(_ entry: StatusOverrideEntry) {
         StatusOverrideStore.append(entry, forZone: cloudZoneName)
+    }
+
+    func recordSubmissionDetailsOverride(_ entry: SubmissionDetailsOverrideEntry) {
+        SubmissionDetailsOverrideStore.append(entry, forZone: cloudZoneName)
+    }
+
+    func recordSubmissionDeletion(_ entry: SubmissionDeletionEntry) {
+        SubmissionDeletionStore.append(entry, forZone: cloudZoneName)
     }
 
     func pruneAcknowledgedStatusOverrides(merged: [MemberShareSnapshot.StatusOverride]) {
@@ -1022,10 +1144,24 @@ extension BookClub {
             keys.contains("\(entry.submissionSelectionID)|\(entry.occurredAt.timeIntervalSince1970)")
         })
     }
+
+    func pruneAcknowledgedSubmissionDetailsOverrides(merged: [MemberShareSnapshot.SubmissionDetailsOverride]) {
+        let keys: Set<String> = Set(merged.map { "\($0.submissionSelectionID)|\($0.updatedAt.timeIntervalSince1970)" })
+        SubmissionDetailsOverrideStore.pruneEntries(forZone: cloudZoneName, where: { entry in
+            keys.contains("\(entry.submissionSelectionID)|\(entry.updatedAt.timeIntervalSince1970)")
+        })
+    }
+
+    func pruneAcknowledgedSubmissionDeletions(merged: [MemberShareSnapshot.SubmissionDeletion]) {
+        let keys: Set<String> = Set(merged.map { "\($0.submissionSelectionID)|\($0.deletedAt.timeIntervalSince1970)" })
+        SubmissionDeletionStore.pruneEntries(forZone: cloudZoneName, where: { entry in
+            keys.contains("\(entry.submissionSelectionID)|\(entry.deletedAt.timeIntervalSince1970)")
+        })
+    }
 }
 
 enum StatusOverrideStore {
-    private static let prefix = "net.shadowpuppet.BookLoom.statusOverrides."
+    static let prefix = "net.shadowpuppet.BookLoom.statusOverrides."
 
     static func entries(forZone zone: String) -> [StatusOverrideEntry] {
         guard !zone.isEmpty,
@@ -1047,6 +1183,78 @@ enum StatusOverrideStore {
     }
 
     static func pruneEntries(forZone zone: String, where shouldRemove: (StatusOverrideEntry) -> Bool) {
+        guard !zone.isEmpty else { return }
+        let kept = entries(forZone: zone).filter { !shouldRemove($0) }
+        if let data = try? JSONEncoder().encode(kept) {
+            UserDefaults.standard.set(data, forKey: prefix + zone)
+        }
+    }
+
+    static func clear(forZone zone: String) {
+        guard !zone.isEmpty else { return }
+        UserDefaults.standard.removeObject(forKey: prefix + zone)
+    }
+}
+
+enum SubmissionDetailsOverrideStore {
+    static let prefix = "net.shadowpuppet.BookLoom.submissionDetailsOverrides."
+
+    static func entries(forZone zone: String) -> [SubmissionDetailsOverrideEntry] {
+        guard !zone.isEmpty,
+              let data = UserDefaults.standard.data(forKey: prefix + zone),
+              let entries = try? JSONDecoder().decode([SubmissionDetailsOverrideEntry].self, from: data) else {
+            return []
+        }
+        return entries
+    }
+
+    static func append(_ entry: SubmissionDetailsOverrideEntry, forZone zone: String) {
+        guard !zone.isEmpty else { return }
+        var current = entries(forZone: zone)
+        current.removeAll { $0.submissionSelectionID == entry.submissionSelectionID && $0.actorMemberID == entry.actorMemberID }
+        current.append(entry)
+        if let data = try? JSONEncoder().encode(current) {
+            UserDefaults.standard.set(data, forKey: prefix + zone)
+        }
+    }
+
+    static func pruneEntries(forZone zone: String, where shouldRemove: (SubmissionDetailsOverrideEntry) -> Bool) {
+        guard !zone.isEmpty else { return }
+        let kept = entries(forZone: zone).filter { !shouldRemove($0) }
+        if let data = try? JSONEncoder().encode(kept) {
+            UserDefaults.standard.set(data, forKey: prefix + zone)
+        }
+    }
+
+    static func clear(forZone zone: String) {
+        guard !zone.isEmpty else { return }
+        UserDefaults.standard.removeObject(forKey: prefix + zone)
+    }
+}
+
+enum SubmissionDeletionStore {
+    static let prefix = "net.shadowpuppet.BookLoom.submissionDeletions."
+
+    static func entries(forZone zone: String) -> [SubmissionDeletionEntry] {
+        guard !zone.isEmpty,
+              let data = UserDefaults.standard.data(forKey: prefix + zone),
+              let entries = try? JSONDecoder().decode([SubmissionDeletionEntry].self, from: data) else {
+            return []
+        }
+        return entries
+    }
+
+    static func append(_ entry: SubmissionDeletionEntry, forZone zone: String) {
+        guard !zone.isEmpty else { return }
+        var current = entries(forZone: zone)
+        current.removeAll { $0.submissionSelectionID == entry.submissionSelectionID && $0.actorMemberID == entry.actorMemberID }
+        current.append(entry)
+        if let data = try? JSONEncoder().encode(current) {
+            UserDefaults.standard.set(data, forKey: prefix + zone)
+        }
+    }
+
+    static func pruneEntries(forZone zone: String, where shouldRemove: (SubmissionDeletionEntry) -> Bool) {
         guard !zone.isEmpty else { return }
         let kept = entries(forZone: zone).filter { !shouldRemove($0) }
         if let data = try? JSONEncoder().encode(kept) {

@@ -17,6 +17,8 @@ struct SubmissionDetailView: View {
     @State private var showingMarkReadConfirmation: Bool = false
     @State private var showingMoveToProposalsConfirmation: Bool = false
     @State private var showingMoveToShelfConfirmation: Bool = false
+    @State private var showingMetadataSearch: Bool = false
+    @State private var showingDeleteConfirmation: Bool = false
 
     var body: some View {
         let summary = submission.ratingSummary
@@ -39,10 +41,22 @@ struct SubmissionDetailView: View {
                     onSetCurrent: { showingSetCurrentConfirmation = true },
                     onMarkRead: { showingMarkReadConfirmation = true },
                     onMoveToProposals: { showingMoveToProposalsConfirmation = true },
-                    onMoveToShelf: { showingMoveToShelfConfirmation = true }
+                    onMoveToShelf: { showingMoveToShelfConfirmation = true },
+                    onDelete: { showingDeleteConfirmation = true }
                 )
             } header: {
                 SectionTitle(title: "Status")
+            }
+            .bookLoomListRow()
+
+            Section {
+                SubmissionBookEditCard(
+                    submission: submission,
+                    onFindDetails: { showingMetadataSearch = true },
+                    onSave: saveBookDetails
+                )
+            } header: {
+                SectionTitle(title: "Book")
             }
             .bookLoomListRow()
 
@@ -100,6 +114,11 @@ struct SubmissionDetailView: View {
         .sheet(isPresented: $showingDiscussionMode) {
             DiscussionModeView(submissionTitle: submission.displayTitle, prompts: prompts)
         }
+        .sheet(isPresented: $showingMetadataSearch) {
+            BookMetadataSearchView(title: submission.title, author: submission.author, isbn: submission.isbn) { candidate in
+                apply(candidate)
+            }
+        }
         .confirmationDialog(
             willReplaceCurrent ? "Replace the current book?" : "Set as the current book?",
             isPresented: $showingSetCurrentConfirmation,
@@ -141,6 +160,16 @@ struct SubmissionDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes the book from the club and parks it in Imports so you can choose Shelf and club destinations later.")
+        }
+        .confirmationDialog(
+            "Delete this proposal?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Proposal", role: .destructive) { deleteSubmission() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the proposal from the club for every member.")
         }
     }
 
@@ -213,6 +242,45 @@ struct SubmissionDetailView: View {
         dismiss()
     }
 
+    private func saveBookDetails() {
+        guard let club = submission.bookClub else { return }
+        submission.title = submission.title.trimmed
+        submission.author = submission.author.trimmed
+        submission.isbn = submission.isbn.trimmed
+        BookSubmissionDetailsEditor.recordDetailsOverride(
+            submission,
+            in: club,
+            actorMemberID: memberIdentity.memberID
+        )
+        saveSubmissionChanges()
+    }
+
+    private func apply(_ candidate: BookMetadataCandidate) {
+        submission.applyMetadata(candidate)
+        saveBookDetails()
+    }
+
+    private func deleteSubmission() {
+        guard let club = submission.bookClub else { return }
+        BookSubmissionDetailsEditor.recordDeletion(
+            submission,
+            in: club,
+            actorMemberID: memberIdentity.memberID
+        )
+        context.delete(submission)
+        do {
+            try SharedClubSync.saveAndPublish(
+                context: context,
+                club: club,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
+            dismiss()
+        } catch {
+            assertionFailure("Failed to delete submission: \(error.localizedDescription)")
+        }
+    }
+
     private func saveToPersonalLibrary() {
         guard !isSavedToPersonalLibrary else { return }
         let book = LibraryBook.fromSubmission(submission)
@@ -267,6 +335,95 @@ struct SubmissionDetailView: View {
         } catch {
             assertionFailure("Failed to save submission changes: \(error.localizedDescription)")
         }
+    }
+}
+
+private struct SubmissionBookEditCard: View {
+    @Bindable var submission: BookSubmission
+    let onFindDetails: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SubmissionTextField("Title", text: $submission.title)
+            SubmissionTextField("Author", text: $submission.author)
+            SubmissionTextField("ISBN", text: $submission.isbn)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    metadataButton
+                    saveButton
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    metadataButton
+                    saveButton
+                }
+            }
+        }
+        .bookLoomCard(padding: 12)
+    }
+
+    private var metadataButtonTitle: String {
+        submission.coverImageURL == nil && submission.externalProvider.trimmed.isEmpty ? "Find Cover & Details" : "Change Cover & Details"
+    }
+
+    private var metadataButton: some View {
+        Button(action: onFindDetails) {
+            Label(metadataButtonTitle, systemImage: "magnifyingglass")
+        }
+        .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
+        .disabled(submission.title.trimmed.isEmpty && submission.isbn.trimmed.isEmpty)
+    }
+
+    private var saveButton: some View {
+        Button(action: onSave) {
+            Label("Save Details", systemImage: "square.and.arrow.down")
+        }
+        .buttonStyle(BookLoomProminentButtonStyle())
+        .disabled(submission.title.trimmed.isEmpty)
+    }
+}
+
+private struct SubmissionTextField: View {
+    let title: String
+    @Binding var text: String
+
+    init(_ title: String, text: Binding<String>) {
+        self.title = title
+        _text = text
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            inputField
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                }
+        }
+    }
+
+    private var inputField: some View {
+        let field = TextField(title, text: $text)
+            .font(.body)
+            .foregroundStyle(BookLoomStyle.ink)
+            .lineLimit(1)
+
+        #if os(iOS)
+        return field
+            .autocorrectionDisabled(title == "ISBN")
+            .textInputAutocapitalization(title == "ISBN" ? .characters : .words)
+        #else
+        return field
+        #endif
     }
 }
 
@@ -419,6 +576,7 @@ private struct StatusActionsCard: View {
     let onMarkRead: () -> Void
     let onMoveToProposals: () -> Void
     let onMoveToShelf: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -440,6 +598,7 @@ private struct StatusActionsCard: View {
                     if canMoveToShelf {
                         actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
                     }
+                    actionButton("Delete Proposal", systemImage: "trash.fill", prominent: false, role: .destructive, action: onDelete)
                 case .current:
                     actionButton("Mark Read", systemImage: "checkmark.seal.fill", prominent: true, action: onMarkRead)
                     actionButton("Move Back to Proposals", systemImage: "tray.full.fill", prominent: false, action: onMoveToProposals)
@@ -461,15 +620,21 @@ private struct StatusActionsCard: View {
     }
 
     @ViewBuilder
-    private func actionButton(_ title: String, systemImage: String, prominent: Bool, action: @escaping () -> Void) -> some View {
-        let button = Button(action: action) {
+    private func actionButton(
+        _ title: String,
+        systemImage: String,
+        prominent: Bool,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        let button = Button(role: role, action: action) {
             Label {
                 Text(title)
             } icon: {
                 Image(systemName: systemImage)
                     .symbolRenderingMode(.monochrome)
             }
-            .foregroundStyle(prominent ? Color.white : BookLoomStyle.plum)
+            .foregroundStyle(foregroundColor(prominent: prominent, role: role))
         }
         if prominent {
             button
@@ -479,6 +644,12 @@ private struct StatusActionsCard: View {
             button
                 .buttonStyle(BookLoomSecondaryButtonStyle())
         }
+    }
+
+    private func foregroundColor(prominent: Bool, role: ButtonRole?) -> Color {
+        if prominent { return .white }
+        if role == .destructive { return BookLoomStyle.coral }
+        return BookLoomStyle.plum
     }
 }
 

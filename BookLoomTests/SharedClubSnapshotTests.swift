@@ -573,6 +573,130 @@ final class SharedClubSnapshotTests: XCTestCase {
         XCTAssertEqual(slice.polls.map(\.title), ["Next Pick"])
     }
 
+    func test_mergeAppliesLatestSubmissionDetailsOverride() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.cloudZoneName = "BookClub-DetailsOverride"
+        club.ownerUserRecordName = "owner-record"
+        club.shareIsActive = true
+        context.insert(club)
+        try context.save()
+
+        let ownerSubmission = MemberShareSnapshot.SubmissionPayload(
+            selectionID: "selection-piranesi",
+            title: "Piranesi",
+            author: "Susanna Clarke",
+            isbn: "9781635575637",
+            submittedBy: "Alex",
+            submittedByMemberID: "member-alex",
+            submittedAt: Date(timeIntervalSince1970: 1_100),
+            initialStatusRaw: BookSubmissionStatus.proposed.rawValue,
+            initialPickedAt: nil,
+            initialCompletedAt: nil,
+            bookDescription: "Original description.",
+            publishedYear: 2020,
+            coverURL: "https://example.com/old.jpg",
+            externalProvider: "Open Library",
+            externalID: "OL1"
+        )
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 2_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            submissions: [ownerSubmission]
+        )
+        let lena = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 2_100),
+            authorMemberID: "member-lena",
+            authorName: "Lena",
+            detailsOverrides: [
+                MemberShareSnapshot.SubmissionDetailsOverride(
+                    submissionSelectionID: "selection-piranesi",
+                    title: "Piranesi: Deluxe Edition",
+                    author: "Susanna Clarke",
+                    isbn: "9781635575637",
+                    bookDescription: "Updated description.",
+                    publishedYear: 2021,
+                    coverURL: "https://example.com/new.jpg",
+                    externalProvider: "Google Books",
+                    externalID: "gb-1",
+                    updatedAt: Date(timeIntervalSince1970: 2_050),
+                    actorMemberID: "member-lena"
+                )
+            ]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, lena],
+            into: club,
+            context: context,
+            localMemberID: "member-lena"
+        )
+
+        let submissions = try context.fetch(FetchDescriptor<BookSubmission>())
+        XCTAssertEqual(submissions.first?.title, "Piranesi: Deluxe Edition")
+        XCTAssertEqual(submissions.first?.bookDescription, "Updated description.")
+        XCTAssertEqual(submissions.first?.publishedYear, 2021)
+        XCTAssertEqual(submissions.first?.coverURL, "https://example.com/new.jpg")
+        XCTAssertEqual(submissions.first?.externalProvider, "Google Books")
+    }
+
+    func test_mergeDeletesSubmissionWithDeletionMarkerFromAnyMember() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.cloudZoneName = "BookClub-DeletionMarker"
+        club.ownerUserRecordName = "owner-record"
+        club.shareIsActive = true
+        context.insert(club)
+        try context.save()
+
+        let ownerSubmission = MemberShareSnapshot.SubmissionPayload(
+            selectionID: "selection-annihilation",
+            title: "Annihilation",
+            author: "Jeff VanderMeer",
+            isbn: "",
+            submittedBy: "Alex",
+            submittedByMemberID: "member-alex",
+            submittedAt: Date(timeIntervalSince1970: 1_100),
+            initialStatusRaw: BookSubmissionStatus.proposed.rawValue,
+            initialPickedAt: nil,
+            initialCompletedAt: nil,
+            bookDescription: "",
+            publishedYear: 2014,
+            coverURL: "",
+            externalProvider: "",
+            externalID: ""
+        )
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 2_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            submissions: [ownerSubmission]
+        )
+        let lena = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 2_100),
+            authorMemberID: "member-lena",
+            authorName: "Lena",
+            deletedSubmissions: [
+                MemberShareSnapshot.SubmissionDeletion(
+                    submissionSelectionID: "selection-annihilation",
+                    deletedAt: Date(timeIntervalSince1970: 2_050),
+                    actorMemberID: "member-lena"
+                )
+            ]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, lena],
+            into: club,
+            context: context,
+            localMemberID: "member-lena"
+        )
+
+        let submissions = try context.fetch(FetchDescriptor<BookSubmission>())
+        XCTAssertTrue(submissions.isEmpty)
+    }
+
     private func makeContext() throws -> ModelContext {
         let container = try ModelContainer(
             for: BookClub.self,

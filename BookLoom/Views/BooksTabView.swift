@@ -135,6 +135,12 @@ private struct BooksTabContent: View {
                         ForEach(filteredProposed) { submission in
                             BooksTabRow(submission: submission)
                                 .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) {
+                                        delete(submission)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash.fill")
+                                    }
+
                                     Button {
                                         assignCurrent(submission)
                                     } label: {
@@ -474,9 +480,21 @@ private struct BooksTabContent: View {
 
     private func delete(_ items: [BookSubmission], at offsets: IndexSet) {
         for index in offsets {
-            context.delete(items[index])
+            delete(items[index], shouldSave: false)
         }
         saveClubChanges()
+    }
+
+    private func delete(_ submission: BookSubmission, shouldSave: Bool = true) {
+        BookSubmissionDetailsEditor.recordDeletion(
+            submission,
+            in: club,
+            actorMemberID: memberIdentity.memberID
+        )
+        context.delete(submission)
+        if shouldSave {
+            saveClubChanges()
+        }
     }
 
     private func moveSubmissionToImports(_ submission: BookSubmission) {

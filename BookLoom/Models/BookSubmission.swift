@@ -89,3 +89,19 @@ final class BookSubmission {
         self.statusRaw = status.rawValue
     }
 }
+
+extension BookSubmission {
+    func applyMetadata(_ candidate: BookMetadataCandidate) {
+        title = candidate.title
+        author = candidate.authorLine
+        if let candidateISBN = candidate.isbn {
+            isbn = candidateISBN
+        }
+        bookDescription = candidate.description ?? ""
+        publishedYear = candidate.publishedYear
+        coverURL = candidate.coverURL?.absoluteString ?? ""
+        externalProvider = candidate.provider.rawValue
+        externalID = candidate.externalID
+        coverData = nil
+    }
+}

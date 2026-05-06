@@ -54,13 +54,15 @@ enum BookLoomDataReset {
         await BookMetadataCache.shared.purgeAll()
 
         // 4. Drop every UserDefaults key we own (including the per-zone
-        //    StatusOverrideStore entries, which use a known prefix).
+        //    club mutation logs, which use known prefixes).
         let defaults = UserDefaults.standard
         for key in ownedDefaultsKeys {
             defaults.removeObject(forKey: key)
         }
         for key in defaults.dictionaryRepresentation().keys
-            where key.hasPrefix("net.shadowpuppet.BookLoom.statusOverrides.") {
+            where key.hasPrefix(StatusOverrideStore.prefix)
+                || key.hasPrefix(SubmissionDetailsOverrideStore.prefix)
+                || key.hasPrefix(SubmissionDeletionStore.prefix) {
             defaults.removeObject(forKey: key)
         }
 
