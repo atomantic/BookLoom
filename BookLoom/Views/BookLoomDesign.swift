@@ -520,6 +520,30 @@ struct StandardBookCardRow: View {
     }
 }
 
+struct StarRatingPicker: View {
+    @Binding var stars: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(1...5, id: \.self) { index in
+                Button {
+                    stars = (stars == index) ? 0 : index
+                } label: {
+                    Image(systemName: index <= stars ? "star.fill" : "star")
+                        .foregroundStyle(BookLoomStyle.gold)
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(index) star\(index == 1 ? "" : "s")")
+            }
+        }
+        .font(.title2)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Rating")
+        .accessibilityValue(stars == 0 ? "Not rated" : "\(stars) out of 5 stars")
+    }
+}
+
 private struct BookCardIndicatorGrid: View {
     let indicators: [BookCardIndicator]
 

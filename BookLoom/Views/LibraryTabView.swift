@@ -15,6 +15,7 @@ struct LibraryTabView: View {
     @State private var isLoading = false
     @State private var canLoadMore = true
     @State private var showingNewBook = false
+    @State private var selectedBook: LibraryBook?
 
     private let pageSize = 80
 
@@ -71,17 +72,13 @@ struct LibraryTabView: View {
                     .bookLoomListRow()
                 } else {
                     ForEach(visibleBooks) { book in
-                        NavigationLink {
-                            MobileLibraryBookDetailView(
-                                book: book,
-                                activeClub: activeClub,
-                                onAddToClub: { addToClub(book) },
-                                onSave: saveContext
-                            )
+                        Button {
+                            selectedBook = book
                         } label: {
                             MobileLibraryBookRow(book: book)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityHint("Opens book details")
                         .bookLoomListRow()
                         .onAppear {
                             loadMoreIfNeeded(after: book)
@@ -104,6 +101,16 @@ struct LibraryTabView: View {
         .bookLoomScreenBackground()
         .navigationTitle("Shelf")
         .bookLoomNavigationBar()
+        .navigationDestination(isPresented: selectedBookIsPresented) {
+            if let selectedBook {
+                MobileLibraryBookDetailView(
+                    book: selectedBook,
+                    activeClub: activeClub,
+                    onAddToClub: { addToClub(selectedBook) },
+                    onSave: saveContext
+                )
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -130,6 +137,17 @@ struct LibraryTabView: View {
         }
         .onChange(of: searchText) { _, _ in resetAndLoad() }
         .onChange(of: filter) { _, _ in resetAndLoad() }
+    }
+
+    private var selectedBookIsPresented: Binding<Bool> {
+        Binding(
+            get: { selectedBook != nil },
+            set: { isPresented in
+                if !isPresented {
+                    selectedBook = nil
+                }
+            }
+        )
     }
 
     private var visibleBooks: [LibraryBook] {
@@ -470,11 +488,10 @@ private struct MobileLibraryBookDetailView: View {
             .bookLoomListRow()
 
             Section {
-                Picker("Rating", selection: ratingBinding) {
-                    Text("Not rated").tag(0)
-                    ForEach(1...5, id: \.self) { stars in
-                        Text("\(stars) star\(stars == 1 ? "" : "s")").tag(stars)
-                    }
+                HStack {
+                    Text("Rating")
+                    Spacer(minLength: 12)
+                    StarRatingPicker(stars: ratingBinding)
                 }
                 Toggle("I read this", isOn: $book.didRead)
                 Toggle("I listened to the audiobook", isOn: $book.didListenToAudiobook)
@@ -711,11 +728,10 @@ private struct MobileNewShelfBookView: View {
                     )
                 }
                 Section("Personal Tracking") {
-                    Picker("Rating", selection: $personalRatingStars) {
-                        Text("Not rated").tag(0)
-                        ForEach(1...5, id: \.self) { stars in
-                            Text("\(stars) star\(stars == 1 ? "" : "s")").tag(stars)
-                        }
+                    HStack {
+                        Text("Rating")
+                        Spacer(minLength: 12)
+                        StarRatingPicker(stars: $personalRatingStars)
                     }
                     Toggle("I read this", isOn: $didRead)
                     Toggle("I listened to the audiobook", isOn: $didListen)

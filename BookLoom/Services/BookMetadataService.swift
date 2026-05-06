@@ -65,7 +65,7 @@ enum BookMetadataError: LocalizedError {
         case .isbnNotFound:
             return "Couldn't find book details for that ISBN. You can still enter the book manually."
         case .requestFailed:
-            return "Couldn't search for book details. Check your connection and try again."
+            return "Book details are temporarily unavailable. The ISBN was scanned, so you can save it now or try details again later."
         case .invalidGoodreadsURL:
             return "That doesn't look like a Goodreads book link. Paste a URL like https://www.goodreads.com/book/show/60233239."
         case .goodreadsParseFailed:
@@ -77,6 +77,7 @@ enum BookMetadataError: LocalizedError {
 struct BookMetadataService: Sendable {
     var urlSession: URLSession = .shared
     var cache: BookMetadataCache? = .shared
+    private let openLibraryUserAgent = "BookLoom iOS (https://github.com/atomantic/BookLoom; net.shadowpuppet.PlotLoom)"
 
     init(urlSession: URLSession = .shared, cache: BookMetadataCache? = .shared) {
         self.urlSession = urlSession
@@ -117,13 +118,20 @@ struct BookMetadataService: Sendable {
             throw BookMetadataError.invalidISBN
         }
 
+        if let cache, let cached = await cache.cachedISBN(cleanISBN) {
+            return cached
+        }
+
         var reachedProvider = false
         var lastError: Error?
 
         do {
-            let candidates = try await searchGoogleBooksByISBN(cleanISBN)
+            let candidates = try await searchOpenLibraryByISBN(cleanISBN)
             reachedProvider = true
-            if let candidate = candidates.first {
+            if let candidate = await enrichOpenLibraryCandidates(candidates).first {
+                if let cache {
+                    await cache.store(candidate, isbn: cleanISBN)
+                }
                 return candidate
             }
         } catch {
@@ -131,9 +139,12 @@ struct BookMetadataService: Sendable {
         }
 
         do {
-            let candidates = try await searchOpenLibraryByISBN(cleanISBN)
+            let candidates = try await searchGoogleBooksByISBN(cleanISBN)
             reachedProvider = true
-            if let candidate = await enrichOpenLibraryCandidates(candidates).first {
+            if let candidate = candidates.first {
+                if let cache {
+                    await cache.store(candidate, isbn: cleanISBN)
+                }
                 return candidate
             }
         } catch {
@@ -155,7 +166,7 @@ struct BookMetadataService: Sendable {
             URLQueryItem(name: "limit", value: "8")
         ].filter { $0.value != nil }
 
-        let response: OpenLibrarySearchResponse = try await fetch(components.url!)
+        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: components.url!))
         return response.docs.compactMap(Self.openLibraryCandidate(from:))
     }
 
@@ -167,7 +178,7 @@ struct BookMetadataService: Sendable {
             URLQueryItem(name: "limit", value: "3")
         ]
 
-        let response: OpenLibrarySearchResponse = try await fetch(components.url!)
+        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: components.url!))
         return response.docs.compactMap(Self.openLibraryCandidate(from:))
     }
 
@@ -215,7 +226,7 @@ struct BookMetadataService: Sendable {
     }
 
     private func openLibraryWorkDetail(workID: String) async throws -> OpenLibraryWorkDetail {
-        try await fetch(URL(string: "https://openlibrary.org/works/\(workID).json")!)
+        try await fetch(openLibraryRequest(url: URL(string: "https://openlibrary.org/works/\(workID).json")!))
     }
 
     private func searchGoogleBooks(title: String, author: String) async throws -> [BookMetadataCandidate] {
@@ -279,6 +290,21 @@ struct BookMetadataService: Sendable {
             throw BookMetadataError.requestFailed
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private func fetch<T: Decodable>(_ request: URLRequest) async throws -> T {
+        let (data, response) = try await urlSession.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw BookMetadataError.requestFailed
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private func openLibraryRequest(url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.setValue(openLibraryUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        return request
     }
 
     func importFromGoodreads(url: URL) async throws -> BookMetadataCandidate {

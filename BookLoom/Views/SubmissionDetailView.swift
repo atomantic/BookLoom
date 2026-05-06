@@ -270,27 +270,6 @@ struct SubmissionDetailView: View {
     }
 }
 
-private struct StarRatingView: View {
-    @Binding var stars: Int
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(1...5, id: \.self) { i in
-                Button {
-                    stars = (stars == i) ? 0 : i
-                } label: {
-                    Image(systemName: i <= stars ? "star.fill" : "star")
-                        .foregroundStyle(BookLoomStyle.gold)
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(i) stars")
-            }
-        }
-        .font(.title2)
-    }
-}
-
 private struct BookDetailsCard: View {
     let submission: BookSubmission
 
@@ -324,7 +303,7 @@ private struct RatingsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center) {
-                StarRatingView(stars: $stars)
+                StarRatingPicker(stars: $stars)
                 Spacer(minLength: 12)
                 if summary.average != nil {
                     Label(summary.displayValue, systemImage: "star.fill")

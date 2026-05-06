@@ -7,6 +7,7 @@ final class BookMetadataServiceTests: XCTestCase {
         super.tearDown()
         MockURLProtocol.responses = [:]
         MockURLProtocol.statusCodes = [:]
+        MockURLProtocol.requestHeaders = [:]
     }
 
     func test_searchReturnsRankedOpenLibraryMetadataWithDescriptionAndCover() async throws {
@@ -346,6 +347,44 @@ final class BookMetadataServiceTests: XCTestCase {
         XCTAssertEqual(candidate.coverURL?.absoluteString, "https://covers.openlibrary.org/b/id/7807859-L.jpg?default=false")
     }
 
+    func test_lookupISBN_identifiesOpenLibraryRequests() async throws {
+        let openLibraryURL = "https://openlibrary.org/search.json?isbn=9781419707742&fields=key,title,author_name,first_publish_year,cover_i,isbn&limit=3"
+        MockURLProtocol.responses = [
+            openLibraryURL: """
+            {"docs":[{"key":"/works/OL17553119W","title":"Star Wars Storyboards","author_name":["Disney-Lucasfilm Press"],"first_publish_year":2014,"cover_i":7807859,"isbn":["9781419707742"]}]}
+            """.data(using: .utf8)!,
+            "https://openlibrary.org/works/OL17553119W.json": #"{"description":"Storyboards.","covers":[7807859]}"#.data(using: .utf8)!
+        ]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        _ = try await service.lookupISBN("9781419707742")
+
+        XCTAssertEqual(MockURLProtocol.requestHeaders[openLibraryURL]?["Accept"], "application/json")
+        XCTAssertTrue(MockURLProtocol.requestHeaders[openLibraryURL]?["User-Agent"]?.contains("BookLoom") == true)
+    }
+
+    func test_lookupISBN_usesCachedMetadataWhenNetworkIsUnavailable() async throws {
+        let cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BookLoomISBNMetadataCache-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+        MockURLProtocol.responses = [
+            "https://openlibrary.org/search.json?isbn=9781419707742&fields=key,title,author_name,first_publish_year,cover_i,isbn&limit=3": """
+            {"docs":[{"key":"/works/OL17553119W","title":"Star Wars Storyboards","author_name":["Disney-Lucasfilm Press"],"first_publish_year":2014,"cover_i":7807859,"isbn":["9781419707742"]}]}
+            """.data(using: .utf8)!,
+            "https://openlibrary.org/works/OL17553119W.json": #"{"description":"Storyboards.","covers":[7807859]}"#.data(using: .utf8)!
+        ]
+
+        let cache = BookMetadataCache(rootURL: cacheURL)
+        let service = BookMetadataService(urlSession: .mocked, cache: cache)
+        let first = try await service.lookupISBN("9781419707742")
+        MockURLProtocol.responses = [:]
+        let second = try await service.lookupISBN("978-1-4197-0774-2")
+
+        XCTAssertEqual(second, first)
+        XCTAssertEqual(second.provider, .openLibrary)
+    }
+
     func test_normalizedISBN_acceptsISBN10AndBooklandISBN13Only() {
         XCTAssertEqual(BookMetadataService.normalizedISBN("ISBN 978-1-4197-0774-2"), "9781419707742")
         XCTAssertEqual(BookMetadataService.normalizedISBN("0-306-40615-2"), "0306406152")
@@ -443,6 +482,7 @@ final class BookMetadataServiceTests: XCTestCase {
 private final class MockURLProtocol: URLProtocol {
     nonisolated(unsafe) static var responses: [String: Data] = [:]
     nonisolated(unsafe) static var statusCodes: [String: Int] = [:]
+    nonisolated(unsafe) static var requestHeaders: [String: [String: String]] = [:]
 
     override class func canInit(with request: URLRequest) -> Bool {
         true
@@ -458,6 +498,7 @@ private final class MockURLProtocol: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
             return
         }
+        Self.requestHeaders[url.absoluteString] = request.allHTTPHeaderFields ?? [:]
 
         let response = HTTPURLResponse(
             url: url,

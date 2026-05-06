@@ -449,11 +449,11 @@ private struct LibraryBookDetailView: View {
     private var ownershipCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: "Ownership")
-            Picker("Rating", selection: ratingBinding) {
-                Text("Not rated").tag(0)
-                ForEach(1...5, id: \.self) { stars in
-                    Text("\(stars) star\(stars == 1 ? "" : "s")").tag(stars)
-                }
+            HStack {
+                Text("Rating")
+                    .font(.subheadline.weight(.medium))
+                Spacer(minLength: 12)
+                StarRatingPicker(stars: ratingBinding)
             }
             Toggle("I read this", isOn: $book.didRead)
                 .toggleStyle(.switch)

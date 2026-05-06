@@ -49,12 +49,34 @@ actor BookMetadataCache {
         try? data.write(to: searchURL(title: title, author: author), options: [.atomic])
     }
 
+    func cachedISBN(_ isbn: String, now: Date = .now) -> BookMetadataCandidate? {
+        let url = isbnURL(isbn)
+        guard let data = try? Data(contentsOf: url),
+              let payload = try? JSONDecoder().decode(SearchPayload.self, from: data),
+              now.timeIntervalSince(payload.storedAt) <= timeToLive else {
+            return nil
+        }
+        return payload.candidates.first
+    }
+
+    func store(_ candidate: BookMetadataCandidate, isbn: String, now: Date = .now) {
+        let payload = SearchPayload(storedAt: now, candidates: [candidate])
+        guard let data = try? JSONEncoder().encode(payload) else { return }
+        try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try? data.write(to: isbnURL(isbn), options: [.atomic])
+    }
+
     func purgeAll() {
         try? fileManager.removeItem(at: rootURL)
     }
 
     private func searchURL(title: String, author: String) -> URL {
         let key = ["search", normalized(title), normalized(author)].joined(separator: "|")
+        return rootURL.appendingPathComponent("\(sha256Hex(key)).json", isDirectory: false)
+    }
+
+    private func isbnURL(_ isbn: String) -> URL {
+        let key = ["isbn", normalized(isbn)].joined(separator: "|")
         return rootURL.appendingPathComponent("\(sha256Hex(key)).json", isDirectory: false)
     }
 
