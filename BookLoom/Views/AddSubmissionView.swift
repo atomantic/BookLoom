@@ -474,6 +474,7 @@ struct BookMetadataSearchControls: View {
     @Binding var selectedMetadata: BookMetadataCandidate?
 
     let buttonStyle: MetadataLookupButtonStyle
+    var showsSummary = true
 
     @State private var showingMetadataSearch = false
 
@@ -481,7 +482,7 @@ struct BookMetadataSearchControls: View {
         VStack(alignment: .leading, spacing: 8) {
             searchButton
 
-            if let selectedMetadata {
+            if showsSummary, let selectedMetadata {
                 BookMetadataSummary(candidate: selectedMetadata)
             }
         }
@@ -543,5 +544,50 @@ struct BookMetadataSummary: View {
         }
         .padding(10)
         .background(BookLoomStyle.sage.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+struct BookMetadataVerificationPreview: View {
+    let title: String
+    let author: String
+    let candidate: BookMetadataCandidate
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            BookCoverTile(
+                title: displayTitle,
+                author: displayAuthor,
+                coverURL: candidate.coverURL,
+                width: 92,
+                height: 136
+            )
+            .accessibilityLabel("Matched cover for \(displayTitle)")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(displayTitle)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(BookLoomStyle.ink)
+                    .lineLimit(3)
+
+                if !displayAuthor.isEmpty {
+                    Text(displayAuthor)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                BookMetadataSummary(candidate: candidate)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var displayTitle: String {
+        title.trimmedOrNil ?? candidate.title
+    }
+
+    private var displayAuthor: String {
+        author.trimmedOrNil ?? candidate.authorLine
     }
 }

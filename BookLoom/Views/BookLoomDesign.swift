@@ -455,6 +455,94 @@ struct TintedCapsuleLabel: View {
     }
 }
 
+struct BookCardIndicator {
+    let text: String
+    let systemImage: String
+    var tint: Color = BookLoomStyle.indigo
+
+    init(_ text: String, systemImage: String, tint: Color = BookLoomStyle.indigo) {
+        self.text = text
+        self.systemImage = systemImage
+        self.tint = tint
+    }
+}
+
+struct StandardBookCardRow: View {
+    let title: String
+    let author: String
+    var coverURL: URL? = nil
+    var indicators: [BookCardIndicator] = []
+    var showsDisclosure = false
+    var coverWidth: CGFloat = 58
+    var coverHeight: CGFloat = 82
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            BookCoverTile(
+                title: title,
+                author: author,
+                coverURL: coverURL,
+                width: coverWidth,
+                height: coverHeight
+            )
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(title)
+                    .font(.headline.bold())
+                    .foregroundStyle(BookLoomStyle.ink)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !author.isEmpty {
+                    Text(author)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !indicators.isEmpty {
+                    BookCardIndicatorGrid(indicators: indicators)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showsDisclosure {
+                Image(systemName: "chevron.right")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.secondary.opacity(0.72))
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .bookLoomCard(padding: 10)
+    }
+}
+
+private struct BookCardIndicatorGrid: View {
+    let indicators: [BookCardIndicator]
+
+    private let columns = [
+        GridItem(.adaptive(minimum: 48), spacing: 6, alignment: .leading)
+    ]
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+            ForEach(indicators.indices, id: \.self) { index in
+                let indicator = indicators[index]
+                TintedCapsuleLabel(
+                    text: indicator.text,
+                    tint: indicator.tint,
+                    systemImage: indicator.systemImage,
+                    horizontalPadding: 7,
+                    verticalPadding: 3
+                )
+            }
+        }
+    }
+}
+
 struct StatusPill: View {
     let status: BookSubmissionStatus
 

@@ -31,7 +31,7 @@ struct LibraryTabView: View {
 
                 LibrarySearchField(
                     text: $searchText,
-                    placeholder: "Search shelf books",
+                    placeholder: "Search bookshelf",
                     clearAccessibilityLabel: "Clear shelf book search"
                 )
                     .bookLoomListRow(top: 4, bottom: 6)
@@ -81,6 +81,7 @@ struct LibraryTabView: View {
                         } label: {
                             MobileLibraryBookRow(book: book)
                         }
+                        .buttonStyle(.plain)
                         .bookLoomListRow()
                         .onAppear {
                             loadMoreIfNeeded(after: book)
@@ -289,37 +290,63 @@ private struct MobileLibraryBookRow: View {
     @Bindable var book: LibraryBook
 
     var body: some View {
-        HStack(spacing: 12) {
-            BookCoverTile(
-                title: book.displayTitle,
-                author: book.displayAuthor,
-                coverURL: book.coverImageURL,
-                width: 54,
-                height: 76
+        StandardBookCardRow(
+            title: book.displayTitle,
+            author: book.displayAuthor,
+            coverURL: book.coverImageURL,
+            indicators: indicators,
+            showsDisclosure: true,
+            coverWidth: 58,
+            coverHeight: 82
+        )
+    }
+
+    private var indicators: [BookCardIndicator] {
+        var items: [BookCardIndicator] = [
+            BookCardIndicator(book.format.cardLabel, systemImage: book.format.cardSystemImage, tint: BookLoomStyle.indigo)
+        ]
+
+        if book.personalRatingStars > 0 {
+            items.insert(
+                BookCardIndicator("\(min(book.personalRatingStars, 5))/5", systemImage: "star.fill", tint: BookLoomStyle.gold),
+                at: 0
             )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(book.displayTitle)
-                    .font(.headline)
-                    .foregroundStyle(BookLoomStyle.ink)
-                    .lineLimit(2)
-                if !book.displayAuthor.isEmpty {
-                    Text(book.displayAuthor)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                if !book.ownershipBadges.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(book.ownershipBadges.prefix(3), id: \.self) { badge in
-                            TintedCapsuleLabel(text: badge, tint: BookLoomStyle.indigo, horizontalPadding: 7, verticalPadding: 3)
-                        }
-                    }
-                }
-            }
         }
-        .bookLoomCard(padding: 10)
+        if book.didRead {
+            items.append(BookCardIndicator("Read", systemImage: "checkmark.seal.fill", tint: BookLoomStyle.sage))
+        }
+        if book.didListenToAudiobook {
+            items.append(BookCardIndicator("Audio", systemImage: "headphones", tint: BookLoomStyle.plum))
+        }
+        if book.isSigned {
+            items.append(BookCardIndicator("Signed", systemImage: "signature", tint: BookLoomStyle.coral))
+        }
+        if book.isOnLoan {
+            items.append(BookCardIndicator("Loaned", systemImage: "person.crop.circle.badge.clock", tint: BookLoomStyle.gold))
+        }
+        return items
+    }
+}
+
+private extension LibraryBookFormat {
+    var cardLabel: String {
+        switch self {
+        case .hardcover: "Hardback"
+        case .paperback: "Paperback"
+        case .ebook: "E-book"
+        case .audiobook: "Audio"
+        case .other: "Other"
+        }
+    }
+
+    var cardSystemImage: String {
+        switch self {
+        case .hardcover: "book.closed.fill"
+        case .paperback: "book.fill"
+        case .ebook: "ipad"
+        case .audiobook: "headphones"
+        case .other: "bookmark.fill"
+        }
     }
 }
 
@@ -443,6 +470,12 @@ private struct MobileLibraryBookDetailView: View {
             .bookLoomListRow()
 
             Section {
+                Picker("Rating", selection: ratingBinding) {
+                    Text("Not rated").tag(0)
+                    ForEach(1...5, id: \.self) { stars in
+                        Text("\(stars) star\(stars == 1 ? "" : "s")").tag(stars)
+                    }
+                }
                 Toggle("I read this", isOn: $book.didRead)
                 Toggle("I listened to the audiobook", isOn: $book.didListenToAudiobook)
                 Toggle("Signed copy", isOn: $book.isSigned)
@@ -544,6 +577,16 @@ private struct MobileLibraryBookDetailView: View {
         )
     }
 
+    private var ratingBinding: Binding<Int> {
+        Binding(
+            get: { min(max(book.personalRatingStars, 0), 5) },
+            set: {
+                book.personalRatingStars = min(max($0, 0), 5)
+                book.updatedAt = .now
+            }
+        )
+    }
+
     private func applyPrice() {
         let trimmed = priceText.trimmed
         guard !trimmed.isEmpty else {
@@ -601,36 +644,51 @@ private struct MobileNewShelfBookView: View {
     @State private var condition: LibraryBookCondition = .good
     @State private var shelfLocation = ""
     @State private var isSigned = false
+    @State private var personalRatingStars = 0
     @State private var priceText = ""
     @State private var purchaseSource = ""
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    ISBNMetadataLookupControls(
-                        title: $title,
-                        author: $author,
-                        isbn: $isbn,
-                        selectedMetadata: $selectedMetadata,
-                        layout: .scanButtonOnly(title: "Scan ISBN")
-                    )
-                } header: {
-                    Text("Scan")
-                } footer: {
-                    Text("Use the ISBN barcode or the printed ISBN inside the book.")
-                }
+                if let selectedMetadata {
+                    Section {
+                        BookMetadataVerificationPreview(
+                            title: title,
+                            author: author,
+                            candidate: selectedMetadata
+                        )
+                    } header: {
+                        Text("Review")
+                    } footer: {
+                        Text("Verify the cover and details before saving this book to your Shelf.")
+                    }
+                } else {
+                    Section {
+                        ISBNMetadataLookupControls(
+                            title: $title,
+                            author: $author,
+                            isbn: $isbn,
+                            selectedMetadata: $selectedMetadata,
+                            layout: .scanButtonOnly(title: "Scan ISBN")
+                        )
+                    } header: {
+                        Text("Scan")
+                    } footer: {
+                        Text("Use the ISBN barcode or the printed ISBN inside the book.")
+                    }
 
-                Section("Import") {
-                    GoodreadsMetadataImportControls(
-                        title: $title,
-                        author: $author,
-                        isbn: $isbn,
-                        selectedMetadata: $selectedMetadata,
-                        importButtonTitle: "Import from Goodreads",
-                        importButtonSystemImage: "link",
-                        buttonStyle: .bordered
-                    )
+                    Section("Import") {
+                        GoodreadsMetadataImportControls(
+                            title: $title,
+                            author: $author,
+                            isbn: $isbn,
+                            selectedMetadata: $selectedMetadata,
+                            importButtonTitle: "Import from Goodreads",
+                            importButtonSystemImage: "link",
+                            buttonStyle: .bordered
+                        )
+                    }
                 }
 
                 Section("Book") {
@@ -648,10 +706,17 @@ private struct MobileNewShelfBookView: View {
                         author: $author,
                         isbn: $isbn,
                         selectedMetadata: $selectedMetadata,
-                        buttonStyle: .bordered
+                        buttonStyle: .bordered,
+                        showsSummary: false
                     )
                 }
                 Section("Personal Tracking") {
+                    Picker("Rating", selection: $personalRatingStars) {
+                        Text("Not rated").tag(0)
+                        ForEach(1...5, id: \.self) { stars in
+                            Text("\(stars) star\(stars == 1 ? "" : "s")").tag(stars)
+                        }
+                    }
                     Toggle("I read this", isOn: $didRead)
                     Toggle("I listened to the audiobook", isOn: $didListen)
                     Toggle("Signed copy", isOn: $isSigned)
@@ -695,6 +760,7 @@ private struct MobileNewShelfBookView: View {
                         )
                         book.didRead = didRead
                         book.didListenToAudiobook = didListen
+                        book.personalRatingStars = personalRatingStars
                         book.format = format
                         book.condition = condition
                         book.shelfLocation = shelfLocation.trimmed

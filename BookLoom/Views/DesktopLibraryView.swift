@@ -449,6 +449,16 @@ private struct LibraryBookDetailView: View {
     private var ownershipCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: "Ownership")
+            Picker("Rating", selection: ratingBinding) {
+                Text("Not rated").tag(0)
+                ForEach(1...5, id: \.self) { stars in
+                    Text("\(stars) star\(stars == 1 ? "" : "s")").tag(stars)
+                }
+            }
+            Toggle("I read this", isOn: $book.didRead)
+                .toggleStyle(.switch)
+            Toggle("I listened to the audiobook", isOn: $book.didListenToAudiobook)
+                .toggleStyle(.switch)
             Toggle("Signed copy", isOn: $book.isSigned)
                 .toggleStyle(.switch)
             TextField("Paid", text: $priceText, prompt: Text("$0.00"))
@@ -527,6 +537,16 @@ private struct LibraryBookDetailView: View {
             get: { book.condition },
             set: {
                 book.condition = $0
+                book.updatedAt = .now
+            }
+        )
+    }
+
+    private var ratingBinding: Binding<Int> {
+        Binding(
+            get: { min(max(book.personalRatingStars, 0), 5) },
+            set: {
+                book.personalRatingStars = min(max($0, 0), 5)
                 book.updatedAt = .now
             }
         )

@@ -68,6 +68,7 @@ final class LibraryBook {
     var loanedTo: String = ""
     var loanedAt: Date? = nil
     var loanDueDate: Date? = nil
+    var personalRatingStars: Int = 0
     var didRead: Bool = false
     var didListenToAudiobook: Bool = false
     var intendedRecipient: String = ""
