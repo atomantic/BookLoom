@@ -458,11 +458,13 @@ struct TintedCapsuleLabel: View {
 struct BookCardIndicator {
     let text: String
     let systemImage: String
+    var visibleText: String? = nil
     var tint: Color = BookLoomStyle.indigo
 
-    init(_ text: String, systemImage: String, tint: Color = BookLoomStyle.indigo) {
+    init(_ text: String, systemImage: String, visibleText: String? = nil, tint: Color = BookLoomStyle.indigo) {
         self.text = text
         self.systemImage = systemImage
+        self.visibleText = visibleText
         self.tint = tint
     }
 }
@@ -548,22 +550,39 @@ private struct BookCardIndicatorGrid: View {
     let indicators: [BookCardIndicator]
 
     private let columns = [
-        GridItem(.adaptive(minimum: 48), spacing: 6, alignment: .leading)
+        GridItem(.adaptive(minimum: 38), spacing: 6, alignment: .leading)
     ]
 
     var body: some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
             ForEach(indicators.indices, id: \.self) { index in
                 let indicator = indicators[index]
-                TintedCapsuleLabel(
-                    text: indicator.text,
-                    tint: indicator.tint,
-                    systemImage: indicator.systemImage,
-                    horizontalPadding: 7,
-                    verticalPadding: 3
-                )
+                BookCardIndicatorPill(indicator: indicator)
             }
         }
+    }
+}
+
+private struct BookCardIndicatorPill: View {
+    let indicator: BookCardIndicator
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: indicator.systemImage)
+                .font(.caption.weight(.semibold))
+
+            if let visibleText = indicator.visibleText {
+                Text(visibleText)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .lineLimit(1)
+            }
+        }
+        .foregroundStyle(indicator.tint)
+        .padding(.horizontal, indicator.visibleText == nil ? 9 : 10)
+        .padding(.vertical, 5)
+        .frame(minWidth: indicator.visibleText == nil ? 38 : 50, minHeight: 28)
+        .background(indicator.tint.opacity(0.13), in: Capsule())
+        .accessibilityLabel(indicator.text)
     }
 }
 

@@ -325,8 +325,9 @@ private struct MobileLibraryBookRow: View {
         ]
 
         if book.personalRatingStars > 0 {
+            let stars = min(book.personalRatingStars, 5)
             items.insert(
-                BookCardIndicator("\(min(book.personalRatingStars, 5))/5", systemImage: "star.fill", tint: BookLoomStyle.gold),
+                BookCardIndicator("\(stars) out of 5 stars", systemImage: "star.fill", visibleText: "\(stars)", tint: BookLoomStyle.gold),
                 at: 0
             )
         }
