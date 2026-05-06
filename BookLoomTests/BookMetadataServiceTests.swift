@@ -6,6 +6,7 @@ final class BookMetadataServiceTests: XCTestCase {
     override func tearDown() {
         super.tearDown()
         MockURLProtocol.responses = [:]
+        MockURLProtocol.statusCodes = [:]
     }
 
     func test_searchReturnsRankedOpenLibraryMetadataWithDescriptionAndCover() async throws {
@@ -316,6 +317,35 @@ final class BookMetadataServiceTests: XCTestCase {
         XCTAssertEqual(candidate.coverURL?.absoluteString, "https://example.com/cover.jpg")
     }
 
+    func test_lookupISBN_fallsBackToOpenLibraryWhenGoogleBooksIsUnavailable() async throws {
+        let googleURL = "https://www.googleapis.com/books/v1/volumes?q=isbn:9781419707742&maxResults=1&printType=books"
+        let openLibraryResponse = """
+        {"docs":[{"key":"/works/OL17553119W","title":"Star Wars Storyboards","author_name":["Disney-Lucasfilm Press"],"first_publish_year":2014,"cover_i":7807859,"isbn":["1419707744","9781419707742"]}]}
+        """
+        let workResponse = """
+        {"description":"Storyboard art from the original trilogy.","covers":[7807859]}
+        """
+
+        MockURLProtocol.responses = [
+            googleURL: #"{"error":{"message":"Quota exceeded"}}"#.data(using: .utf8)!,
+            "https://openlibrary.org/search.json?isbn=9781419707742&fields=key,title,author_name,first_publish_year,cover_i,isbn&limit=3": openLibraryResponse.data(using: .utf8)!,
+            "https://openlibrary.org/works/OL17553119W.json": workResponse.data(using: .utf8)!
+        ]
+        MockURLProtocol.statusCodes = [googleURL: 429]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        let candidate = try await service.lookupISBN("9781419707742")
+
+        XCTAssertEqual(candidate.provider, .openLibrary)
+        XCTAssertEqual(candidate.externalID, "OL17553119W")
+        XCTAssertEqual(candidate.title, "Star Wars Storyboards")
+        XCTAssertEqual(candidate.authorLine, "Disney-Lucasfilm Press")
+        XCTAssertEqual(candidate.publishedYear, 2014)
+        XCTAssertEqual(candidate.isbn, "1419707744")
+        XCTAssertEqual(candidate.description, "Storyboard art from the original trilogy.")
+        XCTAssertEqual(candidate.coverURL?.absoluteString, "https://covers.openlibrary.org/b/id/7807859-L.jpg?default=false")
+    }
+
     func test_normalizedISBN_acceptsISBN10AndBooklandISBN13Only() {
         XCTAssertEqual(BookMetadataService.normalizedISBN("ISBN 978-1-4197-0774-2"), "9781419707742")
         XCTAssertEqual(BookMetadataService.normalizedISBN("0-306-40615-2"), "0306406152")
@@ -412,6 +442,7 @@ final class BookMetadataServiceTests: XCTestCase {
 
 private final class MockURLProtocol: URLProtocol {
     nonisolated(unsafe) static var responses: [String: Data] = [:]
+    nonisolated(unsafe) static var statusCodes: [String: Int] = [:]
 
     override class func canInit(with request: URLRequest) -> Bool {
         true
@@ -430,7 +461,7 @@ private final class MockURLProtocol: URLProtocol {
 
         let response = HTTPURLResponse(
             url: url,
-            statusCode: 200,
+            statusCode: Self.statusCodes[url.absoluteString] ?? 200,
             httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!

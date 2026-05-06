@@ -276,7 +276,7 @@ struct GoodreadsMetadataImportControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                TextField("Paste Goodreads share link", text: $goodreadsURL, prompt: Text("Paste Goodreads share link").foregroundStyle(.tertiary))
+                TextField("Paste Goodreads share link", text: $goodreadsURL)
                     #if os(iOS)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)

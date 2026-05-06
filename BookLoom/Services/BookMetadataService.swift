@@ -117,11 +117,33 @@ struct BookMetadataService: Sendable {
             throw BookMetadataError.invalidISBN
         }
 
-        let candidates = try await searchGoogleBooksByISBN(cleanISBN)
-        guard let candidate = candidates.first else {
+        var reachedProvider = false
+        var lastError: Error?
+
+        do {
+            let candidates = try await searchGoogleBooksByISBN(cleanISBN)
+            reachedProvider = true
+            if let candidate = candidates.first {
+                return candidate
+            }
+        } catch {
+            lastError = error
+        }
+
+        do {
+            let candidates = try await searchOpenLibraryByISBN(cleanISBN)
+            reachedProvider = true
+            if let candidate = await enrichOpenLibraryCandidates(candidates).first {
+                return candidate
+            }
+        } catch {
+            lastError = error
+        }
+
+        if reachedProvider {
             throw BookMetadataError.isbnNotFound
         }
-        return candidate
+        throw lastError as? BookMetadataError ?? BookMetadataError.requestFailed
     }
 
     private func searchOpenLibrary(title: String, author: String) async throws -> [BookMetadataCandidate] {
@@ -134,22 +156,38 @@ struct BookMetadataService: Sendable {
         ].filter { $0.value != nil }
 
         let response: OpenLibrarySearchResponse = try await fetch(components.url!)
-        return response.docs.compactMap { doc in
-            guard let key = doc.key, let title = doc.title?.trimmedOrNil else { return nil }
-            let coverURL = doc.coverI.flatMap { BookMetadataProvider.openLibraryCoverURL(coverID: $0) }
-            let workID = key.replacingOccurrences(of: "/works/", with: "")
-            return BookMetadataCandidate(
-                provider: .openLibrary,
-                externalID: workID,
-                title: title,
-                authors: doc.authorName ?? [],
-                publishedYear: doc.firstPublishYear,
-                isbn: doc.isbn?.first,
-                coverURL: coverURL,
-                description: nil,
-                sourceURL: URL(string: "https://openlibrary.org\(key)")
-            )
-        }
+        return response.docs.compactMap(Self.openLibraryCandidate(from:))
+    }
+
+    private func searchOpenLibraryByISBN(_ isbn: String) async throws -> [BookMetadataCandidate] {
+        var components = URLComponents(string: "https://openlibrary.org/search.json")!
+        components.queryItems = [
+            URLQueryItem(name: "isbn", value: isbn),
+            URLQueryItem(name: "fields", value: "key,title,author_name,first_publish_year,cover_i,isbn"),
+            URLQueryItem(name: "limit", value: "3")
+        ]
+
+        let response: OpenLibrarySearchResponse = try await fetch(components.url!)
+        return response.docs.compactMap(Self.openLibraryCandidate(from:))
+    }
+
+    private static func openLibraryCandidate(from doc: OpenLibrarySearchDoc) -> BookMetadataCandidate? {
+        guard let key = doc.key, let title = doc.title?.trimmedOrNil else { return nil }
+        let coverURL = doc.coverI.flatMap { BookMetadataProvider.openLibraryCoverURL(coverID: $0) }
+        let externalID = key
+            .replacingOccurrences(of: "/works/", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return BookMetadataCandidate(
+            provider: .openLibrary,
+            externalID: externalID,
+            title: title,
+            authors: doc.authorName ?? [],
+            publishedYear: doc.firstPublishYear,
+            isbn: doc.isbn?.first,
+            coverURL: coverURL,
+            description: nil,
+            sourceURL: URL(string: "https://openlibrary.org\(key)")
+        )
     }
 
     private func enrichOpenLibraryCandidates(_ candidates: [BookMetadataCandidate]) async -> [BookMetadataCandidate] {
