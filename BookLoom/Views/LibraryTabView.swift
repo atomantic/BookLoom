@@ -402,9 +402,16 @@ private struct MobileShelfImportRow: View {
 
             HStack(spacing: 8) {
                 Button(action: onSaveToShelf) {
-                    Label("Save to Shelf", systemImage: "books.vertical.fill")
+                    Label {
+                        Text("Save to Shelf")
+                    } icon: {
+                        Image(systemName: "books.vertical.fill")
+                            .symbolRenderingMode(.monochrome)
+                    }
+                    .foregroundStyle(.white)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(BookLoomStyle.plum)
 
                 Button(action: onAddToClub) {
                     Label("Add to Club", systemImage: "person.2.fill")
