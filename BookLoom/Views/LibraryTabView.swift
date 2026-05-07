@@ -402,20 +402,16 @@ private struct MobileShelfImportRow: View {
 
             HStack(spacing: 8) {
                 Button(action: onSaveToShelf) {
-                    Label {
-                        Text("Save to Shelf")
-                    } icon: {
-                        Image(systemName: "books.vertical.fill")
-                            .symbolRenderingMode(.monochrome)
-                    }
-                    .foregroundStyle(.white)
+                    Label("Save to Shelf", systemImage: "books.vertical.fill")
                 }
-                .buttonStyle(BookLoomProminentButtonStyle())
+                .buttonStyle(.borderedProminent)
+                .tint(BookLoomStyle.plum)
 
                 Button(action: onAddToClub) {
                     Label("Add to Club", systemImage: "person.2.fill")
                 }
                 .buttonStyle(.bordered)
+                .tint(BookLoomStyle.plum)
 
                 Button(role: .destructive, action: onRemove) {
                     Image(systemName: "trash")
@@ -425,6 +421,7 @@ private struct MobileShelfImportRow: View {
                 .accessibilityLabel("Discard import")
             }
             .font(.caption.weight(.semibold))
+            .controlSize(.small)
         }
         .bookLoomCard(padding: 10)
     }
