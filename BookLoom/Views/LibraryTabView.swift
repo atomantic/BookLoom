@@ -2,6 +2,34 @@
 import SwiftData
 import SwiftUI
 
+private enum ShelfClubAddOutcome: Equatable {
+    case added(String)
+    case alreadyAdded(String)
+    case failed(String)
+
+    var title: String {
+        switch self {
+        case .added:
+            "Added to Club"
+        case .alreadyAdded:
+            "Already in Club"
+        case .failed:
+            "Couldn't Add to Club"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .added(let clubName):
+            "This book is now in \(clubName)'s proposals."
+        case .alreadyAdded(let clubName):
+            "This book is already in \(clubName)'s proposals or reading history."
+        case .failed(let message):
+            message
+        }
+    }
+}
+
 struct LibraryTabView: View {
     @Environment(\.modelContext) private var context
     @Environment(MemberIdentity.self) private var memberIdentity
@@ -16,6 +44,7 @@ struct LibraryTabView: View {
     @State private var canLoadMore = true
     @State private var showingNewBook = false
     @State private var selectedBook: LibraryBook?
+    @State private var pendingDeleteBook: LibraryBook?
 
     private let pageSize = 80
 
@@ -80,6 +109,13 @@ struct LibraryTabView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint("Opens book details")
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                pendingDeleteBook = book
+                            } label: {
+                                Label("Delete from Shelf", systemImage: "trash")
+                            }
+                        }
                         .bookLoomListRow()
                         .onAppear {
                             loadMoreIfNeeded(after: book)
@@ -108,6 +144,7 @@ struct LibraryTabView: View {
                     book: selectedBook,
                     activeClub: activeClub,
                     onAddToClub: { addToClub(selectedBook) },
+                    onDelete: { pendingDeleteBook = selectedBook },
                     onSave: saveContext
                 )
             }
@@ -137,6 +174,20 @@ struct LibraryTabView: View {
         }
         .onChange(of: searchText) { _, _ in resetAndLoad() }
         .onChange(of: filter) { _, _ in resetAndLoad() }
+        .confirmationDialog(
+            pendingDeleteBook.map { "Delete \($0.displayTitle)?" } ?? "Delete book?",
+            isPresented: .presence(of: $pendingDeleteBook),
+            titleVisibility: .visible
+        ) {
+            Button("Delete from Shelf", role: .destructive) {
+                confirmDeleteBook()
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteBook = nil
+            }
+        } message: {
+            Text("This removes the book and its private shelf notes from this device and iCloud.")
+        }
     }
 
     private var selectedBookIsPresented: Binding<Bool> {
@@ -263,8 +314,33 @@ struct LibraryTabView: View {
         resetAndLoad()
     }
 
-    private func addToClub(_ book: LibraryBook) {
-        guard let activeClub else { return }
+    private func confirmDeleteBook() {
+        guard let book = pendingDeleteBook else { return }
+        pendingDeleteBook = nil
+        deleteFromShelf(book)
+    }
+
+    private func deleteFromShelf(_ book: LibraryBook) {
+        let deletedID = book.persistentModelID
+        if selectedBook?.persistentModelID == deletedID {
+            selectedBook = nil
+        }
+        books.removeAll { $0.persistentModelID == deletedID }
+        context.delete(book)
+        saveContext()
+        if books.isEmpty, canLoadMore {
+            loadMore()
+        }
+    }
+
+    private func addToClub(_ book: LibraryBook) -> ShelfClubAddOutcome {
+        guard let activeClub else {
+            return .failed("Choose an active club before adding shelf books to club proposals.")
+        }
+        guard !activeClub.containsLibraryBook(book) else {
+            return .alreadyAdded(activeClub.name)
+        }
+
         let submission = BookSubmission(
             title: book.title,
             author: book.author,
@@ -286,8 +362,10 @@ struct LibraryTabView: View {
                 localMemberID: memberIdentity.memberID,
                 localMemberName: memberIdentity.name
             )
+            return .added(activeClub.name)
         } catch {
-            assertionFailure("Failed to add library book to club: \(error.localizedDescription)")
+            context.delete(submission)
+            return .failed(error.localizedDescription)
         }
     }
 
@@ -420,6 +498,36 @@ private struct MobileLibraryBookRow: View {
     }
 }
 
+private extension BookClub {
+    func containsLibraryBook(_ book: LibraryBook) -> Bool {
+        (submissions ?? []).contains { $0.matchesLibraryBook(book) }
+    }
+}
+
+private extension BookSubmission {
+    func matchesLibraryBook(_ book: LibraryBook) -> Bool {
+        if book.matchesSubmission(self) {
+            return true
+        }
+
+        let bookISBN = book.isbn.trimmed.lowercased()
+        let submissionISBN = isbn.trimmed.lowercased()
+        if !bookISBN.isEmpty, bookISBN == submissionISBN {
+            return true
+        }
+
+        let bookTitle = book.title.trimmed.lowercased()
+        let submissionTitle = title.trimmed.lowercased()
+        guard !bookTitle.isEmpty, bookTitle == submissionTitle else {
+            return false
+        }
+
+        let bookAuthor = book.author.trimmed.lowercased()
+        let submissionAuthor = author.trimmed.lowercased()
+        return bookAuthor.isEmpty || submissionAuthor.isEmpty || bookAuthor == submissionAuthor
+    }
+}
+
 private extension LibraryBookFormat {
     var cardLabel: String {
         switch self {
@@ -504,15 +612,24 @@ private struct MobileLibraryBookDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var book: LibraryBook
     let activeClub: BookClub?
-    let onAddToClub: () -> Void
+    let onAddToClub: () -> ShelfClubAddOutcome
+    let onDelete: () -> Void
     let onSave: () -> Void
     @State private var priceText: String
     @State private var showingMetadataSearch = false
+    @State private var clubAddOutcome: ShelfClubAddOutcome?
 
-    init(book: LibraryBook, activeClub: BookClub?, onAddToClub: @escaping () -> Void, onSave: @escaping () -> Void) {
+    init(
+        book: LibraryBook,
+        activeClub: BookClub?,
+        onAddToClub: @escaping () -> ShelfClubAddOutcome,
+        onDelete: @escaping () -> Void,
+        onSave: @escaping () -> Void
+    ) {
         self.book = book
         self.activeClub = activeClub
         self.onAddToClub = onAddToClub
+        self.onDelete = onDelete
         self.onSave = onSave
         _priceText = State(initialValue: Self.priceText(for: book))
     }
@@ -521,6 +638,9 @@ private struct MobileLibraryBookDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 heroCard
+                if !book.bookDescription.trimmed.isEmpty {
+                    descriptionCard
+                }
                 bookCard
                 trackingCard
                 purchaseCard
@@ -542,6 +662,11 @@ private struct MobileLibraryBookDetailView: View {
             BookMetadataSearchView(title: book.title, author: book.author, isbn: book.isbn) { candidate in
                 apply(candidate)
             }
+        }
+        .alert(clubAddOutcome?.title ?? "", isPresented: clubAddAlertPresented) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(clubAddOutcome?.message ?? "")
         }
     }
 
@@ -582,6 +707,16 @@ private struct MobileLibraryBookDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var descriptionCard: some View {
+        MobileBookEditCard(title: "Description", systemImage: "text.book.closed.fill") {
+            Text(book.bookDescription.trimmed)
+                .font(.body)
+                .foregroundStyle(BookLoomStyle.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     private var bookCard: some View {
         MobileBookEditCard(title: "Book", systemImage: "book.closed.fill") {
             MobileBookTextField("Title", text: $book.title)
@@ -617,6 +752,13 @@ private struct MobileLibraryBookDetailView: View {
             }
             .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
             .disabled(book.title.trimmed.isEmpty && book.isbn.trimmed.isEmpty)
+
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete from Shelf", systemImage: "trash")
+            }
+            .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.coral))
         }
     }
 
@@ -737,13 +879,13 @@ private struct MobileLibraryBookDetailView: View {
     private var actionBar: some View {
         VStack(spacing: 10) {
             Button {
-                onAddToClub()
+                clubAddOutcome = onAddToClub()
             } label: {
-                Label(activeClub.map { "Add to \($0.name)" } ?? "Add to Club", systemImage: "person.2.fill")
+                Label(clubAddButtonTitle, systemImage: clubAddButtonSystemImage)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(BookLoomSecondaryButtonStyle())
-            .disabled(activeClub == nil)
+            .disabled(activeClub == nil || isInActiveClub)
 
             Button {
                 applyPrice()
@@ -772,7 +914,31 @@ private struct MobileLibraryBookDetailView: View {
     }
 
     private var metadataButtonTitle: String {
-        book.coverImageURL == nil && book.externalProvider.trimmed.isEmpty ? "Find Cover & Details" : "Change Cover & Details"
+        "Search for Cover and Details"
+    }
+
+    private var isInActiveClub: Bool {
+        activeClub?.containsLibraryBook(book) ?? false
+    }
+
+    private var clubAddButtonTitle: String {
+        guard let activeClub else { return "Add to Club" }
+        return isInActiveClub ? "In \(activeClub.name)" : "Add to \(activeClub.name)"
+    }
+
+    private var clubAddButtonSystemImage: String {
+        isInActiveClub ? "checkmark.seal.fill" : "person.2.fill"
+    }
+
+    private var clubAddAlertPresented: Binding<Bool> {
+        Binding(
+            get: { clubAddOutcome != nil },
+            set: { isPresented in
+                if !isPresented {
+                    clubAddOutcome = nil
+                }
+            }
+        )
     }
 
     private var formatBinding: Binding<LibraryBookFormat> {

@@ -170,12 +170,13 @@ capture_locale() {
     echo "Capturing $lang..."
     CURRENT_LANG="$lang"
 
-    capture_page library     "$out_dir/01_library.png"
-    capture_page clubs       "$out_dir/02_clubs.png"
-    capture_page clubHome    "$out_dir/03_club_home.png"
+    capture_page library     "$out_dir/01_shelf.png"
+    capture_page clubHome    "$out_dir/02_club_home.png"
+    capture_page import      "$out_dir/03_import.png"
     capture_page currentRead "$out_dir/04_current_read.png"
     capture_page poll        "$out_dir/05_vote.png"
-    capture_page meeting     "$out_dir/06_meeting.png"
+    capture_page discussions "$out_dir/06_discussions.png"
+    capture_page meeting     "$out_dir/07_meeting.png"
 
     killall BookLoom 2>/dev/null || true
     sleep 1

@@ -432,12 +432,12 @@ enum ScreenshotSampleData {
                 privateNotes: "Spine is fragile; do not loan this copy."
             ),
             makeLibraryBook(
-                title: "Sea of Tranquility",
-                author: "Emily St. John Mandel",
-                isbn: "9780593321447",
+                title: "Rapture of the Nerds",
+                author: "Cory Doctorow and Charles Stross",
+                isbn: "9780765329103",
                 description: "Fresh copy waiting for the club vote, with a backup audiobook queued.",
-                year: 2022,
-                coverID: 12695663,
+                year: 2012,
+                coverID: 7250370,
                 addedDaysAgo: 11,
                 shelfLocation: "Office - TBR",
                 format: .hardcover,
@@ -448,7 +448,7 @@ enum ScreenshotSampleData {
                 giftOccasion: "Keep if not selected",
                 didRead: true,
                 didListen: true,
-                privateNotes: "Compare ending structure with Station Eleven if this wins."
+                privateNotes: "Compare the singularity jokes with Accelerando if this wins."
             ),
             makeLibraryBook(
                 title: "A Memory Called Empire",
@@ -469,32 +469,32 @@ enum ScreenshotSampleData {
                 privateNotes: "Borrowed digitally; good enough to recommend, not a keeper copy."
             ),
             makeLibraryBook(
-                title: "The Bee Sting",
-                author: "Paul Murray",
-                isbn: "9780374600303",
-                description: "Hoping to grab a hardcover at the next indie sale.",
-                year: 2023,
-                coverID: 14342175,
+                title: "Accelerando",
+                author: "Charles Stross",
+                isbn: "9780441014156",
+                description: "Hoping to grab a paperback at the next indie sale.",
+                year: 2005,
+                coverID: 284259,
                 addedDaysAgo: 6,
                 shelfLocation: "",
-                format: .hardcover,
+                format: .paperback,
                 condition: .new,
                 isSigned: false,
                 priceCents: 0,
                 isOwned: false,
                 isWishlist: true,
-                privateNotes: "Compare cover designs at City Lights vs Books Inc."
+                privateNotes: "Pair with Rapture of the Nerds for the cyberpunk theme."
             ),
             makeLibraryBook(
-                title: "Tomorrow, and Tomorrow, and Tomorrow",
-                author: "Gabrielle Zevin",
-                isbn: "9780593321201",
+                title: "Murderbot",
+                author: "Martha Wells",
+                isbn: "9781250214713",
                 description: "Want a signed copy if it ever shows up at a launch event.",
-                year: 2022,
-                coverID: 12808495,
+                year: 2017,
+                coverID: 9157148,
                 addedDaysAgo: 3,
                 shelfLocation: "",
-                format: .hardcover,
+                format: .paperback,
                 condition: .new,
                 isSigned: false,
                 priceCents: 0,
@@ -688,7 +688,9 @@ enum ScreenshotSampleData {
         10201431: "thursday_murder_club",
         10648686: "klara_and_the_sun",
         8739376: "circe",
-        9312772: "cerulean_sea"
+        9312772: "cerulean_sea",
+        7250370: "rapture_of_the_nerds",
+        9157148: "murderbot"
     ]
 
     private static func seedBundledCovers() {

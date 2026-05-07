@@ -286,27 +286,29 @@ struct AddBookComposerView: View {
 
     @ViewBuilder
     private var iOSLookupActions: some View {
-        LazyVGrid(columns: lookupButtonColumns, alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             if draft.selectedMetadata == nil {
-                ISBNMetadataLookupControls(
-                    title: $draft.title,
-                    author: $draft.author,
-                    isbn: $draft.isbn,
-                    selectedMetadata: $draft.selectedMetadata,
-                    layout: .scanButtonOnly(title: "Scan"),
-                    fillsAvailableWidth: true
-                )
+                LazyVGrid(columns: lookupButtonColumns, alignment: .leading, spacing: 8) {
+                    ISBNMetadataLookupControls(
+                        title: $draft.title,
+                        author: $draft.author,
+                        isbn: $draft.isbn,
+                        selectedMetadata: $draft.selectedMetadata,
+                        layout: .scanButtonOnly(title: "Scan"),
+                        fillsAvailableWidth: true
+                    )
 
-                GoodreadsMetadataImportControls(
-                    title: $draft.title,
-                    author: $draft.author,
-                    isbn: $draft.isbn,
-                    selectedMetadata: $draft.selectedMetadata,
-                    importButtonTitle: "Paste",
-                    importButtonSystemImage: "doc.on.clipboard",
-                    buttonStyle: .bordered,
-                    fillsAvailableWidth: true
-                )
+                    GoodreadsMetadataImportControls(
+                        title: $draft.title,
+                        author: $draft.author,
+                        isbn: $draft.isbn,
+                        selectedMetadata: $draft.selectedMetadata,
+                        importButtonTitle: "Paste",
+                        importButtonSystemImage: "doc.on.clipboard",
+                        buttonStyle: .bordered,
+                        fillsAvailableWidth: true
+                    )
+                }
             }
 
             BookMetadataSearchControls(
@@ -316,8 +318,8 @@ struct AddBookComposerView: View {
                 selectedMetadata: $draft.selectedMetadata,
                 buttonStyle: .bordered,
                 showsSummary: false,
-                findButtonTitle: "Details",
-                changeButtonTitle: "Change",
+                findButtonTitle: "Search for Cover and Details",
+                changeButtonTitle: "Search for Cover and Details",
                 fillsAvailableWidth: true
             )
         }

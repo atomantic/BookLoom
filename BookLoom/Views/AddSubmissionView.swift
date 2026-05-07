@@ -284,8 +284,8 @@ struct BookMetadataSearchControls: View {
 
     let buttonStyle: MetadataLookupButtonStyle
     var showsSummary = true
-    var findButtonTitle = "Find Cover & Details"
-    var changeButtonTitle = "Change Cover & Details"
+    var findButtonTitle = "Search for Cover and Details"
+    var changeButtonTitle = "Search for Cover and Details"
     var fillsAvailableWidth = false
 
     @State private var showingMetadataSearch = false

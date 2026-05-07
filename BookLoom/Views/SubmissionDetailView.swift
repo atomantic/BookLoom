@@ -377,7 +377,7 @@ private struct SubmissionBookEditCard: View {
     }
 
     private var metadataButtonTitle: String {
-        submission.coverImageURL == nil && submission.externalProvider.trimmed.isEmpty ? "Find Cover & Details" : "Change Cover & Details"
+        "Search for Cover and Details"
     }
 
     private var metadataButton: some View {

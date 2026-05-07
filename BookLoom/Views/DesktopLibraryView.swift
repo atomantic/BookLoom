@@ -858,7 +858,7 @@ private struct LibraryBookHero: View {
 
                 HStack(spacing: 10) {
                     Button(action: onFindMetadata) {
-                        Label("Find Cover & Details", systemImage: "magnifyingglass")
+                        Label("Search for Cover and Details", systemImage: "magnifyingglass")
                     }
                     .buttonStyle(.bordered)
 
