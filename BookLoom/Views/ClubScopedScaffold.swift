@@ -17,6 +17,9 @@ struct ClubScopedScaffold<Content: View>: View {
     @State private var showingSwitcher = false
     @State private var showingNewClubSheet = false
     @State private var clubCountBeforeCreate: Int?
+    #if os(macOS)
+    @State private var presentedSidebar: ClubScopedSidebar?
+    #endif
 
     init(title: String, @ViewBuilder content: @escaping (BookClub) -> Content) {
         self.title = title
@@ -32,7 +35,7 @@ struct ClubScopedScaffold<Content: View>: View {
                     .bookLoomNavigationBar()
                     .toolbar {
                         ToolbarItem(placement: clubSwitcherPlacement) {
-                            ClubSwitcherButton(club: club, action: { showingSwitcher = true })
+                            ClubSwitcherButton(club: club, action: presentSwitcher)
                         }
                         ToolbarItem(placement: .secondaryAction) {
                             NavigationLink {
@@ -44,13 +47,21 @@ struct ClubScopedScaffold<Content: View>: View {
                     }
             } else {
                 NoActiveClubView(onCreateClub: {
-                    clubCountBeforeCreate = visible.count
-                    showingNewClubSheet = true
+                    presentNewClub(priorClubCount: visible.count)
                 })
                     .navigationTitle(title)
                     .bookLoomNavigationBar()
             }
         }
+        #if os(macOS)
+        .bookLoomTrailingSidebar(
+            item: $presentedSidebar,
+            width: 480,
+            onDismiss: dismissSidebar
+        ) { sidebar in
+            sidebarContent(for: sidebar)
+        }
+        #else
         .sheet(isPresented: $showingSwitcher) {
             ClubSwitcherView()
         }
@@ -59,10 +70,54 @@ struct ClubScopedScaffold<Content: View>: View {
                 NewClubFormView()
             }
         }
+        #endif
         .task(id: clubReconcileSignature(visible)) {
             activeClubStore.reconcileWithVisibleClubs(visible)
         }
     }
+
+    private func presentSwitcher() {
+        #if os(macOS)
+        presentedSidebar = .switcher
+        #else
+        showingSwitcher = true
+        #endif
+    }
+
+    private func presentNewClub(priorClubCount: Int) {
+        clubCountBeforeCreate = priorClubCount
+        #if os(macOS)
+        presentedSidebar = .newClub
+        #else
+        showingNewClubSheet = true
+        #endif
+    }
+
+    #if os(macOS)
+    @ViewBuilder
+    private func sidebarContent(for sidebar: ClubScopedSidebar) -> some View {
+        switch sidebar {
+        case .switcher:
+            ClubSwitcherView(onDismiss: dismissSidebar)
+        case .newClub:
+            NavigationStack {
+                NewClubFormView(
+                    onCancel: dismissSidebar,
+                    onCreated: { club in
+                        clubCountBeforeCreate = nil
+                        activeClubStore.setActiveClub(club)
+                        dismissSidebar()
+                    }
+                )
+            }
+        }
+    }
+
+    private func dismissSidebar() {
+        clubCountBeforeCreate = nil
+        presentedSidebar = nil
+    }
+    #endif
 
     private func handleNewClubSheetDismiss() {
         defer { clubCountBeforeCreate = nil }
@@ -91,12 +146,28 @@ struct ClubScopedScaffold<Content: View>: View {
     }
 }
 
+#if os(macOS)
+private enum ClubScopedSidebar: String, Identifiable {
+    case switcher
+    case newClub
+
+    var id: String { rawValue }
+}
+#endif
+
 private struct ClubSwitcherButton: View {
     let club: BookClub
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
+            #if os(iOS)
+            Image(systemName: "books.vertical.fill")
+                .font(.headline)
+                .foregroundStyle(BookLoomStyle.indigo)
+                .frame(width: 42, height: 34)
+                .background(.white.opacity(0.18), in: Capsule(style: .continuous))
+            #else
             HStack(spacing: 6) {
                 Image(systemName: "books.vertical.fill")
                     .font(.subheadline)
@@ -112,6 +183,7 @@ private struct ClubSwitcherButton: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(.white.opacity(0.18), in: Capsule(style: .continuous))
+            #endif
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Switch club. Active club: \(club.name)")

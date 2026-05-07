@@ -29,9 +29,8 @@ struct BookLoomApp: App {
 
         #if DEBUG
         if CloudKitSchemaPrimer.isRequested {
-            let container = sharedModelContainer
             Task { @MainActor in
-                await CloudKitSchemaPrimer.runIfRequested(context: container.mainContext)
+                await CloudKitSchemaPrimer.runIfRequested()
             }
         }
         #endif
@@ -99,7 +98,7 @@ struct BookLoomApp: App {
                 }
                 .task {
                     #if DEBUG
-                    await CloudKitSchemaPrimer.runIfRequested(context: sharedModelContainer.mainContext)
+                    await CloudKitSchemaPrimer.runIfRequested()
                     #endif
 
                     SchemaPrimeDataCleanup.removeSchemaPrimeData(from: sharedModelContainer.mainContext)

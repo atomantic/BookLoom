@@ -4,13 +4,17 @@ import SwiftData
 
 struct DesktopLibraryView: View {
     @Environment(\.modelContext) private var context
+    @Environment(MemberIdentity.self) private var memberIdentity
+    @Environment(ActiveClubStore.self) private var activeClubStore
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
     @Query(sort: \LibraryBook.updatedAt, order: .reverse) private var libraryBooks: [LibraryBook]
+    @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
 
     @State private var selectedBookID: PersistentIdentifier?
     @State private var searchText = ""
     @State private var filter: LibraryFilter = .all
-    @State private var showingNewBook = false
+    @State private var presentedSidebar: DesktopLibrarySidebar?
+    @State private var pendingDeleteBook: LibraryBook?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -22,10 +26,13 @@ struct DesktopLibraryView: View {
 
             Group {
                 if let selectedBook {
-                    LibraryBookDetailView(book: selectedBook)
+                    LibraryBookDetailView(
+                        book: selectedBook,
+                        onDelete: { pendingDeleteBook = selectedBook }
+                    )
                         .id(selectedBook.persistentModelID)
                 } else {
-                    LibraryBookEmptyState(onAddBook: { showingNewBook = true })
+                    LibraryBookEmptyState(onAddBook: { presentedSidebar = .addBook })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -35,7 +42,7 @@ struct DesktopLibraryView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showingNewBook = true
+                    presentedSidebar = .addBook
                 } label: {
                     Label("Add Book", systemImage: "plus")
                 }
@@ -47,13 +54,46 @@ struct DesktopLibraryView: View {
                     Label("Refresh Shelf", systemImage: "arrow.triangle.2.circlepath")
                 }
             }
-        }
-        .sheet(isPresented: $showingNewBook) {
-            NewLibraryBookView { book in
-                context.insert(book)
-                saveContext()
-                selectedBookID = book.persistentModelID
+            ToolbarItem(placement: .automatic) {
+                Button(role: .destructive) {
+                    if let selectedBook {
+                        pendingDeleteBook = selectedBook
+                    }
+                } label: {
+                    Label("Delete Book", systemImage: "trash")
+                }
+                .disabled(selectedBook == nil)
             }
+        }
+        .bookLoomTrailingSidebar(
+            item: $presentedSidebar,
+            width: 860,
+            onDismiss: { presentedSidebar = nil }
+        ) { sidebar in
+            switch sidebar {
+            case .addBook:
+                AddBookComposerView(
+                    mode: addBookComposerMode,
+                    onCancel: { presentedSidebar = nil }
+                ) { draft, action in
+                    let book = try saveNewBook(draft, action: action)
+                    selectedBookID = book.persistentModelID
+                }
+            }
+        }
+        .confirmationDialog(
+            pendingDeleteBook.map { "Delete \($0.displayTitle)?" } ?? "Delete book?",
+            isPresented: .presence(of: $pendingDeleteBook),
+            titleVisibility: .visible
+        ) {
+            Button("Delete from Shelf", role: .destructive) {
+                confirmDeleteBook()
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteBook = nil
+            }
+        } message: {
+            Text("This removes the book and its private shelf notes from this device and iCloud.")
         }
         .onAppear {
             refreshShelf()
@@ -66,7 +106,9 @@ struct DesktopLibraryView: View {
     private var librarySidebar: some View {
         VStack(alignment: .leading, spacing: 14) {
             LibrarySummaryHeader(
-                ownedCount: libraryBooks.filter { !$0.isWishlist }.count,
+                allCount: libraryBooks.count,
+                ownedCount: libraryBooks.filter(\.countsAsOwned).count,
+                readCount: libraryBooks.filter(\.isRead).count,
                 wishlistCount: libraryBooks.filter(\.isWishlist).count,
                 signedCount: libraryBooks.filter(\.isSigned).count,
                 loanedCount: libraryBooks.filter(\.isOnLoan).count,
@@ -101,6 +143,13 @@ struct DesktopLibraryView: View {
                 ForEach(filteredBooks) { book in
                     LibraryBookSidebarRow(book: book)
                         .tag(book.persistentModelID)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                pendingDeleteBook = book
+                            } label: {
+                                Label("Delete from Shelf", systemImage: "trash")
+                            }
+                        }
                 }
                 .onDelete(perform: deleteBooks)
             }
@@ -117,14 +166,21 @@ struct DesktopLibraryView: View {
         return filteredBooks.first
     }
 
+    private var activeClub: BookClub? {
+        activeClubStore.resolveActiveClub(from: clubs.filter { !SchemaPrimeDataCleanup.isSchemaPrime($0) })
+    }
+
+    private var addBookComposerMode: AddBookComposerMode {
+        activeClub.map { .club(name: $0.name) } ?? .library
+    }
+
     private var filteredBooks: [LibraryBook] {
         let filtered = libraryBooks.filter { book in
             switch filter {
-            case .all: return !book.isWishlist
+            case .all: return true
+            case .owned: return book.countsAsOwned
             case .wishlist: return book.isWishlist
-            case .signed: return book.isSigned
             case .loaned: return book.isOnLoan
-            case .gift: return book.hasGiftPlan
             }
         }
         let query = searchText.trimmed
@@ -159,11 +215,55 @@ struct DesktopLibraryView: View {
     }
 
     private func deleteBooks(_ offsets: IndexSet) {
-        for index in offsets {
-            context.delete(filteredBooks[index])
-        }
+        let visibleBooks = filteredBooks
+        performDelete(offsets.map { visibleBooks[$0] })
+    }
+
+    private func confirmDeleteBook() {
+        guard let book = pendingDeleteBook else { return }
+        pendingDeleteBook = nil
+        performDelete([book])
+    }
+
+    private func performDelete(_ books: [LibraryBook]) {
+        let idsToDelete = Set(books.map { $0.persistentModelID })
+        let nextSelection = filteredBooks
+            .first { !idsToDelete.contains($0.persistentModelID) }?
+            .persistentModelID
+        books.forEach(context.delete)
         saveContext()
-        selectedBookID = filteredBooks.first?.persistentModelID
+        selectedBookID = nextSelection
+    }
+
+    private func saveNewBook(_ draft: AddBookDraft, action: AddBookComposerAction) throws -> LibraryBook {
+        let book = draft.makeLibraryBook()
+        context.insert(book)
+
+        switch action {
+        case .libraryOnly:
+            try context.save()
+        case .clubProposed, .clubCompleted:
+            guard let activeClub else {
+                try context.save()
+                return book
+            }
+            let status: BookSubmissionStatus = action == .clubCompleted ? .completed : .proposed
+            let submission = draft.makeSubmission(
+                memberID: memberIdentity.memberID,
+                memberName: memberIdentity.name,
+                status: status
+            )
+            activeClub.addSubmission(submission)
+            context.insert(submission)
+            try SharedClubSync.saveAndPublish(
+                context: context,
+                club: activeClub,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
+        }
+
+        return book
     }
 
     private func saveContext() {
@@ -175,22 +275,26 @@ struct DesktopLibraryView: View {
     }
 }
 
+private enum DesktopLibrarySidebar: String, Identifiable {
+    case addBook
+
+    var id: String { rawValue }
+}
+
 private enum LibraryFilter: String, CaseIterable, Identifiable {
     case all
+    case owned
     case wishlist
-    case signed
     case loaned
-    case gift
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .all: return "Owned"
+        case .all: return "All"
+        case .owned: return "Owned"
         case .wishlist: return "Wishlist"
-        case .signed: return "Signed"
         case .loaned: return "Loaned"
-        case .gift: return "Gifts"
         }
     }
 }
@@ -223,7 +327,9 @@ private struct DesktopLibrarySearchField: View {
 }
 
 private struct LibrarySummaryHeader: View {
+    let allCount: Int
     let ownedCount: Int
+    let readCount: Int
     let wishlistCount: Int
     let signedCount: Int
     let loanedCount: Int
@@ -238,7 +344,7 @@ private struct LibrarySummaryHeader: View {
                     Text("Personal Shelf")
                         .font(.headline.bold())
                         .foregroundStyle(BookLoomStyle.ink)
-                    Text("\(ownedCount) owned · \(wishlistCount) wishlist")
+                    Text("\(allCount) books · \(ownedCount) owned")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
@@ -246,6 +352,8 @@ private struct LibrarySummaryHeader: View {
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
+                LibraryStatTile(value: "\(readCount)", label: "read", systemImage: "checkmark.seal.fill")
+                LibraryStatTile(value: "\(ownedCount)", label: "owned", systemImage: "books.vertical.fill")
                 LibraryStatTile(value: "\(wishlistCount)", label: "wishlist", systemImage: "star.fill")
                 LibraryStatTile(value: "\(signedCount)", label: "signed", systemImage: "signature")
                 LibraryStatTile(value: "\(loanedCount)", label: "loaned", systemImage: "arrowshape.turn.up.right.fill")
@@ -391,24 +499,32 @@ private struct LibraryBookSidebarRow: View {
 private struct LibraryBookDetailView: View {
     @Environment(\.modelContext) private var context
     @Bindable var book: LibraryBook
+    let onDelete: () -> Void
 
     @State private var priceText: String
     @State private var showingMetadataSearch = false
 
-    init(book: LibraryBook) {
+    init(book: LibraryBook, onDelete: @escaping () -> Void) {
         self.book = book
+        self.onDelete = onDelete
         _priceText = State(initialValue: Self.priceText(for: book))
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                LibraryBookHero(book: book, onFindMetadata: { showingMetadataSearch = true })
+                LibraryBookHero(
+                    book: book,
+                    onFindMetadata: { showingMetadataSearch = true },
+                    onDelete: onDelete
+                )
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], alignment: .leading, spacing: 14) {
                     detailsCard
                     ownershipCard
-                    loanCard
+                    if book.isOnLoan && book.countsAsOwned {
+                        loanCard
+                    }
                     giftCard
                     notesCard
                 }
@@ -461,14 +577,7 @@ private struct LibraryBookDetailView: View {
                 Spacer(minLength: 12)
                 StarRatingPicker(stars: ratingBinding)
             }
-            Toggle("Want this (don't own yet)", isOn: $book.isWishlist)
-                .toggleStyle(.switch)
-            Toggle("I read this", isOn: $book.didRead)
-                .toggleStyle(.switch)
-            Toggle("I listened to the audiobook", isOn: $book.didListenToAudiobook)
-                .toggleStyle(.switch)
-            Toggle("Signed copy", isOn: $book.isSigned)
-                .toggleStyle(.switch)
+            propertyButtonGrid
             TextField("Paid", text: $priceText, prompt: Text("$0.00"))
             TextField("Purchased from", text: $book.purchaseSource)
             Button {
@@ -486,21 +595,64 @@ private struct LibraryBookDetailView: View {
     private var loanCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: "Loan")
-            Toggle("Currently on loan", isOn: $book.isOnLoan)
-                .toggleStyle(.switch)
             TextField("Loaned to", text: $book.loanedTo)
-                .disabled(!book.isOnLoan)
-            if book.isOnLoan {
-                Button {
-                    markReturned()
-                } label: {
-                    Label("Mark Returned", systemImage: "arrow.uturn.left.circle.fill")
-                }
-                .buttonStyle(.bordered)
+            Button {
+                markReturned()
+            } label: {
+                Label("Mark Returned", systemImage: "arrow.uturn.left.circle.fill")
             }
+            .buttonStyle(.bordered)
         }
         .textFieldStyle(.roundedBorder)
         .bookLoomCard(padding: 12)
+    }
+
+    private var propertyButtonGrid: some View {
+        LazyVGrid(columns: propertyButtonColumns, alignment: .leading, spacing: 8) {
+            AddBookPropertyButton(
+                title: "Owned",
+                systemImage: "books.vertical.fill",
+                tint: BookLoomStyle.indigo,
+                isOn: ownedBinding
+            )
+            AddBookPropertyButton(
+                title: "Wishlist",
+                systemImage: "star.fill",
+                tint: BookLoomStyle.gold,
+                isOn: wishlistBinding
+            )
+            AddBookPropertyButton(
+                title: "Read",
+                systemImage: "checkmark.seal.fill",
+                tint: BookLoomStyle.sage,
+                isOn: $book.didRead
+            )
+            AddBookPropertyButton(
+                title: "Audio",
+                systemImage: "headphones",
+                tint: BookLoomStyle.plum,
+                isOn: audiobookBinding
+            )
+            AddBookPropertyButton(
+                title: "Signed",
+                systemImage: "signature",
+                tint: BookLoomStyle.coral,
+                isOn: $book.isSigned
+            )
+            AddBookPropertyButton(
+                title: "Loaned Out",
+                systemImage: "person.crop.circle.badge.clock",
+                tint: BookLoomStyle.plum,
+                isOn: loanBinding
+            )
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var propertyButtonColumns: [GridItem] {
+        [
+            GridItem(.adaptive(minimum: 116), spacing: 8, alignment: .leading)
+        ]
     }
 
     private var giftCard: some View {
@@ -555,6 +707,47 @@ private struct LibraryBookDetailView: View {
             get: { min(max(book.personalRatingStars, 0), 5) },
             set: {
                 book.setPersonalRatingStars($0)
+            }
+        )
+    }
+
+    private var ownedBinding: Binding<Bool> {
+        Binding(
+            get: { book.countsAsOwned },
+            set: { book.setOwned($0) }
+        )
+    }
+
+    private var wishlistBinding: Binding<Bool> {
+        Binding(
+            get: { book.isWishlist },
+            set: { book.setWishlist($0) }
+        )
+    }
+
+    private var audiobookBinding: Binding<Bool> {
+        Binding(
+            get: { book.didListenToAudiobook },
+            set: { book.setAudiobookListened($0) }
+        )
+    }
+
+    private var loanBinding: Binding<Bool> {
+        Binding(
+            get: { book.isOnLoan && book.countsAsOwned },
+            set: {
+                book.isOnLoan = $0
+                if $0 {
+                    book.setOwned(true)
+                    if book.loanedAt == nil {
+                        book.loanedAt = .now
+                    }
+                } else {
+                    book.loanedTo = ""
+                    book.loanedAt = nil
+                    book.loanDueDate = nil
+                }
+                book.updatedAt = .now
             }
         )
     }
@@ -617,6 +810,7 @@ private struct LibraryBookDetailView: View {
 private struct LibraryBookHero: View {
     @Bindable var book: LibraryBook
     let onFindMetadata: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
@@ -662,11 +856,17 @@ private struct LibraryBookHero: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack {
+                HStack(spacing: 10) {
                     Button(action: onFindMetadata) {
                         Label("Find Cover & Details", systemImage: "magnifyingglass")
                     }
                     .buttonStyle(.bordered)
+
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete from Shelf", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+
                     Spacer(minLength: 0)
                 }
             }
@@ -708,7 +908,7 @@ private struct LibraryBookEmptyState: View {
                 Text("Build Your Shelf")
                     .font(.title.bold())
                     .foregroundStyle(BookLoomStyle.ink)
-                Text("Track owned copies, signed editions, loaned books, gift plans, purchase details, and shelf locations.")
+                Text("Track owned copies, wishlist titles, read history, loans, gift plans, purchase details, and shelf locations.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -725,139 +925,4 @@ private struct LibraryBookEmptyState: View {
     }
 }
 
-private struct NewLibraryBookView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    let onSave: (LibraryBook) -> Void
-
-    @State private var title = ""
-    @State private var author = ""
-    @State private var isbn = ""
-    @State private var shelfLocation = ""
-    @State private var priceText = ""
-    @State private var isSigned = false
-    @State private var isWishlist = false
-    @State private var format: LibraryBookFormat = .hardcover
-    @State private var selectedMetadata: BookMetadataCandidate?
-    @State private var showingMetadataSearch = false
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 14) {
-                        BookCoverTile(
-                            title: title,
-                            author: author,
-                            coverURL: selectedMetadata?.coverURL,
-                            width: 82,
-                            height: 118
-                        )
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Add to Shelf")
-                                .font(.title2.bold())
-                                .foregroundStyle(BookLoomStyle.ink)
-                            TextField("Title", text: $title)
-                            TextField("Author", text: $author)
-                            TextField("ISBN", text: $isbn)
-                        }
-                    }
-
-                    HStack(spacing: 10) {
-                        Picker("Format", selection: $format) {
-                            ForEach(LibraryBookFormat.allCases) { format in
-                                Text(format.displayName).tag(format)
-                            }
-                        }
-                        Toggle("Signed", isOn: $isSigned)
-                            .toggleStyle(.switch)
-                    }
-
-                    Toggle("Want this (don't own yet)", isOn: $isWishlist)
-                        .toggleStyle(.switch)
-
-                    TextField("Shelf or room", text: $shelfLocation)
-                    TextField("Paid", text: $priceText, prompt: Text("$0.00"))
-
-                    Button {
-                        showingMetadataSearch = true
-                    } label: {
-                        Label(selectedMetadata == nil ? "Find Cover & Details" : "Change Cover & Details", systemImage: "magnifyingglass")
-                    }
-                    .buttonStyle(.bordered)
-                    .bookLoomActionWidth(minWidth: 190)
-                    .disabled(title.trimmed.isEmpty)
-
-                    Button {
-                        save()
-                    } label: {
-                        Label("Save to Shelf", systemImage: "books.vertical.fill")
-                    }
-                    .buttonStyle(BookLoomProminentButtonStyle())
-                    .bookLoomActionWidth(minWidth: 190)
-                    .disabled(title.trimmed.isEmpty)
-                }
-                .textFieldStyle(.roundedBorder)
-                .padding(18)
-                .frame(maxWidth: 560)
-                .frame(maxWidth: .infinity)
-            }
-            .bookLoomScreenBackground()
-            .navigationTitle("New Shelf Book")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-            .sheet(isPresented: $showingMetadataSearch) {
-                BookMetadataSearchView(title: title, author: author) { candidate in
-                    apply(candidate)
-                }
-            }
-        }
-        .frame(minWidth: 560, minHeight: 560)
-    }
-
-    private func apply(_ candidate: BookMetadataCandidate) {
-        title = candidate.title
-        author = candidate.authorLine
-        if let candidateISBN = candidate.isbn {
-            isbn = candidateISBN
-        }
-        selectedMetadata = candidate
-    }
-
-    private func save() {
-        let book = LibraryBook(
-            title: title.trimmed,
-            author: author.trimmed,
-            isbn: isbn.trimmed,
-            bookDescription: selectedMetadata?.description ?? "",
-            publishedYear: selectedMetadata?.publishedYear,
-            coverURL: selectedMetadata?.coverURL?.absoluteString ?? "",
-            externalProvider: selectedMetadata?.provider.rawValue ?? "",
-            externalID: selectedMetadata?.externalID ?? "",
-            sourceURLString: selectedMetadata?.sourceURL?.absoluteString ?? ""
-        )
-        book.format = format
-        book.isSigned = isSigned
-        book.isWishlist = isWishlist
-        book.shelfLocation = shelfLocation.trimmed
-        if let cents = parsedPriceCents {
-            book.purchasePriceCents = cents
-        }
-        onSave(book)
-        dismiss()
-    }
-
-    private var parsedPriceCents: Int? {
-        let trimmed = priceText.trimmed
-        guard !trimmed.isEmpty else { return nil }
-        let normalized = trimmed
-            .replacingOccurrences(of: "$", with: "")
-            .replacingOccurrences(of: ",", with: "")
-        guard let value = Double(normalized) else { return nil }
-        return Int((value * 100).rounded())
-    }
-}
 #endif

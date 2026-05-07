@@ -39,7 +39,7 @@ final class LibraryBookTests: XCTestCase {
         book.purchaseCurrencyCode = "USD"
 
         XCTAssertTrue(book.ownershipBadges.contains("Read"))
-        XCTAssertTrue(book.ownershipBadges.contains("Listened"))
+        XCTAssertTrue(book.ownershipBadges.contains("Audio"))
         XCTAssertTrue(book.ownershipBadges.contains("Signed"))
         XCTAssertTrue(book.ownershipBadges.contains("On loan"))
         XCTAssertTrue(book.ownershipBadges.contains("Gift planned"))
@@ -73,14 +73,38 @@ final class LibraryBookTests: XCTestCase {
         XCTAssertTrue(book.didRead)
     }
 
+    func test_audiobookMarksBookRead() {
+        let book = LibraryBook(title: "Piranesi", author: "Susanna Clarke")
+
+        book.setAudiobookListened(true)
+
+        XCTAssertTrue(book.didListenToAudiobook)
+        XCTAssertTrue(book.didRead)
+        XCTAssertTrue(book.isRead)
+    }
+
+    func test_unownedReadTrackingDoesNotCountAsOwnedOrWishlist() {
+        let book = LibraryBook(title: "Borrowed Book", author: "Reader")
+
+        book.setOwned(false)
+        book.didRead = true
+
+        XCTAssertFalse(book.countsAsOwned)
+        XCTAssertFalse(book.isWishlist)
+        XCTAssertTrue(book.isRead)
+        XCTAssertTrue(book.ownershipBadges.contains("Not owned"))
+        XCTAssertTrue(book.ownershipBadges.contains("Read"))
+    }
+
     func test_wishlistBookSurfacesWishlistBadge() {
         let book = LibraryBook(title: "The Bee Sting", author: "Paul Murray")
         XCTAssertFalse(book.isWishlist)
         XCTAssertFalse(book.ownershipBadges.contains("Wishlist"))
 
-        book.isWishlist = true
+        book.setWishlist(true)
 
         XCTAssertTrue(book.isWishlist)
+        XCTAssertFalse(book.countsAsOwned)
         XCTAssertTrue(book.ownershipBadges.contains("Wishlist"))
     }
 

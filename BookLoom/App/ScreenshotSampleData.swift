@@ -74,7 +74,7 @@ enum ScreenshotSampleData {
             createdAt: calendar.date(byAdding: .month, value: -9, to: .now) ?? .now
         )
         club.shareIsActive = true
-        club.shareParticipantCount = 5
+        club.shareParticipantCount = 6
         club.creatorMemberID = memberID
         club.adminMemberIDs = ["sample-member-lena"]
         club.knownMemberRoster = [
@@ -82,7 +82,8 @@ enum ScreenshotSampleData {
             "sample-member-priya": "Priya Shah",
             "sample-member-owen": "Owen Brooks",
             "sample-member-lena": "Lena Ortiz",
-            "sample-member-sam": "Sam Rivera"
+            "sample-member-sam": "Sam Rivera",
+            "sample-member-noah": "Noah Kim"
         ]
         context.insert(club)
 
@@ -154,6 +155,32 @@ enum ScreenshotSampleData {
                 memberID: "sample-member-sam",
                 daysAgo: 3,
                 status: .proposed
+            ),
+            makeSubmission(
+                title: "The Ministry of Time",
+                author: "Kaliane Bradley",
+                isbn: "9781668045145",
+                description: "A civil servant assigned to a time-displaced Victorian explorer finds bureaucracy, history, and desire colliding.",
+                year: 2024,
+                coverID: 14836068,
+                externalID: "/works/OL36524472W",
+                submitter: "Noah Kim",
+                memberID: "sample-member-noah",
+                daysAgo: 2,
+                status: .proposed
+            ),
+            makeSubmission(
+                title: "Sea of Tranquility",
+                author: "Emily St. John Mandel",
+                isbn: "9780593321447",
+                description: "A time-spanning novel about art, exile, pandemics, and the possibility that reality is less fixed than it seems.",
+                year: 2022,
+                coverID: 12695663,
+                externalID: "/works/OL24416598W",
+                submitter: "Maya Chen",
+                memberID: memberID,
+                daysAgo: 1,
+                status: .proposed
             )
         ]
         proposals.forEach { insert($0, into: club, context: context) }
@@ -184,12 +211,42 @@ enum ScreenshotSampleData {
                 memberID: "sample-member-owen",
                 daysAgo: 142,
                 status: .completed
+            ),
+            makeSubmission(
+                title: "A Psalm for the Wild-Built",
+                author: "Becky Chambers",
+                isbn: "9781250236210",
+                description: "A gentle solarpunk novella about a tea monk, a robot, purpose, rest, and the questions that survive comfort.",
+                year: 2021,
+                coverID: 11908445,
+                externalID: "/works/OL22124808W",
+                submitter: "Priya Shah",
+                memberID: "sample-member-priya",
+                daysAgo: 201,
+                status: .completed
+            ),
+            makeSubmission(
+                title: "The Long Way to a Small, Angry Planet",
+                author: "Becky Chambers",
+                isbn: "9780062444134",
+                description: "A warm, character-driven space opera about the crew of a tunneling ship and the families people choose.",
+                year: 2014,
+                coverID: 8228691,
+                externalID: "/works/OL17301444W",
+                submitter: "Noah Kim",
+                memberID: "sample-member-noah",
+                daysAgo: 251,
+                status: .completed
             )
         ]
         completed[0].pickedAt = calendar.date(byAdding: .day, value: -76, to: .now)
         completed[0].completedAt = calendar.date(byAdding: .day, value: -39, to: .now)
         completed[1].pickedAt = calendar.date(byAdding: .day, value: -126, to: .now)
         completed[1].completedAt = calendar.date(byAdding: .day, value: -84, to: .now)
+        completed[2].pickedAt = calendar.date(byAdding: .day, value: -184, to: .now)
+        completed[2].completedAt = calendar.date(byAdding: .day, value: -153, to: .now)
+        completed[3].pickedAt = calendar.date(byAdding: .day, value: -230, to: .now)
+        completed[3].completedAt = calendar.date(byAdding: .day, value: -198, to: .now)
         completed.forEach { insert($0, into: club, context: context) }
         seedLibraryBooks(context: context)
 
@@ -305,6 +362,113 @@ enum ScreenshotSampleData {
                 didRead: true
             ),
             makeLibraryBook(
+                title: "The House in the Cerulean Sea",
+                author: "TJ Klune",
+                isbn: "9781250217288",
+                description: "Comfort reread copy kept for friends who need something kind after a long week.",
+                year: 2020,
+                coverID: 9312772,
+                addedDaysAgo: 44,
+                shelfLocation: "Guest Room - Loanable",
+                format: .paperback,
+                condition: .good,
+                isSigned: false,
+                priceCents: 1699,
+                loanedTo: "Priya Shah",
+                ratingStars: 5,
+                didRead: true,
+                privateNotes: "Loaned with the request that it come back before summer travel."
+            ),
+            makeLibraryBook(
+                title: "A Psalm for the Wild-Built",
+                author: "Becky Chambers",
+                isbn: "9781250236210",
+                description: "Small hardcover that keeps migrating between the nightstand and the tea shelf.",
+                year: 2021,
+                coverID: 11908445,
+                addedDaysAgo: 155,
+                shelfLocation: "Bedroom - Nightstand",
+                format: .hardcover,
+                condition: .veryGood,
+                isSigned: false,
+                priceCents: 2199,
+                ratingStars: 5,
+                didRead: true,
+                didListen: true,
+                privateNotes: "Favorite quote marked with the green tab."
+            ),
+            makeLibraryBook(
+                title: "Babel",
+                author: "R. F. Kuang",
+                isbn: "9780063021426",
+                description: "Dense annotated copy for language, empire, and translation notes.",
+                year: 2022,
+                coverID: 12953708,
+                addedDaysAgo: 88,
+                shelfLocation: "Office - Annotated",
+                format: .hardcover,
+                condition: .veryGood,
+                isSigned: true,
+                priceCents: 2799,
+                ratingStars: 4,
+                didRead: true,
+                privateNotes: "Signed page is tucked behind the receipt from the launch event."
+            ),
+            makeLibraryBook(
+                title: "The Left Hand of Darkness",
+                author: "Ursula K. Le Guin",
+                isbn: "9780441478125",
+                description: "Older paperback kept for rereads and snowy-weather recommendations.",
+                year: 1969,
+                coverID: 8231856,
+                addedDaysAgo: 510,
+                shelfLocation: "Hallway - Classics",
+                format: .paperback,
+                condition: .readingCopy,
+                isSigned: false,
+                priceCents: 899,
+                ratingStars: 5,
+                didRead: true,
+                privateNotes: "Spine is fragile; do not loan this copy."
+            ),
+            makeLibraryBook(
+                title: "Sea of Tranquility",
+                author: "Emily St. John Mandel",
+                isbn: "9780593321447",
+                description: "Fresh copy waiting for the club vote, with a backup audiobook queued.",
+                year: 2022,
+                coverID: 12695663,
+                addedDaysAgo: 11,
+                shelfLocation: "Office - TBR",
+                format: .hardcover,
+                condition: .new,
+                isSigned: false,
+                priceCents: 2499,
+                intendedRecipient: "Maya Chen",
+                giftOccasion: "Keep if not selected",
+                didRead: true,
+                didListen: true,
+                privateNotes: "Compare ending structure with Station Eleven if this wins."
+            ),
+            makeLibraryBook(
+                title: "A Memory Called Empire",
+                author: "Arkady Martine",
+                isbn: "9781250186430",
+                description: "Finished as a library checkout, noted here for read history without needing a copy.",
+                year: 2019,
+                coverID: 8564783,
+                addedDaysAgo: 74,
+                shelfLocation: "",
+                format: .ebook,
+                condition: .good,
+                isSigned: false,
+                priceCents: 0,
+                ratingStars: 4,
+                didRead: true,
+                isOwned: false,
+                privateNotes: "Borrowed digitally; good enough to recommend, not a keeper copy."
+            ),
+            makeLibraryBook(
                 title: "The Bee Sting",
                 author: "Paul Murray",
                 isbn: "9780374600303",
@@ -314,9 +478,12 @@ enum ScreenshotSampleData {
                 addedDaysAgo: 6,
                 shelfLocation: "",
                 format: .hardcover,
+                condition: .new,
                 isSigned: false,
                 priceCents: 0,
-                isWishlist: true
+                isOwned: false,
+                isWishlist: true,
+                privateNotes: "Compare cover designs at City Lights vs Books Inc."
             ),
             makeLibraryBook(
                 title: "Tomorrow, and Tomorrow, and Tomorrow",
@@ -328,14 +495,16 @@ enum ScreenshotSampleData {
                 addedDaysAgo: 3,
                 shelfLocation: "",
                 format: .hardcover,
+                condition: .new,
                 isSigned: false,
                 priceCents: 0,
+                isOwned: false,
                 isWishlist: true
             )
         ]
 
         for book in books {
-            if !book.isWishlist {
+            if book.countsAsOwned {
                 book.purchaseSource = "Local bookshop"
                 book.purchaseDate = book.addedAt
             }
@@ -353,6 +522,7 @@ enum ScreenshotSampleData {
         addedDaysAgo: Int,
         shelfLocation: String,
         format: LibraryBookFormat,
+        condition: LibraryBookCondition = .good,
         isSigned: Bool,
         priceCents: Int,
         loanedTo: String = "",
@@ -361,7 +531,9 @@ enum ScreenshotSampleData {
         ratingStars: Int = 0,
         didRead: Bool = false,
         didListen: Bool = false,
-        isWishlist: Bool = false
+        isOwned: Bool = true,
+        isWishlist: Bool = false,
+        privateNotes: String = ""
     ) -> LibraryBook {
         let addedAt = Calendar.current.date(byAdding: .day, value: -addedDaysAgo, to: .now) ?? .now
         let book = LibraryBook(
@@ -376,20 +548,25 @@ enum ScreenshotSampleData {
             addedAt: addedAt
         )
         book.format = format
+        book.condition = condition
         book.shelfLocation = shelfLocation
         book.isSigned = isSigned
         book.purchasePriceCents = priceCents > 0 ? priceCents : nil
         book.personalRatingStars = min(max(ratingStars, 0), 5)
-        book.didRead = didRead
+        book.didRead = didRead || didListen
         book.didListenToAudiobook = didListen
+        book.isOwned = isOwned && !isWishlist
         book.isWishlist = isWishlist
         if !loanedTo.isEmpty {
+            book.isOwned = true
+            book.isWishlist = false
             book.isOnLoan = true
             book.loanedTo = loanedTo
             book.loanedAt = Calendar.current.date(byAdding: .day, value: -7, to: .now)
         }
         book.intendedRecipient = intendedRecipient
         book.giftOccasion = giftOccasion
+        book.privateNotes = privateNotes
         return book
     }
 
@@ -398,10 +575,12 @@ enum ScreenshotSampleData {
         addRating(4, memberID: "sample-member-priya", memberName: "Priya Shah", to: submission, context: context)
         addRating(5, memberID: "sample-member-lena", memberName: "Lena Ortiz", to: submission, context: context)
         addRating(4, memberID: "sample-member-owen", memberName: "Owen Brooks", to: submission, context: context)
+        addRating(5, memberID: "sample-member-noah", memberName: "Noah Kim", to: submission, context: context)
 
         addNote("Loved the alternating timelines. The map fragments make this feel made for discussion.", memberID: memberID, memberName: memberName, to: submission, context: context)
         addNote("Flag chapter 18 for the meeting. The fire tower scene changes how I read the narrator.", memberID: "sample-member-priya", memberName: "Priya Shah", to: submission, context: context)
         addNote("Bring up the ending. I am still not convinced the apology lands.", memberID: "sample-member-sam", memberName: "Sam Rivera", to: submission, context: context)
+        addNote("Pair this with the city-history article Lena shared before the meeting.", memberID: "sample-member-noah", memberName: "Noah Kim", to: submission, context: context)
     }
 
     private static func addCompletedBookNotes(to submissions: [BookSubmission], context: ModelContext) {
@@ -413,6 +592,18 @@ enum ScreenshotSampleData {
         addRating(4, memberID: "sample-member-owen", memberName: "Owen Brooks", to: submissions[1], context: context)
         addRating(3, memberID: "sample-member-sam", memberName: "Sam Rivera", to: submissions[1], context: context)
         addNote("Slower middle, but the final river chapter made the whole choice worth it.", memberID: "sample-member-owen", memberName: "Owen Brooks", to: submissions[1], context: context)
+
+        if submissions.indices.contains(2) {
+            addRating(5, memberID: "sample-member-priya", memberName: "Priya Shah", to: submissions[2], context: context)
+            addRating(4, memberID: memberID, memberName: memberName, to: submissions[2], context: context)
+            addNote("Short enough for a weeknight read, but it carried the best discussion about burnout.", memberID: "sample-member-priya", memberName: "Priya Shah", to: submissions[2], context: context)
+        }
+
+        if submissions.indices.contains(3) {
+            addRating(5, memberID: "sample-member-noah", memberName: "Noah Kim", to: submissions[3], context: context)
+            addRating(4, memberID: "sample-member-lena", memberName: "Lena Ortiz", to: submissions[3], context: context)
+            addNote("Use this as the benchmark for cozy sci-fi when we choose the fall theme.", memberID: "sample-member-noah", memberName: "Noah Kim", to: submissions[3], context: context)
+        }
     }
 
     private static func addRating(_ stars: Int, memberID: String, memberName: String, to submission: BookSubmission, context: ModelContext) {
@@ -462,6 +653,7 @@ enum ScreenshotSampleData {
         addRSVP(memberID: memberID, memberName: memberName, status: .attending, note: "Bringing almond cake", to: upcoming, context: context)
         addRSVP(memberID: "sample-member-priya", memberName: "Priya Shah", status: .attending, note: "Has discussion questions", to: upcoming, context: context)
         addRSVP(memberID: "sample-member-sam", memberName: "Sam Rivera", status: .maybe, note: "Joining remotely", to: upcoming, context: context)
+        addRSVP(memberID: "sample-member-noah", memberName: "Noah Kim", status: .attending, note: "Can host next month", to: upcoming, context: context)
 
         guard let lastRead = completed.first else { return }
         let past = ClubMeeting(
@@ -478,6 +670,7 @@ enum ScreenshotSampleData {
         past.bookSubmission = lastRead
         addRSVP(memberID: memberID, memberName: memberName, status: .attending, note: "", to: past, context: context)
         addRSVP(memberID: "sample-member-lena", memberName: "Lena Ortiz", status: .attending, note: "Hosted", to: past, context: context)
+        addRSVP(memberID: "sample-member-noah", memberName: "Noah Kim", status: .declined, note: "Sent notes ahead", to: past, context: context)
     }
 
     private static func addRSVP(memberID: String, memberName: String, status: MeetingRSVPStatus, note: String, to meeting: ClubMeeting, context: ModelContext) {
@@ -575,10 +768,11 @@ enum ScreenshotSampleData {
         club.addSelectionPoll(poll)
 
         let votes = [
-            ("sample-member-maya", "Maya Chen", [0, 2, 1]),
-            ("sample-member-priya", "Priya Shah", [1, 0, 3]),
-            ("sample-member-lena", "Lena Ortiz", [2, 3, 0]),
-            ("sample-member-owen", "Owen Brooks", [0, 1, 2])
+            ("sample-member-maya", "Maya Chen", [0, 2, 5, 1]),
+            ("sample-member-priya", "Priya Shah", [1, 0, 3, 4]),
+            ("sample-member-lena", "Lena Ortiz", [2, 3, 0, 5]),
+            ("sample-member-owen", "Owen Brooks", [0, 1, 2, 4]),
+            ("sample-member-noah", "Noah Kim", [4, 5, 1, 0])
         ]
         for vote in votes {
             let rankedIDs = vote.2.compactMap { index in

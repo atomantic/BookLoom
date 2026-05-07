@@ -52,10 +52,35 @@ final class SchemaPrimeDataCleanupTests: XCTestCase {
         XCTAssertTrue(fetched.isEmpty)
     }
 
+    func test_removeSchemaPrimeDataDeletesSchemaPrimeShelfBooks() throws {
+        let context = try makeContext()
+        let staleBook = LibraryBook(
+            title: "Schema Prime Shelf Book",
+            author: "BookLoom",
+            externalProvider: "SchemaPrime"
+        )
+        let realBook = LibraryBook(
+            title: "Schema Prime Shelf Book",
+            author: "Reader",
+            externalProvider: "OpenLibrary"
+        )
+        context.insert(staleBook)
+        context.insert(realBook)
+        try context.save()
+
+        XCTAssertEqual(SchemaPrimeDataCleanup.removeSchemaPrimeData(from: context), 1)
+
+        let fetched = try context.fetch(FetchDescriptor<LibraryBook>())
+        XCTAssertEqual(fetched.count, 1)
+        XCTAssertTrue(fetched.contains { $0 === realBook })
+        XCTAssertFalse(fetched.contains { $0 === staleBook })
+    }
+
     private func makeContext() throws -> ModelContext {
         let container = try ModelContainer(
             for: BookClub.self,
             BookSubmission.self,
+            LibraryBook.self,
             Rating.self,
             BookNote.self,
             ClubMeeting.self,

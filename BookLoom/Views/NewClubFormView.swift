@@ -8,7 +8,18 @@ struct NewClubFormView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(MemberIdentity.self) private var memberIdentity
 
+    let onCancel: (() -> Void)?
+    let onCreated: ((BookClub) -> Void)?
+
     @State private var name: String = ""
+
+    init(
+        onCancel: (() -> Void)? = nil,
+        onCreated: ((BookClub) -> Void)? = nil
+    ) {
+        self.onCancel = onCancel
+        self.onCreated = onCreated
+    }
 
     var body: some View {
         ScrollView {
@@ -53,7 +64,7 @@ struct NewClubFormView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
+                Button("Cancel", action: cancel)
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create", action: createClub)
@@ -78,6 +89,18 @@ struct NewClubFormView: View {
         }
         context.insert(club)
         try? context.save()
-        dismiss()
+        if let onCreated {
+            onCreated(club)
+        } else {
+            dismiss()
+        }
+    }
+
+    private func cancel() {
+        if let onCancel {
+            onCancel()
+        } else {
+            dismiss()
+        }
     }
 }

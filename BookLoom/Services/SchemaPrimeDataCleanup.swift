@@ -12,6 +12,8 @@ enum SchemaPrimeIdentity {
     static let memberID = "schema-prime"
     static let memberName = "BookLoom"
     static let proposalDescription = "Development-only record used to register CloudKit schema."
+    static let shelfTitle = "Schema Prime Shelf Book"
+    static let shelfExternalProvider = "SchemaPrime"
     static let meetingTitle = "Schema Prime Meeting"
     static let pollTitle = "Schema Prime Vote"
 }
@@ -63,16 +65,19 @@ enum SchemaPrimeDataCleanup {
         }
 
         let staleClubs = candidateClubs.filter(isSchemaPrime)
-        guard !staleClubs.isEmpty else { return 0 }
+        let staleBooks = fetchSchemaPrimeBooks(from: context)
+        guard !staleClubs.isEmpty || !staleBooks.isEmpty else { return 0 }
 
         staleClubs.forEach(context.delete)
+        staleBooks.forEach(context.delete)
 
         do {
             try context.save()
-            logger.info("Removed \(staleClubs.count, privacy: .public) schema-prime club record(s)")
-            return staleClubs.count
+            let removedCount = staleClubs.count + staleBooks.count
+            logger.info("Removed \(removedCount, privacy: .public) schema-prime record(s)")
+            return removedCount
         } catch {
-            logger.error("Failed to remove schema-prime club records: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to remove schema-prime records: \(error.localizedDescription, privacy: .public)")
             return 0
         }
     }
@@ -83,5 +88,23 @@ enum SchemaPrimeDataCleanup {
         let memberMatches = submission.submittedByMemberID.trimmed == SchemaPrimeIdentity.memberID
 
         return titleMatches && (descriptionMatches || memberMatches)
+    }
+
+    private static func fetchSchemaPrimeBooks(from context: ModelContext) -> [LibraryBook] {
+        let primeTitle = SchemaPrimeIdentity.shelfTitle
+        let descriptor = FetchDescriptor<LibraryBook>(predicate: #Predicate {
+            $0.title == primeTitle
+        })
+        do {
+            return try context.fetch(descriptor).filter(isSchemaPrimeBook)
+        } catch {
+            logger.error("Failed to fetch books for schema-prime cleanup: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    private static func isSchemaPrimeBook(_ book: LibraryBook) -> Bool {
+        book.title.trimmed == SchemaPrimeIdentity.shelfTitle
+            && book.externalProvider.trimmed == SchemaPrimeIdentity.shelfExternalProvider
     }
 }

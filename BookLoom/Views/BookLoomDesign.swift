@@ -284,6 +284,16 @@ extension Collection {
     }
 }
 
+@MainActor
+extension Binding where Value == Bool {
+    static func presence<T>(of source: Binding<T?>) -> Binding<Bool> {
+        Binding(
+            get: { source.wrappedValue != nil },
+            set: { if !$0 { source.wrappedValue = nil } }
+        )
+    }
+}
+
 struct OnboardingHeroArtwork: View {
     @Environment(\.colorScheme) private var colorScheme
 

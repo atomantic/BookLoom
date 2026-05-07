@@ -75,6 +75,9 @@ final class LibraryBook {
     var giftOccasion: String = ""
     var giftByDate: Date? = nil
     var privateNotes: String = ""
+    /// True when this entry represents a copy the reader owns.
+    /// Read-tracking entries can be unowned and not on the wishlist.
+    var isOwned: Bool = true
     /// True for books the reader wants to acquire but does not yet own.
     /// Wishlist books surface in the Wishlist filter; ownership-style fields
     /// (purchase price, condition, signed) are still allowed but optional.
@@ -134,11 +137,20 @@ extension LibraryBook {
         !intendedRecipient.trimmed.isEmpty
     }
 
+    var countsAsOwned: Bool {
+        isOwned && !isWishlist
+    }
+
+    var isRead: Bool {
+        didRead || didListenToAudiobook
+    }
+
     var ownershipBadges: [String] {
         var badges: [String] = []
         if isWishlist { badges.append("Wishlist") }
-        if didRead { badges.append("Read") }
-        if didListenToAudiobook { badges.append("Listened") }
+        if !countsAsOwned && !isWishlist { badges.append("Not owned") }
+        if isRead { badges.append("Read") }
+        if didListenToAudiobook { badges.append("Audio") }
         if isSigned { badges.append("Signed") }
         if isOnLoan { badges.append("On loan") }
         if hasGiftPlan { badges.append("Gift planned") }
@@ -151,6 +163,39 @@ extension LibraryBook {
     func setPersonalRatingStars(_ stars: Int) {
         personalRatingStars = min(max(stars, 0), 5)
         if personalRatingStars > 0 {
+            didRead = true
+        }
+        updatedAt = .now
+    }
+
+    func setOwned(_ ownsCopy: Bool) {
+        isOwned = ownsCopy
+        if ownsCopy {
+            isWishlist = false
+        } else {
+            isOnLoan = false
+            loanedTo = ""
+            loanedAt = nil
+            loanDueDate = nil
+        }
+        updatedAt = .now
+    }
+
+    func setWishlist(_ wantsCopy: Bool) {
+        isWishlist = wantsCopy
+        if wantsCopy {
+            isOwned = false
+            isOnLoan = false
+            loanedTo = ""
+            loanedAt = nil
+            loanDueDate = nil
+        }
+        updatedAt = .now
+    }
+
+    func setAudiobookListened(_ listened: Bool) {
+        didListenToAudiobook = listened
+        if listened {
             didRead = true
         }
         updatedAt = .now

@@ -3,10 +3,10 @@
   BookLoom-macOS.entitlements — macOS signing entitlements (MANUALLY MAINTAINED)
 
   XcodeGen cannot generate per-SDK entitlements from project.yml, so this file
-  is maintained by hand. It mirrors the shared keys from BookLoom.entitlements
+  is maintained by hand. It mirrors the CloudKit keys from BookLoom.entitlements
   and adds macOS-only App Sandbox keys required for Mac App Store / TestFlight.
 
-  When shared capabilities change (CloudKit, network, etc.), update BOTH:
+  When shared CloudKit capabilities change, update BOTH:
     - BookLoom/App/BookLoom.entitlements         (iOS, written by XcodeGen)
     - BookLoom/App/BookLoom-macOS.entitlements   (this file, manual)
 
@@ -16,7 +16,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Shared with iOS — must mirror BookLoom.entitlements -->
+	<!-- Shared with iOS — must mirror BookLoom.entitlements for CloudKit -->
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
 		<string>iCloud.net.shadowpuppet.PlotLoom</string>
@@ -30,13 +30,5 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- App Group: shared with the iOS Share Extension via Group ID
-	     `group.net.shadowpuppet.PlotLoom`. The macOS app does not yet host a
-	     share extension but keeps the same App Group so future cross-platform
-	     code can read/write shared state without diverging entitlements. -->
-	<key>com.apple.security.application-groups</key>
-	<array>
-		<string>group.net.shadowpuppet.PlotLoom</string>
-	</array>
 </dict>
 </plist>

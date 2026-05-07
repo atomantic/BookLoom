@@ -8,247 +8,71 @@ import AppKit
 
 struct AddSubmissionView: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
     @Environment(MemberIdentity.self) private var memberIdentity
-    @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
 
     @Bindable var club: BookClub
     @Query(sort: \LibraryBook.updatedAt, order: .reverse) private var libraryBooks: [LibraryBook]
 
-    @State private var title: String = ""
-    @State private var author: String = ""
-    @State private var isbn: String = ""
-    @State private var selectedMetadata: BookMetadataCandidate?
-    @State private var saveError: String?
-    @State private var isSaving = false
-    @State private var saveCopyToLibrary = false
-    @State private var markLibraryCopyRead = false
-    @State private var markLibraryCopyListened = false
-
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                HStack(spacing: 14) {
-                    BookCoverTile(
-                        title: title,
-                        author: author,
-                        coverURL: selectedMetadata?.coverURL,
-                        width: 64,
-                        height: 88
-                    )
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Add a Book")
-                            .font(.title3.bold())
-                            .foregroundStyle(BookLoomStyle.ink)
-                        Text(club.name)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .bookLoomCard(padding: 12)
-                .frame(maxWidth: 500)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("Import from Goodreads", systemImage: "link")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(BookLoomStyle.ink)
-
-                    GoodreadsMetadataImportControls(
-                        title: $title,
-                        author: $author,
-                        isbn: $isbn,
-                        selectedMetadata: $selectedMetadata,
-                        importButtonTitle: "Paste URL",
-                        importButtonSystemImage: "doc.on.clipboard",
-                        buttonStyle: .secondaryIndigo
-                    )
-                }
-                .bookLoomCard(padding: 12)
-                .frame(maxWidth: 500)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    TextField("Title", text: $title)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.words)
-                        #endif
-
-                    TextField("Author", text: $author)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.words)
-                        #endif
-
-                    #if os(iOS)
-                    ISBNMetadataLookupControls(
-                        title: $title,
-                        author: $author,
-                        isbn: $isbn,
-                        selectedMetadata: $selectedMetadata,
-                        layout: .fieldWithScan(placeholder: "ISBN (optional)", scanTitle: "Scan")
-                    )
-                    #else
-                    TextField("ISBN (optional)", text: $isbn)
-                    #endif
-
-                    BookMetadataSearchControls(
-                        title: $title,
-                        author: $author,
-                        isbn: $isbn,
-                        selectedMetadata: $selectedMetadata,
-                        buttonStyle: .secondaryIndigo
-                    )
-
-                    Toggle(isOn: $saveCopyToLibrary) {
-                        Label("Keep on my Shelf", systemImage: "books.vertical.fill")
-                    }
-
-                    if saveCopyToLibrary {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Toggle("I read this", isOn: $markLibraryCopyRead)
-                            Toggle("I listened to the audiobook", isOn: $markLibraryCopyListened)
-                        }
-                        .font(.subheadline)
-                        .padding(10)
-                        .background(BookLoomStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-
-                    Button {
-                        Task { await addSubmission(asRead: false) }
-                    } label: {
-                        Label(isSaving ? "Adding..." : "Add to Proposals", systemImage: "plus.circle.fill")
-                    }
-                    .buttonStyle(BookLoomProminentButtonStyle())
-                    .controlSize(.large)
-                    .bookLoomActionWidth()
-                    .disabled(trimmedTitle.isEmpty || isSaving)
-
-                    Button {
-                        Task { await addSubmission(asRead: true) }
-                    } label: {
-                        Label(isSaving ? "Saving..." : "Save to Completed", systemImage: "checkmark.seal.fill")
-                    }
-                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.sage))
-                    .disabled(trimmedTitle.isEmpty || isSaving)
-
-                    Button {
-                        saveToShelf()
-                    } label: {
-                        Label(isSaving ? "Saving..." : "Save to Shelf", systemImage: "tray.and.arrow.down.fill")
-                    }
-                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.plum))
-                    .disabled(trimmedTitle.isEmpty || isSaving)
-                }
-                .textFieldStyle(.roundedBorder)
-                .bookLoomCard(padding: 12)
-                .frame(maxWidth: 500)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity)
-        }
-        .bookLoomScreenBackground()
-        .navigationTitle("Add Book")
-        .bookLoomNavigationBar()
-        .alert("Couldn't Add Book", isPresented: saveErrorBinding) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(saveError ?? "Please try again.")
+        AddBookComposerView(mode: .club(name: club.name)) { draft, action in
+            try save(draft, action: action)
         }
     }
 
-    private var trimmedTitle: String { title.trimmed }
+    private func save(_ draft: AddBookDraft, action: AddBookComposerAction) throws {
+        _ = upsertLibraryBook(from: draft)
 
-    private var saveErrorBinding: Binding<Bool> {
-        Binding(
-            get: { saveError != nil },
-            set: { isPresented in
-                if !isPresented {
-                    saveError = nil
-                }
-            }
-        )
-    }
-
-    private func addSubmission(asRead: Bool) async {
-        guard let title = title.trimmedOrNil else { return }
-        isSaving = true
-        defer { isSaving = false }
-
-        let now = Date.now
-        let submission = BookSubmission(
-            title: title,
-            author: author.trimmed,
-            isbn: isbn.trimmed,
-            bookDescription: selectedMetadata?.description ?? "",
-            publishedYear: selectedMetadata?.publishedYear,
-            coverURL: selectedMetadata?.coverURL?.absoluteString ?? "",
-            externalProvider: selectedMetadata?.provider.rawValue ?? "",
-            externalID: selectedMetadata?.externalID ?? "",
-            submittedBy: memberIdentity.name,
-            submittedByMemberID: memberIdentity.memberID,
-            submittedAt: now,
-            status: asRead ? .completed : .proposed
-        )
-        if asRead {
-            submission.completedAt = now
-        }
-        club.addSubmission(submission)
-        context.insert(submission)
-        if saveCopyToLibrary {
-            saveLibraryCopy(from: submission, asRead: asRead)
-        }
-        do {
+        switch action {
+        case .libraryOnly:
+            try context.save()
+        case .clubProposed, .clubCompleted:
+            let status: BookSubmissionStatus = action == .clubCompleted ? .completed : .proposed
+            let submission = draft.makeSubmission(
+                memberID: memberIdentity.memberID,
+                memberName: memberIdentity.name,
+                status: status
+            )
+            club.addSubmission(submission)
+            context.insert(submission)
             try SharedClubSync.saveAndPublish(
                 context: context,
                 club: club,
                 localMemberID: memberIdentity.memberID,
                 localMemberName: memberIdentity.name
             )
-            dismiss()
-        } catch {
-            saveError = error.localizedDescription
         }
     }
 
-    private func saveLibraryCopy(from submission: BookSubmission, asRead: Bool) {
-        if let existing = libraryBooks.first(where: { $0.matchesSubmission(submission) }) {
-            existing.didRead = existing.didRead || asRead || markLibraryCopyRead
-            existing.didListenToAudiobook = existing.didListenToAudiobook || markLibraryCopyListened
-            existing.updatedAt = .now
-            return
+    private func upsertLibraryBook(from draft: AddBookDraft) -> LibraryBook {
+        if let existing = existingLibraryBook(for: draft) {
+            draft.applyLibraryFields(to: existing, preservingExistingTracking: true)
+            return existing
         }
 
-        let book = LibraryBook.fromSubmission(submission)
-        book.didRead = asRead || markLibraryCopyRead
-        book.didListenToAudiobook = markLibraryCopyListened
+        let book = draft.makeLibraryBook()
         context.insert(book)
+        return book
     }
 
-    private func saveToShelf() {
-        guard let title = title.trimmedOrNil else { return }
-        isSaving = true
-        saveError = nil
-        defer { isSaving = false }
-
-        let now = Date.now
-        let url = selectedMetadata?.sourceURL ?? URL(string: "bookloom://shelf/\(UUID().uuidString)")!
-        let enqueueDate = now.addingTimeInterval(-GoodreadsImportInbox.autoPresentMaxAge - 1)
-        SharedImportInbox.enqueue(url, now: enqueueDate)
-        SharedImportInbox.update(url, now: now) { entry in
-            entry.title = title
-            entry.author = author.trimmedOrNil
-            entry.coverURLString = selectedMetadata?.coverURL?.absoluteString
-            entry.bookDescription = selectedMetadata?.description
-            entry.publishedYear = selectedMetadata?.publishedYear
-            entry.isbn = selectedMetadata?.primaryISBN.trimmedOrNil ?? isbn.trimmedOrNil
-            entry.externalProvider = selectedMetadata?.provider.rawValue
-            entry.externalID = selectedMetadata?.externalID ?? url.lastPathComponent
-            entry.metadataFetchedAt = now
+    private func existingLibraryBook(for draft: AddBookDraft) -> LibraryBook? {
+        if let provider = draft.selectedMetadata?.provider.rawValue.trimmedOrNil,
+           let externalID = draft.selectedMetadata?.externalID.trimmedOrNil,
+           let match = libraryBooks.first(where: { $0.externalProvider == provider && $0.externalID == externalID }) {
+            return match
         }
-        goodreadsInbox.refresh()
-        dismiss()
-    }
 
+        let isbn = draft.selectedMetadata?.primaryISBN.trimmedOrNil ?? draft.isbn.trimmedOrNil
+        if let isbn, let match = libraryBooks.first(where: { $0.isbn == isbn }) {
+            return match
+        }
+
+        let title = draft.title.trimmed.lowercased()
+        let author = draft.author.trimmed.lowercased()
+        guard !title.isEmpty else { return nil }
+        return libraryBooks.first {
+            $0.displayTitle.lowercased() == title && $0.displayAuthor.lowercased() == author
+        }
+    }
 }
 
 enum MetadataLookupButtonStyle {
@@ -265,6 +89,7 @@ struct GoodreadsMetadataImportControls: View {
     let importButtonTitle: String
     let importButtonSystemImage: String
     let buttonStyle: MetadataLookupButtonStyle
+    var fillsAvailableWidth = false
 
     @State private var isImporting = false
     @State private var importError: String?
@@ -289,6 +114,9 @@ struct GoodreadsMetadataImportControls: View {
             pasteAndImport()
         } label: {
             Label(isImporting ? "Importing..." : importButtonTitle, systemImage: importButtonSystemImage)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: fillsAvailableWidth ? .infinity : nil)
         }
         .disabled(isImporting)
         .accessibilityLabel("Paste Goodreads link from clipboard and import")
@@ -359,6 +187,7 @@ struct ISBNMetadataLookupControls: View {
     @Binding var selectedMetadata: BookMetadataCandidate?
 
     let layout: ISBNMetadataLookupLayout
+    var fillsAvailableWidth = false
 
     @State private var showingScanner = false
     @State private var isLookingUp = false
@@ -413,6 +242,9 @@ struct ISBNMetadataLookupControls: View {
             showingScanner = true
         } label: {
             Label(title, systemImage: "barcode.viewfinder")
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: fillsAvailableWidth ? .infinity : nil)
         }
         .buttonStyle(.bordered)
         .disabled(isLookingUp)
@@ -452,6 +284,9 @@ struct BookMetadataSearchControls: View {
 
     let buttonStyle: MetadataLookupButtonStyle
     var showsSummary = true
+    var findButtonTitle = "Find Cover & Details"
+    var changeButtonTitle = "Change Cover & Details"
+    var fillsAvailableWidth = false
 
     @State private var showingMetadataSearch = false
 
@@ -475,7 +310,10 @@ struct BookMetadataSearchControls: View {
         let button = Button {
             showingMetadataSearch = true
         } label: {
-            Label(selectedMetadata == nil ? "Find Cover & Details" : "Change Cover & Details", systemImage: "magnifyingglass")
+            Label(selectedMetadata == nil ? findButtonTitle : changeButtonTitle, systemImage: "magnifyingglass")
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(maxWidth: fillsAvailableWidth ? .infinity : nil)
         }
         .disabled(title.trimmed.isEmpty)
 

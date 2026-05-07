@@ -11,83 +11,104 @@ struct ClubSwitcherView: View {
     @Environment(MemberIdentity.self) private var memberIdentity
     @Environment(ActiveClubStore.self) private var activeClubStore
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
+
+    let onDismiss: (() -> Void)?
+
     @State private var showingNewClubForm = false
     @State private var pendingDeleteClub: BookClub?
     @State private var clubCountBeforeCreate: Int?
 
+    init(onDismiss: (() -> Void)? = nil) {
+        self.onDismiss = onDismiss
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    if visibleClubs.isEmpty {
-                        InlineEmptyState(
-                            systemImage: "books.vertical",
-                            title: "No Clubs Yet",
-                            message: "Create a club to get started, or wait for an invite to arrive."
-                        )
-                        .bookLoomListRow()
-                    } else {
-                        ForEach(visibleClubs) { club in
-                            ClubSwitcherRow(
-                                club: club,
-                                isActive: club.cloudZoneName == activeClubStore.activeClubZoneName,
-                                onSelect: { select(club) }
-                            )
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    pendingDeleteClub = club
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            .bookLoomListRow()
-                        }
-                    }
-                } header: {
-                    SectionTitle(title: "Your Clubs", detail: "\(visibleClubs.count)")
-                }
-
-                Section {
-                    Button {
-                        clubCountBeforeCreate = visibleClubs.count
-                        showingNewClubForm = true
-                    } label: {
-                        Label("Create New Club", systemImage: "plus.circle.fill")
-                    }
-                    .buttonStyle(BookLoomProminentButtonStyle())
-                    .controlSize(.large)
-                    .bookLoomActionWidth(minWidth: 190)
-                    .bookLoomListRow()
-                }
+            #if os(macOS)
+            if showingNewClubForm {
+                NewClubFormView(
+                    onCancel: { showingNewClubForm = false },
+                    onCreated: handleCreatedClub
+                )
+            } else {
+                switcherList
             }
-            .bookLoomListStyle()
-            .scrollContentBackground(.hidden)
-            .bookLoomScreenBackground()
-            .navigationTitle("Switch Club")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
+            #else
+            switcherList
             #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
+        }
+        #if os(iOS)
+        .sheet(isPresented: $showingNewClubForm, onDismiss: handleNewClubFormDismiss) {
+            NavigationStack {
+                NewClubFormView()
             }
-            .sheet(isPresented: $showingNewClubForm, onDismiss: handleNewClubFormDismiss) {
-                NavigationStack {
-                    NewClubFormView()
-                }
+        }
+        #endif
+        .confirmationDialog(
+            pendingDeleteClub.map { "Delete \($0.name)?" } ?? "Delete club?",
+            isPresented: .presence(of: $pendingDeleteClub),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Club", role: .destructive) {
+                confirmDelete()
             }
-            .confirmationDialog(
-                pendingDeleteClub.map { "Delete \($0.name)?" } ?? "Delete club?",
-                isPresented: deleteConfirmationBinding,
-                titleVisibility: .visible
-            ) {
-                Button("Delete Club", role: .destructive) {
-                    confirmDelete()
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the club and its proposals, meetings, votes, ratings, and notes from this device.")
+        }
+    }
+
+    private var switcherList: some View {
+        List {
+            Section {
+                if visibleClubs.isEmpty {
+                    InlineEmptyState(
+                        systemImage: "books.vertical",
+                        title: "No Clubs Yet",
+                        message: "Create a club to get started, or wait for an invite to arrive."
+                    )
+                    .bookLoomListRow()
+                } else {
+                    ForEach(visibleClubs) { club in
+                        ClubSwitcherRow(
+                            club: club,
+                            isActive: club.cloudZoneName == activeClubStore.activeClubZoneName,
+                            onSelect: { select(club) }
+                        )
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                pendingDeleteClub = club
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .bookLoomListRow()
+                    }
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This removes the club and its proposals, meetings, votes, ratings, and notes from this device.")
+            } header: {
+                SectionTitle(title: "Your Clubs", detail: "\(visibleClubs.count)")
+            }
+
+            Section {
+                Button(action: presentNewClubForm) {
+                    Label("Create New Club", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(BookLoomProminentButtonStyle())
+                .controlSize(.large)
+                .bookLoomActionWidth(minWidth: 190)
+                .bookLoomListRow()
+            }
+        }
+        .bookLoomListStyle()
+        .scrollContentBackground(.hidden)
+        .bookLoomScreenBackground()
+        .navigationTitle("Switch Club")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done", action: close)
             }
         }
     }
@@ -96,16 +117,28 @@ struct ClubSwitcherView: View {
         clubs.filter { !SchemaPrimeDataCleanup.isSchemaPrime($0) }
     }
 
-    private var deleteConfirmationBinding: Binding<Bool> {
-        Binding(
-            get: { pendingDeleteClub != nil },
-            set: { if !$0 { pendingDeleteClub = nil } }
-        )
-    }
-
     private func select(_ club: BookClub) {
         activeClubStore.setActiveClub(club)
-        dismiss()
+        close()
+    }
+
+    private func presentNewClubForm() {
+        clubCountBeforeCreate = visibleClubs.count
+        showingNewClubForm = true
+    }
+
+    private func handleCreatedClub(_ club: BookClub) {
+        clubCountBeforeCreate = nil
+        activeClubStore.setActiveClub(club)
+        close()
+    }
+
+    private func close() {
+        if let onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
     }
 
     private func handleNewClubFormDismiss() {

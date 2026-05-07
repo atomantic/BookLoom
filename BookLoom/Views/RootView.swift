@@ -112,21 +112,19 @@ private struct MainTabs: View {
         .onOpenURL { url in
             handleIncomingURL(url)
         }
-        .sheet(item: $goodreadsInbox.presentedItem) { item in
-            GoodreadsImportSheet(
-                pendingItem: item,
-                clubs: visibleClubs,
-                initiallyActiveClub: activeClubStore.resolveActiveClub(from: visibleClubs)
-            ) { completion in
-                goodreadsInbox.dismiss(saved: completion.didSave)
-                if let primaryClub = completion.primaryClub {
-                    activeClubStore.setActiveClub(primaryClub)
-                    selectedTab = .books
-                } else if completion.didSave {
-                    selectedTab = .library
-                }
-            }
+        #if os(macOS)
+        .bookLoomTrailingSidebar(
+            item: $goodreadsInbox.presentedItem,
+            width: 520,
+            onDismiss: { goodreadsInbox.dismiss(saved: false) }
+        ) { item in
+            goodreadsImportView(for: item)
         }
+        #else
+        .sheet(item: $goodreadsInbox.presentedItem) { item in
+            goodreadsImportView(for: item)
+        }
+        #endif
     }
 
     private func handleIncomingURL(_ url: URL) {
@@ -175,6 +173,25 @@ private struct MainTabs: View {
             localMemberID: memberIdentity.memberID,
             localMemberName: memberIdentity.name
         )
+    }
+
+    private func goodreadsImportView(for item: SharedImportInbox.PendingImport) -> some View {
+        GoodreadsImportSheet(
+            pendingItem: item,
+            clubs: visibleClubs,
+            initiallyActiveClub: activeClubStore.resolveActiveClub(from: visibleClubs),
+            onDismiss: handleGoodreadsImportCompletion
+        )
+    }
+
+    private func handleGoodreadsImportCompletion(_ completion: GoodreadsImportCompletion) {
+        goodreadsInbox.dismiss(saved: completion.didSave)
+        if let primaryClub = completion.primaryClub {
+            activeClubStore.setActiveClub(primaryClub)
+            selectedTab = .books
+        } else if completion.didSave {
+            selectedTab = .library
+        }
     }
 
     private func navigateToScreenshotRoute(_ route: String) {

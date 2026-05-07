@@ -10,10 +10,10 @@ extension String {
     }
 }
 
-/// App Group-backed queue for handing book imports from the Share Extension to
-/// the main app. The extension enqueues a Goodreads URL here; the main app
-/// reflects those items on the Books screen Shelf and presents the import sheet
-/// when a row is opened.
+/// Queue for handing book imports to the main app. On iOS this is App
+/// Group-backed because the Share Extension enqueues Goodreads URLs from a
+/// separate process. On macOS there is no share extension, so the queue stays
+/// in the app's own defaults to avoid cross-app container prompts.
 ///
 /// Stored as a JSON array under a single key so multiple shares stack instead
 /// of overwriting each other when the user shares several books before
@@ -28,7 +28,11 @@ enum SharedImportInbox {
     /// Hard cap so a misbehaving share loop can't balloon the App Group blob.
     static let maxQueueLength = 50
 
+    #if os(macOS)
+    nonisolated(unsafe) static let defaults: UserDefaults? = .standard
+    #else
     nonisolated(unsafe) static let defaults: UserDefaults? = UserDefaults(suiteName: appGroupID)
+    #endif
 
     /// All metadata fields are `Optional` so App-Group blobs encoded before
     /// they were added still decode cleanly — users with pending pre-update
@@ -231,10 +235,14 @@ enum SharedImportInbox {
     private static func resolvedQueueFileURL(defaults: UserDefaults?, explicitFileURL: URL?) -> URL? {
         if let explicitFileURL { return explicitFileURL }
         if ProcessInfo.processInfo.arguments.contains("-SeedSampleData") { return nil }
+        #if os(macOS)
+        return nil
+        #else
         guard defaults === SharedImportInbox.defaults else { return nil }
         return FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
             .appendingPathComponent(queueFileName, isDirectory: false)
+        #endif
     }
 
     private static func readQueueFile(fileURL: URL?) -> [PendingImport] {
