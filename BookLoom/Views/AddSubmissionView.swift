@@ -60,11 +60,10 @@ struct AddSubmissionView: View {
                         author: $author,
                         isbn: $isbn,
                         selectedMetadata: $selectedMetadata,
-                        importButtonTitle: "Import",
-                        importButtonSystemImage: "square.and.arrow.down",
+                        importButtonTitle: "Paste URL",
+                        importButtonSystemImage: "doc.on.clipboard",
                         buttonStyle: .secondaryIndigo
                     )
-                    .textFieldStyle(.roundedBorder)
                 }
                 .bookLoomCard(padding: 12)
                 .frame(maxWidth: 500)
@@ -267,7 +266,6 @@ struct GoodreadsMetadataImportControls: View {
     let importButtonSystemImage: String
     let buttonStyle: MetadataLookupButtonStyle
 
-    @State private var goodreadsURL = ""
     @State private var isImporting = false
     @State private var importError: String?
 
@@ -275,27 +273,7 @@ struct GoodreadsMetadataImportControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                TextField("Paste Goodreads share link", text: $goodreadsURL)
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.URL)
-                    .autocorrectionDisabled()
-                    #endif
-
-                Button {
-                    pasteGoodreadsURL()
-                } label: {
-                    Label("Paste", systemImage: "doc.on.clipboard")
-                        .labelStyle(.iconOnly)
-                        .frame(width: 28, height: 22)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .accessibilityLabel("Paste Goodreads link from clipboard")
-            }
-
-            importButton
+            pasteButton
 
             if let importError {
                 Text(importError)
@@ -306,13 +284,14 @@ struct GoodreadsMetadataImportControls: View {
     }
 
     @ViewBuilder
-    private var importButton: some View {
+    private var pasteButton: some View {
         let button = Button {
-            Task { await importFromGoodreads() }
+            pasteAndImport()
         } label: {
             Label(isImporting ? "Importing..." : importButtonTitle, systemImage: importButtonSystemImage)
         }
-        .disabled(goodreadsURL.trimmed.isEmpty || isImporting)
+        .disabled(isImporting)
+        .accessibilityLabel("Paste Goodreads link from clipboard and import")
 
         switch buttonStyle {
         case .bordered:
@@ -322,13 +301,20 @@ struct GoodreadsMetadataImportControls: View {
         }
     }
 
-    private func importFromGoodreads() async {
-        let trimmed = goodreadsURL.trimmed
-        guard let url = URL(string: trimmed) else {
+    private func pasteAndImport() {
+        guard let pasted = Self.clipboardString()?.trimmed, !pasted.isEmpty else {
+            importError = "No link on the clipboard. Copy a Goodreads share link first."
+            return
+        }
+        guard let url = URL(string: pasted) else {
             importError = BookMetadataError.invalidGoodreadsURL.localizedDescription
             return
         }
         importError = nil
+        Task { await importFromGoodreads(url: url) }
+    }
+
+    private func importFromGoodreads(url: URL) async {
         isImporting = true
         defer { isImporting = false }
 
@@ -337,15 +323,6 @@ struct GoodreadsMetadataImportControls: View {
             apply(candidate)
         } catch {
             importError = error.localizedDescription
-        }
-    }
-
-    private func pasteGoodreadsURL() {
-        guard let pasted = Self.clipboardString()?.trimmed, !pasted.isEmpty else { return }
-        goodreadsURL = pasted
-        importError = nil
-        if URL(string: pasted) != nil {
-            Task { await importFromGoodreads() }
         }
     }
 

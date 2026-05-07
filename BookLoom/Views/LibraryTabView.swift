@@ -931,8 +931,8 @@ private struct MobileNewShelfBookView: View {
                             author: $author,
                             isbn: $isbn,
                             selectedMetadata: $selectedMetadata,
-                            importButtonTitle: "Import from Goodreads",
-                            importButtonSystemImage: "link",
+                            importButtonTitle: "Paste Goodreads URL",
+                            importButtonSystemImage: "doc.on.clipboard",
                             buttonStyle: .bordered
                         )
                     }
