@@ -73,6 +73,17 @@ final class LibraryBookTests: XCTestCase {
         XCTAssertTrue(book.didRead)
     }
 
+    func test_wishlistBookSurfacesWishlistBadge() {
+        let book = LibraryBook(title: "The Bee Sting", author: "Paul Murray")
+        XCTAssertFalse(book.isWishlist)
+        XCTAssertFalse(book.ownershipBadges.contains("Wishlist"))
+
+        book.isWishlist = true
+
+        XCTAssertTrue(book.isWishlist)
+        XCTAssertTrue(book.ownershipBadges.contains("Wishlist"))
+    }
+
     func test_applyingMetadataRefreshesBookDetails() {
         let sourceURL = URL(string: "https://openlibrary.org/works/OL20893680W")!
         let coverURL = URL(string: "https://covers.openlibrary.org/b/id/10226290-L.jpg")!

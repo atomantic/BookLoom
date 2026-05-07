@@ -23,9 +23,8 @@ struct LibraryTabView: View {
         List {
             Section {
                 MobileLibrarySummary(
-                    totalCount: books.count,
-                    readCount: books.filter(\.didRead).count,
-                    listenedCount: books.filter(\.didListenToAudiobook).count,
+                    ownedCount: books.filter { !$0.isWishlist }.count,
+                    wishlistCount: books.filter(\.isWishlist).count,
                     importCount: goodreadsInbox.pending.count
                 )
                 .bookLoomListRow(top: 6, bottom: 8)
@@ -65,8 +64,8 @@ struct LibraryTabView: View {
             Section {
                 if visibleBooks.isEmpty {
                     InlineEmptyState(
-                        systemImage: "books.vertical",
-                        title: "No Books on Your Shelf",
+                        systemImage: emptyStateSystemImage,
+                        title: emptyStateTitle,
                         message: emptyMessage
                     )
                     .bookLoomListRow()
@@ -93,7 +92,7 @@ struct LibraryTabView: View {
                     }
                 }
             } header: {
-                SectionTitle(title: "Shelf", detail: "\(visibleBooks.count)")
+                SectionTitle(title: shelfSectionTitle, detail: "\(visibleBooks.count)")
             }
         }
         .bookLoomListStyle()
@@ -154,9 +153,8 @@ struct LibraryTabView: View {
         let query = searchText.trimmed
         return books.filter { book in
             switch filter {
-            case .all: break
-            case .read: guard book.didRead else { return false }
-            case .listened: guard book.didListenToAudiobook else { return false }
+            case .all: guard !book.isWishlist else { return false }
+            case .wishlist: guard book.isWishlist else { return false }
             case .loaned: guard book.isOnLoan else { return false }
             }
 
@@ -173,7 +171,38 @@ struct LibraryTabView: View {
     }
 
     private var emptyMessage: String {
-        searchText.trimmed.isEmpty ? "Scan or add books to build your personal shelf." : "Try another title, author, ISBN, or shelf."
+        if !searchText.trimmed.isEmpty {
+            return "Try another title, author, ISBN, or shelf."
+        }
+        switch filter {
+        case .all: return "Scan or add books to build your personal shelf."
+        case .wishlist: return "Add a book and toggle Wishlist to track titles you want to acquire."
+        case .loaned: return "Books you mark as loaned will show up here."
+        }
+    }
+
+    private var shelfSectionTitle: String {
+        switch filter {
+        case .all: return "Owned"
+        case .wishlist: return "Wishlist"
+        case .loaned: return "Loaned"
+        }
+    }
+
+    private var emptyStateTitle: String {
+        switch filter {
+        case .all: return "No Books on Your Shelf"
+        case .wishlist: return "No Books on Your Wishlist"
+        case .loaned: return "No Books on Loan"
+        }
+    }
+
+    private var emptyStateSystemImage: String {
+        switch filter {
+        case .all: return "books.vertical"
+        case .wishlist: return "star"
+        case .loaned: return "person.crop.circle.badge.clock"
+        }
     }
 
     private func resetAndLoad() {
@@ -263,26 +292,23 @@ struct LibraryTabView: View {
 
 private enum MobileLibraryFilter: String, CaseIterable, Identifiable {
     case all
-    case read
-    case listened
+    case wishlist
     case loaned
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .all: "All"
-        case .read: "Read"
-        case .listened: "Listened"
+        case .all: "Owned"
+        case .wishlist: "Wishlist"
         case .loaned: "Loaned"
         }
     }
 }
 
 private struct MobileLibrarySummary: View {
-    let totalCount: Int
-    let readCount: Int
-    let listenedCount: Int
+    let ownedCount: Int
+    let wishlistCount: Int
     let importCount: Int
 
     var body: some View {
@@ -292,11 +318,10 @@ private struct MobileLibrarySummary: View {
                 .foregroundStyle(BookLoomStyle.ink)
 
             HStack(spacing: 10) {
-                MetricTile(value: "\(totalCount)", label: "books", systemImage: "books.vertical.fill", tint: BookLoomStyle.indigo)
-                MetricTile(value: "\(readCount)", label: "read", systemImage: "checkmark.seal.fill", tint: BookLoomStyle.sage)
-                MetricTile(value: "\(listenedCount)", label: "listened", systemImage: "headphones", tint: BookLoomStyle.plum)
+                MetricTile(value: "\(ownedCount)", label: "owned", systemImage: "books.vertical.fill", tint: BookLoomStyle.indigo)
+                MetricTile(value: "\(wishlistCount)", label: "wishlist", systemImage: "star.fill", tint: BookLoomStyle.gold)
                 if importCount > 0 {
-                    MetricTile(value: "\(importCount)", label: "imports", systemImage: "tray.fill", tint: BookLoomStyle.gold)
+                    MetricTile(value: "\(importCount)", label: "imports", systemImage: "tray.fill", tint: BookLoomStyle.plum)
                 }
             }
         }
@@ -330,6 +355,9 @@ private struct MobileLibraryBookRow: View {
                 BookCardIndicator("\(stars) out of 5 stars", systemImage: "star.fill", visibleText: "\(stars)", tint: BookLoomStyle.gold),
                 at: 0
             )
+        }
+        if book.isWishlist {
+            items.append(BookCardIndicator("Wishlist", systemImage: "star.fill", tint: BookLoomStyle.gold))
         }
         if book.didRead {
             items.append(BookCardIndicator("Read", systemImage: "checkmark.seal.fill", tint: BookLoomStyle.sage))
@@ -556,6 +584,7 @@ private struct MobileLibraryBookDetailView: View {
             }
             .padding(.vertical, 3)
 
+            MobileBookToggleRow(title: "Want this (don't own yet)", systemImage: "star.fill", isOn: $book.isWishlist)
             MobileBookToggleRow(title: "I read this", systemImage: "checkmark.seal.fill", isOn: $book.didRead)
             MobileBookToggleRow(title: "I listened to the audiobook", systemImage: "headphones", isOn: $book.didListenToAudiobook)
             MobileBookToggleRow(title: "Signed copy", systemImage: "signature", isOn: $book.isSigned)
@@ -884,6 +913,7 @@ private struct MobileNewShelfBookView: View {
     @State private var selectedMetadata: BookMetadataCandidate?
     @State private var didRead = false
     @State private var didListen = false
+    @State private var isWishlist = false
     @State private var format: LibraryBookFormat = .hardcover
     @State private var condition: LibraryBookCondition = .good
     @State private var shelfLocation = ""
@@ -954,6 +984,11 @@ private struct MobileNewShelfBookView: View {
                         showsSummary: false
                     )
                 }
+                Section {
+                    Toggle("Want this (don't own yet)", isOn: $isWishlist)
+                } footer: {
+                    Text("Wishlist books appear in the Wishlist filter and don't count toward your owned shelf.")
+                }
                 Section("Personal Tracking") {
                     HStack {
                         Text("Rating")
@@ -1004,6 +1039,7 @@ private struct MobileNewShelfBookView: View {
                         book.didListenToAudiobook = didListen
                         book.setPersonalRatingStars(personalRatingStars)
                         book.didRead = book.didRead || didRead
+                        book.isWishlist = isWishlist
                         book.format = format
                         book.condition = condition
                         book.shelfLocation = shelfLocation.trimmed

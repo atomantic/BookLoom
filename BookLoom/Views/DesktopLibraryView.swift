@@ -66,7 +66,8 @@ struct DesktopLibraryView: View {
     private var librarySidebar: some View {
         VStack(alignment: .leading, spacing: 14) {
             LibrarySummaryHeader(
-                totalCount: libraryBooks.count,
+                ownedCount: libraryBooks.filter { !$0.isWishlist }.count,
+                wishlistCount: libraryBooks.filter(\.isWishlist).count,
                 signedCount: libraryBooks.filter(\.isSigned).count,
                 loanedCount: libraryBooks.filter(\.isOnLoan).count,
                 giftCount: libraryBooks.filter(\.hasGiftPlan).count,
@@ -119,7 +120,8 @@ struct DesktopLibraryView: View {
     private var filteredBooks: [LibraryBook] {
         let filtered = libraryBooks.filter { book in
             switch filter {
-            case .all: return true
+            case .all: return !book.isWishlist
+            case .wishlist: return book.isWishlist
             case .signed: return book.isSigned
             case .loaned: return book.isOnLoan
             case .gift: return book.hasGiftPlan
@@ -175,6 +177,7 @@ struct DesktopLibraryView: View {
 
 private enum LibraryFilter: String, CaseIterable, Identifiable {
     case all
+    case wishlist
     case signed
     case loaned
     case gift
@@ -183,7 +186,8 @@ private enum LibraryFilter: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: return "All"
+        case .all: return "Owned"
+        case .wishlist: return "Wishlist"
         case .signed: return "Signed"
         case .loaned: return "Loaned"
         case .gift: return "Gifts"
@@ -219,7 +223,8 @@ private struct DesktopLibrarySearchField: View {
 }
 
 private struct LibrarySummaryHeader: View {
-    let totalCount: Int
+    let ownedCount: Int
+    let wishlistCount: Int
     let signedCount: Int
     let loanedCount: Int
     let giftCount: Int
@@ -233,7 +238,7 @@ private struct LibrarySummaryHeader: View {
                     Text("Personal Shelf")
                         .font(.headline.bold())
                         .foregroundStyle(BookLoomStyle.ink)
-                    Text("\(totalCount) books managed")
+                    Text("\(ownedCount) owned · \(wishlistCount) wishlist")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
@@ -241,6 +246,7 @@ private struct LibrarySummaryHeader: View {
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
+                LibraryStatTile(value: "\(wishlistCount)", label: "wishlist", systemImage: "star.fill")
                 LibraryStatTile(value: "\(signedCount)", label: "signed", systemImage: "signature")
                 LibraryStatTile(value: "\(loanedCount)", label: "loaned", systemImage: "arrowshape.turn.up.right.fill")
                 LibraryStatTile(value: "\(giftCount)", label: "gifts", systemImage: "gift.fill")
@@ -455,6 +461,8 @@ private struct LibraryBookDetailView: View {
                 Spacer(minLength: 12)
                 StarRatingPicker(stars: ratingBinding)
             }
+            Toggle("Want this (don't own yet)", isOn: $book.isWishlist)
+                .toggleStyle(.switch)
             Toggle("I read this", isOn: $book.didRead)
                 .toggleStyle(.switch)
             Toggle("I listened to the audiobook", isOn: $book.didListenToAudiobook)
@@ -728,6 +736,7 @@ private struct NewLibraryBookView: View {
     @State private var shelfLocation = ""
     @State private var priceText = ""
     @State private var isSigned = false
+    @State private var isWishlist = false
     @State private var format: LibraryBookFormat = .hardcover
     @State private var selectedMetadata: BookMetadataCandidate?
     @State private var showingMetadataSearch = false
@@ -763,6 +772,9 @@ private struct NewLibraryBookView: View {
                         Toggle("Signed", isOn: $isSigned)
                             .toggleStyle(.switch)
                     }
+
+                    Toggle("Want this (don't own yet)", isOn: $isWishlist)
+                        .toggleStyle(.switch)
 
                     TextField("Shelf or room", text: $shelfLocation)
                     TextField("Paid", text: $priceText, prompt: Text("$0.00"))
@@ -829,6 +841,7 @@ private struct NewLibraryBookView: View {
         )
         book.format = format
         book.isSigned = isSigned
+        book.isWishlist = isWishlist
         book.shelfLocation = shelfLocation.trimmed
         if let cents = parsedPriceCents {
             book.purchasePriceCents = cents

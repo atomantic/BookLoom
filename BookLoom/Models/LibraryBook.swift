@@ -75,6 +75,10 @@ final class LibraryBook {
     var giftOccasion: String = ""
     var giftByDate: Date? = nil
     var privateNotes: String = ""
+    /// True for books the reader wants to acquire but does not yet own.
+    /// Wishlist books surface in the Wishlist filter; ownership-style fields
+    /// (purchase price, condition, signed) are still allowed but optional.
+    var isWishlist: Bool = false
 
     var format: LibraryBookFormat {
         get { LibraryBookFormat(rawValue: formatRaw) ?? .other }
@@ -132,6 +136,7 @@ extension LibraryBook {
 
     var ownershipBadges: [String] {
         var badges: [String] = []
+        if isWishlist { badges.append("Wishlist") }
         if didRead { badges.append("Read") }
         if didListenToAudiobook { badges.append("Listened") }
         if isSigned { badges.append("Signed") }

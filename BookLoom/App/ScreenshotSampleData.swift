@@ -303,12 +303,42 @@ enum ScreenshotSampleData {
                 priceCents: 1599,
                 ratingStars: 4,
                 didRead: true
+            ),
+            makeLibraryBook(
+                title: "The Bee Sting",
+                author: "Paul Murray",
+                isbn: "9780374600303",
+                description: "Hoping to grab a hardcover at the next indie sale.",
+                year: 2023,
+                coverID: 14342175,
+                addedDaysAgo: 6,
+                shelfLocation: "",
+                format: .hardcover,
+                isSigned: false,
+                priceCents: 0,
+                isWishlist: true
+            ),
+            makeLibraryBook(
+                title: "Tomorrow, and Tomorrow, and Tomorrow",
+                author: "Gabrielle Zevin",
+                isbn: "9780593321201",
+                description: "Want a signed copy if it ever shows up at a launch event.",
+                year: 2022,
+                coverID: 12808495,
+                addedDaysAgo: 3,
+                shelfLocation: "",
+                format: .hardcover,
+                isSigned: false,
+                priceCents: 0,
+                isWishlist: true
             )
         ]
 
         for book in books {
-            book.purchaseSource = "Local bookshop"
-            book.purchaseDate = book.addedAt
+            if !book.isWishlist {
+                book.purchaseSource = "Local bookshop"
+                book.purchaseDate = book.addedAt
+            }
             context.insert(book)
         }
     }
@@ -330,7 +360,8 @@ enum ScreenshotSampleData {
         giftOccasion: String = "",
         ratingStars: Int = 0,
         didRead: Bool = false,
-        didListen: Bool = false
+        didListen: Bool = false,
+        isWishlist: Bool = false
     ) -> LibraryBook {
         let addedAt = Calendar.current.date(byAdding: .day, value: -addedDaysAgo, to: .now) ?? .now
         let book = LibraryBook(
@@ -347,10 +378,11 @@ enum ScreenshotSampleData {
         book.format = format
         book.shelfLocation = shelfLocation
         book.isSigned = isSigned
-        book.purchasePriceCents = priceCents
+        book.purchasePriceCents = priceCents > 0 ? priceCents : nil
         book.personalRatingStars = min(max(ratingStars, 0), 5)
         book.didRead = didRead
         book.didListenToAudiobook = didListen
+        book.isWishlist = isWishlist
         if !loanedTo.isEmpty {
             book.isOnLoan = true
             book.loanedTo = loanedTo
