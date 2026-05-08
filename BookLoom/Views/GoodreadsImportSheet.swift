@@ -172,11 +172,12 @@ struct GoodreadsImportSheet: View {
             Button {
                 Task { await save(asRead: false) }
             } label: {
-                Label(isSaving ? "Saving…" : primaryActionTitle, systemImage: "square.and.arrow.down.fill")
+                Label(isSaving ? "Saving…" : primaryActionTitle, systemImage: primaryActionSystemImage)
+                    .symbolRenderingMode(.monochrome)
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(BookLoomProminentButtonStyle())
             .controlSize(.large)
-            .bookLoomActionWidth()
             .disabled(saveDisabled)
 
             if !selectedClubs.isEmpty {
@@ -184,10 +185,11 @@ struct GoodreadsImportSheet: View {
                     Task { await save(asRead: true) }
                 } label: {
                     Label(isSaving ? "Saving…" : "Add as Completed", systemImage: "checkmark.seal.fill")
+                        .symbolRenderingMode(.monochrome)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(BookLoomSecondaryButtonStyle())
                 .controlSize(.large)
-                .bookLoomActionWidth()
                 .disabled(saveDisabled)
             }
         }
@@ -201,6 +203,16 @@ struct GoodreadsImportSheet: View {
             return selectedClubs.count == 1 ? "Save to Shelf + Club" : "Save to Shelf + Clubs"
         }
         return selectedClubs.count == 1 ? "Add to Club" : "Add to Clubs"
+    }
+
+    private var primaryActionSystemImage: String {
+        if saveToShelf, selectedClubs.isEmpty {
+            return "books.vertical.fill"
+        }
+        if saveToShelf {
+            return "plus.circle.fill"
+        }
+        return "person.2.fill"
     }
 
     private var saveDisabled: Bool {

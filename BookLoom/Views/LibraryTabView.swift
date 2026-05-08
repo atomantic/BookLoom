@@ -586,27 +586,29 @@ private struct MobileShelfImportRow: View {
             actionLayout {
                 Button(action: onSaveToShelf) {
                     Label("Save to Shelf", systemImage: "books.vertical.fill")
+                        .symbolRenderingMode(.monochrome)
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(BookLoomStyle.plum)
+                .buttonStyle(BookLoomProminentButtonStyle())
+                .controlSize(.regular)
 
                 Button(action: onAddToClub) {
                     Label("Add to Club", systemImage: "person.2.fill")
+                        .symbolRenderingMode(.monochrome)
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .tint(BookLoomStyle.plum)
+                .buttonStyle(BookLoomSecondaryButtonStyle())
+                .controlSize(.regular)
 
                 Button(role: .destructive, action: onRemove) {
                     Image(systemName: "trash")
+                        .symbolRenderingMode(.monochrome)
                         .frame(minWidth: 32)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.coral))
+                .controlSize(.regular)
                 .accessibilityLabel("Discard import")
             }
-            .font(.caption.weight(.semibold))
-            .controlSize(.small)
         }
         .bookLoomCard(padding: 10)
     }
