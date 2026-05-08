@@ -329,7 +329,6 @@ struct AddBookComposerView: View {
                     selectedMetadata: $draft.selectedMetadata,
                     importButtonTitle: "Paste Goodreads",
                     importButtonSystemImage: "doc.on.clipboard",
-                    buttonStyle: .bordered,
                     fillsAvailableWidth: true
                 )
             }
@@ -339,7 +338,6 @@ struct AddBookComposerView: View {
                 author: $draft.author,
                 isbn: $draft.isbn,
                 selectedMetadata: $draft.selectedMetadata,
-                buttonStyle: .bordered,
                 showsSummary: false,
                 findButtonTitle: "Search for Cover and Details",
                 changeButtonTitle: "Search for Cover and Details",
@@ -462,8 +460,7 @@ struct AddBookComposerView: View {
                 isbn: $draft.isbn,
                 selectedMetadata: $draft.selectedMetadata,
                 importButtonTitle: "Paste Goodreads URL",
-                importButtonSystemImage: "doc.on.clipboard",
-                buttonStyle: .secondaryIndigo
+                importButtonSystemImage: "doc.on.clipboard"
             )
         }
         .bookLoomCard(padding: 12)
@@ -479,8 +476,7 @@ struct AddBookComposerView: View {
                 title: $draft.title,
                 author: $draft.author,
                 isbn: $draft.isbn,
-                selectedMetadata: $draft.selectedMetadata,
-                buttonStyle: .secondaryIndigo
+                selectedMetadata: $draft.selectedMetadata
             )
         }
         .bookLoomCard(padding: 12)

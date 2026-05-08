@@ -585,7 +585,7 @@ private struct LibraryBookDetailView: View {
             } label: {
                 Label("Clear Price", systemImage: "xmark.circle")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(BookLoomSecondaryButtonStyle())
             .disabled(priceText.trimmed.isEmpty && book.purchasePriceCents == nil)
         }
         .textFieldStyle(.roundedBorder)
@@ -601,7 +601,7 @@ private struct LibraryBookDetailView: View {
             } label: {
                 Label("Mark Returned", systemImage: "arrow.uturn.left.circle.fill")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(BookLoomSecondaryButtonStyle())
         }
         .textFieldStyle(.roundedBorder)
         .bookLoomCard(padding: 12)
@@ -665,7 +665,7 @@ private struct LibraryBookDetailView: View {
             } label: {
                 Label("Clear Gift Plan", systemImage: "gift")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(BookLoomSecondaryButtonStyle())
             .disabled(!book.hasGiftPlan && book.giftOccasion.trimmed.isEmpty)
         }
         .textFieldStyle(.roundedBorder)
@@ -860,12 +860,12 @@ private struct LibraryBookHero: View {
                     Button(action: onFindMetadata) {
                         Label("Search for Cover and Details", systemImage: "magnifyingglass")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
 
                     Button(role: .destructive, action: onDelete) {
                         Label("Delete from Shelf", systemImage: "trash")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.coral))
 
                     Spacer(minLength: 0)
                 }

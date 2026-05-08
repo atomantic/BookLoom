@@ -153,6 +153,7 @@ struct BookLoomSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
+            .symbolRenderingMode(.monochrome)
             .foregroundStyle(isEnabled ? tint : Color.secondary)
             .lineLimit(3)
             .minimumScaleFactor(0.85)
@@ -200,6 +201,7 @@ struct BookLoomProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
+            .symbolRenderingMode(.monochrome)
             .foregroundStyle(isEnabled ? Color.white : Color.secondary)
             .lineLimit(3)
             .minimumScaleFactor(0.85)

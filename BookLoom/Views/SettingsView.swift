@@ -259,7 +259,7 @@ private struct RelaunchWelcomeCard: View {
             } label: {
                 Label("Relaunch Welcome", systemImage: "sparkles.rectangle.stack")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(BookLoomSecondaryButtonStyle())
             .bookLoomActionWidth(minWidth: 190)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
