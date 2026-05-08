@@ -20,6 +20,7 @@ struct RootView: View {
 private struct MainTabs: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(MemberIdentity.self) private var memberIdentity
     @Environment(ActiveClubStore.self) private var activeClubStore
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
@@ -46,7 +47,7 @@ private struct MainTabs: View {
                     LibraryTabView()
                 }
                 .tabItem {
-                    Label("Shelf", systemImage: "books.vertical.fill")
+                    Label(MainTab.library.tabTitle(for: dynamicTypeSize), systemImage: "books.vertical.fill")
                 }
                 .tag(MainTab.library)
 
@@ -54,7 +55,7 @@ private struct MainTabs: View {
                     BooksTabView(path: $booksPath)
                 }
                 .tabItem {
-                    Label("Club", systemImage: "person.2.fill")
+                    Label(MainTab.books.tabTitle(for: dynamicTypeSize), systemImage: "person.2.fill")
                 }
                 .tag(MainTab.books)
 
@@ -62,7 +63,7 @@ private struct MainTabs: View {
                     DiscussionsTabView()
                 }
                 .tabItem {
-                    Label("Discussions", systemImage: "text.bubble.fill")
+                    Label(MainTab.discussions.tabTitle(for: dynamicTypeSize), systemImage: "text.bubble.fill")
                 }
                 .tag(MainTab.discussions)
 
@@ -70,7 +71,7 @@ private struct MainTabs: View {
                     ScheduleTabView()
                 }
                 .tabItem {
-                    Label("Schedule", systemImage: "calendar")
+                    Label(MainTab.schedule.tabTitle(for: dynamicTypeSize), systemImage: "calendar")
                 }
                 .tag(MainTab.schedule)
 
@@ -78,7 +79,7 @@ private struct MainTabs: View {
                     SettingsView()
                 }
                 .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
+                    Label(MainTab.settings.tabTitle(for: dynamicTypeSize), systemImage: "gearshape.fill")
                 }
                 .tag(MainTab.settings)
             }
@@ -121,9 +122,11 @@ private struct MainTabs: View {
             goodreadsImportView(for: item)
         }
         #else
-        .sheet(item: $goodreadsInbox.presentedItem) { item in
-            goodreadsImportView(for: item)
-        }
+        .modifier(
+            GoodreadsImportPresentation(item: $goodreadsInbox.presentedItem) { item in
+                goodreadsImportView(for: item)
+            }
+        )
         #endif
     }
 
@@ -244,6 +247,29 @@ private struct MainTabs: View {
     }
 }
 
+#if os(iOS)
+private struct GoodreadsImportPresentation<ImportContent: View>: ViewModifier {
+    @Binding var item: SharedImportInbox.PendingImport?
+    let importContent: (SharedImportInbox.PendingImport) -> ImportContent
+
+    init(
+        item: Binding<SharedImportInbox.PendingImport?>,
+        @ViewBuilder importContent: @escaping (SharedImportInbox.PendingImport) -> ImportContent
+    ) {
+        _item = item
+        self.importContent = importContent
+    }
+
+    func body(content: Content) -> some View {
+        if AppLaunchOptions.screenshotRoute == "import" {
+            content.fullScreenCover(item: $item, content: importContent)
+        } else {
+            content.sheet(item: $item, content: importContent)
+        }
+    }
+}
+#endif
+
 private enum MainTab: Hashable {
     case library
     case books
@@ -279,6 +305,15 @@ private enum MainTab: Hashable {
         case .discussions: return "text.bubble.fill"
         case .schedule: return "calendar"
         case .settings: return "gearshape.fill"
+        }
+    }
+
+    func tabTitle(for dynamicTypeSize: DynamicTypeSize) -> String {
+        guard dynamicTypeSize.prefersExpandedControlLayout else { return title }
+        switch self {
+        case .discussions: return "Chat"
+        case .schedule: return "Events"
+        default: return title
         }
     }
 }

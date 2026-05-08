@@ -30,12 +30,7 @@ struct SubmissionDetailView: View {
 
         List {
             Section {
-                SubmissionHero(submission: submission)
-                    .bookLoomListRow(top: 6, bottom: 8)
-            }
-
-            Section {
-                StatusActionsCard(
+                SubmissionHeroActionsCard(
                     submission: submission,
                     canMoveToShelf: GoodreadsImportInbox.canMoveToShelf(submission),
                     onSetCurrent: { showingSetCurrentConfirmation = true },
@@ -44,10 +39,8 @@ struct SubmissionDetailView: View {
                     onMoveToShelf: { showingMoveToShelfConfirmation = true },
                     onDelete: { showingDeleteConfirmation = true }
                 )
-            } header: {
-                SectionTitle(title: "Status")
+                .bookLoomListRow(top: 6, bottom: 10)
             }
-            .bookLoomListRow()
 
             Section {
                 SubmissionBookEditCard(
@@ -349,9 +342,11 @@ private struct SubmissionBookEditCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SubmissionTextField("Title", text: $submission.title)
-            SubmissionTextField("Author", text: $submission.author)
-            SubmissionTextField("ISBN", text: $submission.isbn)
+            BookLoomCompactTextField("Title", text: $submission.title)
+            BookLoomCompactDivider()
+            BookLoomCompactTextField("Author", text: $submission.author)
+            BookLoomCompactDivider()
+            BookLoomCompactTextField("ISBN", text: $submission.isbn, keyboard: .numbersAndPunctuation)
 
             if stackButtonsVertically {
                 VStack(alignment: .leading, spacing: 8) {
@@ -383,6 +378,7 @@ private struct SubmissionBookEditCard: View {
     private var metadataButton: some View {
         Button(action: onFindDetails) {
             Label(metadataButtonTitle, systemImage: "magnifyingglass")
+                .frame(maxWidth: .infinity)
         }
         .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
         .disabled(submission.title.trimmed.isEmpty && submission.isbn.trimmed.isEmpty)
@@ -391,51 +387,10 @@ private struct SubmissionBookEditCard: View {
     private var saveButton: some View {
         Button(action: onSave) {
             Label("Save Details", systemImage: "square.and.arrow.down")
+                .frame(maxWidth: .infinity)
         }
         .buttonStyle(BookLoomProminentButtonStyle())
         .disabled(submission.title.trimmed.isEmpty)
-    }
-}
-
-private struct SubmissionTextField: View {
-    let title: String
-    @Binding var text: String
-
-    init(_ title: String, text: Binding<String>) {
-        self.title = title
-        _text = text
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            inputField
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-                }
-        }
-    }
-
-    private var inputField: some View {
-        let field = TextField(title, text: $text)
-            .font(.body)
-            .foregroundStyle(BookLoomStyle.ink)
-            .lineLimit(1)
-
-        #if os(iOS)
-        return field
-            .autocorrectionDisabled(title == "ISBN")
-            .textInputAutocapitalization(title == "ISBN" ? .characters : .words)
-        #else
-        return field
-        #endif
     }
 }
 
@@ -551,37 +506,7 @@ private struct NotesCard: View {
     }
 }
 
-private struct SubmissionHero: View {
-    @Bindable var submission: BookSubmission
-
-    var body: some View {
-        HStack(spacing: 14) {
-            BookCoverTile(
-                title: submission.displayTitle,
-                author: submission.displayAuthor,
-                coverURL: submission.coverImageURL,
-                width: 78,
-                height: 108
-            )
-            VStack(alignment: .leading, spacing: 8) {
-                Text(submission.displayTitle)
-                    .font(.title3.bold())
-                    .foregroundStyle(BookLoomStyle.ink)
-                    .lineLimit(3)
-                if !submission.displayAuthor.isEmpty {
-                    Text(submission.displayAuthor)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .bookLoomCard(padding: 12)
-    }
-}
-
-private struct StatusActionsCard: View {
+private struct SubmissionHeroActionsCard: View {
     let submission: BookSubmission
     let canMoveToShelf: Bool
     let onSetCurrent: () -> Void
@@ -589,44 +514,78 @@ private struct StatusActionsCard: View {
     let onMoveToProposals: () -> Void
     let onMoveToShelf: () -> Void
     let onDelete: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                StatusPill(status: submission.status)
-                Spacer(minLength: 12)
-                Text("Submitted by \(submission.displaySubmitter)")
+        VStack(alignment: .leading, spacing: 12) {
+            contentLayout {
+                BookCoverTile(
+                    title: submission.displayTitle,
+                    author: submission.displayAuthor,
+                    coverURL: submission.coverImageURL,
+                    width: 72,
+                    height: 98
+                )
+
+                VStack(alignment: .leading, spacing: 7) {
+                    StatusPill(status: submission.status)
+
+                    Text(submission.displayTitle)
+                        .font(.headline.bold())
+                        .foregroundStyle(BookLoomStyle.ink)
+                        .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !submission.displayAuthor.isEmpty {
+                        Text(submission.displayAuthor)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? nil : 1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    metadataLayout {
+                        Label(submission.ratingSummary.displayValue, systemImage: "star.fill")
+                        Label("\((submission.notes ?? []).count) notes", systemImage: "note.text")
+                        Label(submission.displaySubmitter, systemImage: "person.fill")
+                    }
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? 2 : 1)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !dynamicTypeSize.prefersExpandedControlLayout {
+                    Spacer(minLength: 0)
+                }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
                 switch submission.status {
                 case .proposed:
-                    actionButton("Set as Current Read", systemImage: "book.fill", prominent: true, action: onSetCurrent)
-                    actionButton("Mark Already Read", systemImage: "checkmark.seal.fill", prominent: false, action: onMarkRead)
+                    actionButton("Set Current", accessibilityTitle: "Set as Current Read", systemImage: "book.fill", tint: BookLoomStyle.sage, prominent: true, action: onSetCurrent)
+                    actionButton("Mark Read", accessibilityTitle: "Mark Already Read", systemImage: "checkmark.seal.fill", tint: BookLoomStyle.plum, prominent: false, action: onMarkRead)
                     if canMoveToShelf {
-                        actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
+                        actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", tint: BookLoomStyle.plum, prominent: false, action: onMoveToShelf)
                     }
-                    actionButton("Delete Proposal", systemImage: "trash.fill", prominent: false, role: .destructive, action: onDelete)
+                    actionButton("Delete", accessibilityTitle: "Delete Proposal", systemImage: "trash.fill", tint: BookLoomStyle.coral, prominent: false, role: .destructive, action: onDelete)
                 case .current:
-                    actionButton("Mark Read", systemImage: "checkmark.seal.fill", prominent: true, action: onMarkRead)
-                    actionButton("Move Back to Proposals", systemImage: "tray.full.fill", prominent: false, action: onMoveToProposals)
+                    actionButton("Mark Read", systemImage: "checkmark.seal.fill", tint: BookLoomStyle.sage, prominent: true, action: onMarkRead)
+                    actionButton("Move Back", accessibilityTitle: "Move Back to Proposals", systemImage: "tray.full.fill", tint: BookLoomStyle.plum, prominent: false, action: onMoveToProposals)
                 case .completed:
-                    actionButton("Move Back to Proposals", systemImage: "tray.full.fill", prominent: true, action: onMoveToProposals)
+                    actionButton("Move Back", accessibilityTitle: "Move Back to Proposals", systemImage: "tray.full.fill", tint: BookLoomStyle.plum, prominent: true, action: onMoveToProposals)
                     if canMoveToShelf {
-                        actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
+                        actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", tint: BookLoomStyle.plum, prominent: false, action: onMoveToShelf)
                     }
                 case .skipped:
-                    actionButton("Restore to Proposals", systemImage: "tray.full.fill", prominent: true, action: onMoveToProposals)
-                    actionButton("Mark Already Read", systemImage: "checkmark.seal.fill", prominent: false, action: onMarkRead)
+                    actionButton("Restore", accessibilityTitle: "Restore to Proposals", systemImage: "tray.full.fill", tint: BookLoomStyle.plum, prominent: true, action: onMoveToProposals)
+                    actionButton("Mark Read", accessibilityTitle: "Mark Already Read", systemImage: "checkmark.seal.fill", tint: BookLoomStyle.sage, prominent: false, action: onMarkRead)
                     if canMoveToShelf {
-                        actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", prominent: false, action: onMoveToShelf)
+                        actionButton("Move to Imports", systemImage: "tray.and.arrow.down.fill", tint: BookLoomStyle.plum, prominent: false, action: onMoveToShelf)
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .bookLoomCard(padding: 12)
     }
@@ -634,34 +593,50 @@ private struct StatusActionsCard: View {
     @ViewBuilder
     private func actionButton(
         _ title: String,
+        accessibilityTitle: String? = nil,
         systemImage: String,
+        tint: Color,
         prominent: Bool,
         role: ButtonRole? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        let button = Button(role: role, action: action) {
-            Label {
-                Text(title)
-            } icon: {
-                Image(systemName: systemImage)
-                    .symbolRenderingMode(.monochrome)
-            }
-            .foregroundStyle(foregroundColor(prominent: prominent, role: role))
+        Button(role: role, action: action) {
+            Label(title, systemImage: systemImage)
+                .font(dynamicTypeSize.prefersExpandedControlLayout ? .body.weight(.bold) : .footnote.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+                .padding(.vertical, dynamicTypeSize.prefersExpandedControlLayout ? 12 : 8)
+                .bookLoomActionWidth(minWidth: 128)
+                .frame(minHeight: dynamicTypeSize.prefersExpandedControlLayout ? 52 : 40)
+                .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
+                .foregroundStyle(prominent ? Color.white : tint)
+                .accessibilityLabel(accessibilityTitle ?? title)
         }
-        if prominent {
-            button
-                .buttonStyle(BookLoomProminentButtonStyle())
-                .bookLoomActionWidth(minWidth: 210)
-        } else {
-            button
-                .buttonStyle(BookLoomSecondaryButtonStyle())
-        }
+        .buttonStyle(.plain)
     }
 
-    private func foregroundColor(prominent: Bool, role: ButtonRole?) -> Color {
-        if prominent { return .white }
-        if role == .destructive { return BookLoomStyle.coral }
-        return BookLoomStyle.plum
+    private var contentLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 14))
+    }
+
+    private var metadataLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 12))
+    }
+
+    private var actionColumns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: dynamicTypeSize.prefersExpandedControlLayout ? 220 : 132),
+                spacing: 8,
+                alignment: .leading
+            )
+        ]
     }
 }
 

@@ -232,9 +232,18 @@ struct ISBNMetadataLookupControls: View {
 
     private func isbnField(placeholder: String) -> some View {
         TextField(placeholder, text: $isbn)
+            .font(.body)
+            .foregroundStyle(BookLoomStyle.ink)
             .textInputAutocapitalization(.characters)
             .keyboardType(.numbersAndPunctuation)
             .autocorrectionDisabled()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+            }
     }
 
     private func scanButton(title: String) -> some View {

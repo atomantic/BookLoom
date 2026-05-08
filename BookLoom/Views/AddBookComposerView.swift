@@ -161,6 +161,7 @@ struct AddBookDraft {
 
 struct AddBookComposerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let mode: AddBookComposerMode
     let onCancel: (() -> Void)?
@@ -217,47 +218,71 @@ struct AddBookComposerView: View {
 
     #if os(iOS)
     private var iOSContent: some View {
-        Form {
-            if let selectedMetadata = draft.selectedMetadata {
-                Section {
-                    BookMetadataVerificationPreview(
-                        title: draft.title,
-                        author: draft.author,
-                        candidate: selectedMetadata
-                    )
-                } header: {
-                    Text("Matched Book")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let selectedMetadata = draft.selectedMetadata {
+                    BookLoomCompactCard {
+                        BookMetadataVerificationPreview(
+                            title: draft.title,
+                            author: draft.author,
+                            candidate: selectedMetadata
+                        )
+                    }
                 }
+
+                bookDetailsCard
+                trackingCard
+                moreCard
+                actionButtons
+                    .bookLoomCard(padding: 12)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 110)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
 
-            Section("Book") {
-                TextField("Title", text: $draft.title)
-                    .textInputAutocapitalization(.words)
-                TextField("Author", text: $draft.author)
-                    .textInputAutocapitalization(.words)
-                TextField("ISBN", text: $draft.isbn)
-                    .textInputAutocapitalization(.characters)
-                    .keyboardType(.numbersAndPunctuation)
-                    .autocorrectionDisabled()
+    private var bookDetailsCard: some View {
+        BookLoomCompactCard(spacing: 12) {
+            BookLoomCompactTextField("Title", text: $draft.title)
+            BookLoomCompactDivider()
+            BookLoomCompactTextField("Author", text: $draft.author)
+            BookLoomCompactDivider()
+            ISBNMetadataLookupControls(
+                title: $draft.title,
+                author: $draft.author,
+                isbn: $draft.isbn,
+                selectedMetadata: $draft.selectedMetadata,
+                layout: .fieldWithScan(placeholder: "ISBN", scanTitle: "Scan")
+            )
+            iOSLookupActions
+                .padding(.top, 2)
+        }
+    }
 
-                iOSLookupActions
+    private var trackingCard: some View {
+        BookLoomCompactCard(spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                Text("Rating")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(BookLoomStyle.ink)
+                Spacer(minLength: 12)
+                StarRatingPicker(stars: ratingBinding)
             }
-
-            Section("Library") {
-                HStack {
-                    Text("Rating")
-                    Spacer(minLength: 12)
-                    StarRatingPicker(stars: ratingBinding)
-                }
-                propertyButtonGrid
-                if draft.isOnLoan {
-                    TextField("Loaned to", text: $draft.loanedTo)
-                        .textInputAutocapitalization(.words)
-                }
+            BookLoomCompactDivider()
+            propertyButtonGrid
+            if draft.isOnLoan {
+                BookLoomCompactDivider()
+                BookLoomCompactTextField("Loaned to", text: $draft.loanedTo)
             }
+        }
+    }
 
-            Section("More") {
-                DisclosureGroup("Copy details", isExpanded: $showingCopyDetails) {
+    private var moreCard: some View {
+        BookLoomCompactCard(spacing: 0) {
+            DisclosureGroup("Copy details", isExpanded: $showingCopyDetails) {
+                VStack(spacing: 12) {
                     Picker("Format", selection: $draft.format) {
                         ForEach(LibraryBookFormat.allCases) { format in
                             Text(format.displayName).tag(format)
@@ -268,19 +293,28 @@ struct AddBookComposerView: View {
                             Text(condition.displayName).tag(condition)
                         }
                     }
-                    TextField("Shelf or room", text: $draft.shelfLocation)
+                    BookLoomCompactTextField("Shelf or room", text: $draft.shelfLocation)
                 }
+                .padding(.top, 12)
+            }
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(BookLoomStyle.ink)
+            .tint(BookLoomStyle.plum)
+            .padding(.vertical, 12)
 
-                DisclosureGroup("Purchase", isExpanded: $showingPurchaseDetails) {
-                    TextField("Paid", text: $draft.priceText, prompt: Text("$0.00"))
-                        .keyboardType(.decimalPad)
-                    TextField("Purchased from", text: $draft.purchaseSource)
+            BookLoomCompactDivider()
+
+            DisclosureGroup("Purchase", isExpanded: $showingPurchaseDetails) {
+                VStack(spacing: 12) {
+                    BookLoomCompactTextField("Paid", text: $draft.priceText, placeholder: "$0.00", keyboard: .decimalPad)
+                    BookLoomCompactTextField("Purchased from", text: $draft.purchaseSource)
                 }
+                .padding(.top, 12)
             }
-
-            Section {
-                actionButtons
-            }
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(BookLoomStyle.ink)
+            .tint(BookLoomStyle.plum)
+            .padding(.vertical, 12)
         }
     }
 
@@ -288,27 +322,16 @@ struct AddBookComposerView: View {
     private var iOSLookupActions: some View {
         VStack(alignment: .leading, spacing: 8) {
             if draft.selectedMetadata == nil {
-                LazyVGrid(columns: lookupButtonColumns, alignment: .leading, spacing: 8) {
-                    ISBNMetadataLookupControls(
-                        title: $draft.title,
-                        author: $draft.author,
-                        isbn: $draft.isbn,
-                        selectedMetadata: $draft.selectedMetadata,
-                        layout: .scanButtonOnly(title: "Scan"),
-                        fillsAvailableWidth: true
-                    )
-
-                    GoodreadsMetadataImportControls(
-                        title: $draft.title,
-                        author: $draft.author,
-                        isbn: $draft.isbn,
-                        selectedMetadata: $draft.selectedMetadata,
-                        importButtonTitle: "Paste",
-                        importButtonSystemImage: "doc.on.clipboard",
-                        buttonStyle: .bordered,
-                        fillsAvailableWidth: true
-                    )
-                }
+                GoodreadsMetadataImportControls(
+                    title: $draft.title,
+                    author: $draft.author,
+                    isbn: $draft.isbn,
+                    selectedMetadata: $draft.selectedMetadata,
+                    importButtonTitle: "Paste Goodreads",
+                    importButtonSystemImage: "doc.on.clipboard",
+                    buttonStyle: .bordered,
+                    fillsAvailableWidth: true
+                )
             }
 
             BookMetadataSearchControls(
@@ -324,12 +347,6 @@ struct AddBookComposerView: View {
             )
         }
         .controlSize(.regular)
-    }
-
-    private var lookupButtonColumns: [GridItem] {
-        [
-            GridItem(.adaptive(minimum: 94), spacing: 8, alignment: .leading)
-        ]
     }
     #endif
 
@@ -377,7 +394,7 @@ struct AddBookComposerView: View {
 
     private var propertyButtonColumns: [GridItem] {
         [
-            GridItem(.adaptive(minimum: 116), spacing: 8, alignment: .leading)
+            GridItem(.adaptive(minimum: dynamicTypeSize.prefersExpandedControlLayout ? 180 : 116), spacing: 8, alignment: .leading)
         ]
     }
 
@@ -666,6 +683,7 @@ struct AddBookComposerView: View {
 }
 
 struct AddBookPropertyButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var isOn: Bool
 
     let title: String
@@ -689,8 +707,9 @@ struct AddBookPropertyButton: View {
                     .frame(width: 18)
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                    .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? 2 : 1)
+                    .minimumScaleFactor(dynamicTypeSize.prefersExpandedControlLayout ? 0.9 : 0.82)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(isOn ? tint : Color.secondary)

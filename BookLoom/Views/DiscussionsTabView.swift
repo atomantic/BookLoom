@@ -59,6 +59,7 @@ private struct DiscussionsTabContent: View {
                         NavigationLink(value: submission) {
                             DiscussionBookSummaryRow(submission: submission)
                         }
+                        .buttonStyle(.plain)
                         .bookLoomListRow()
                     }
                 } header: {
@@ -72,6 +73,7 @@ private struct DiscussionsTabContent: View {
                         NavigationLink(value: submission) {
                             DiscussionBookSummaryRow(submission: submission)
                         }
+                        .buttonStyle(.plain)
                         .bookLoomListRow()
                     }
                 } header: {
@@ -136,28 +138,21 @@ private struct DiscussionBookSummaryRow: View {
     @Bindable var submission: BookSubmission
 
     var body: some View {
-        HStack(spacing: 12) {
-            BookCoverTile(
-                title: submission.displayTitle,
-                author: submission.displayAuthor,
-                coverURL: submission.coverImageURL,
-                width: 44,
-                height: 60
-            )
-            VStack(alignment: .leading, spacing: 4) {
-                Text(submission.displayTitle)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(BookLoomStyle.ink)
-                    .lineLimit(2)
-                Label("\(submission.activeDiscussionPrompts.count) prompts", systemImage: "text.bubble")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .bookLoomCard(padding: 10)
+        StandardBookCardRow(
+            title: submission.displayTitle,
+            author: submission.displayAuthor,
+            coverURL: submission.coverImageURL,
+            indicators: [
+                BookCardIndicator(
+                    "\(submission.activeDiscussionPrompts.count) prompts",
+                    systemImage: "text.bubble",
+                    visibleText: "\(submission.activeDiscussionPrompts.count)",
+                    tint: BookLoomStyle.plum
+                )
+            ],
+            showsDisclosure: true,
+            coverWidth: 58,
+            coverHeight: 82
+        )
     }
 }

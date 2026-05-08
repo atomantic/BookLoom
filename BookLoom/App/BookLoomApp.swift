@@ -81,6 +81,7 @@ struct BookLoomApp: App {
                 .environment(activeClubStore)
                 .environment(goodreadsInbox)
                 .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
+                .modifier(ScreenshotAppearanceOverride())
                 .modifier(ScreenshotDynamicTypeOverride())
                 #if os(macOS)
                 .modifier(ScreenshotWindowFrameOverride())
@@ -174,6 +175,18 @@ private struct ScreenshotWindowFrameOverride: ViewModifier {
     }
 }
 #endif
+
+/// Keeps App Store screenshot captures independent from the simulator or
+/// developer device appearance setting.
+private struct ScreenshotAppearanceOverride: ViewModifier {
+    func body(content: Content) -> some View {
+        if AppLaunchOptions.screenshotRoute != nil {
+            content.preferredColorScheme(.light)
+        } else {
+            content
+        }
+    }
+}
 
 /// Applies the `-screenshotDynamicType <size>` launch arg as a `dynamicTypeSize`
 /// override. No-op when the arg is absent or unrecognized so the user's system

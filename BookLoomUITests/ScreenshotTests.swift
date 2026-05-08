@@ -113,8 +113,11 @@ final class ScreenshotTests: XCTestCase {
         waitForText("Currently Reading")
 
         let addBook = app.buttons["Add Book"]
+        let add = app.buttons["Add"]
         if addBook.waitForExistence(timeout: 3) {
             addBook.tap()
+        } else if add.waitForExistence(timeout: 3) {
+            add.tap()
         }
         waitForText("Add a Book")
         saveScreenshot(name)
