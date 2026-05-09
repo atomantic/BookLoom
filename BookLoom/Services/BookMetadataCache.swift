@@ -92,17 +92,29 @@ actor BookMetadataCache {
 actor BookCoverCache {
     static let shared = BookCoverCache()
 
+    /// URL scheme used for user-uploaded covers. The bytes live in App Support
+    /// (persistent, not iCloud-synced) and the synthetic URL string is what's
+    /// stored in `coverURL` on `BookSubmission` / `LibraryBook` so the existing
+    /// rendering path picks them up via the cache.
+    static let manualCoverScheme = "bookloom"
+    static let manualCoverHost = "manual-cover"
+
     private let fileManager: FileManager
     private let rootURL: URL
+    private let manualRootURL: URL
     private let maxCoverBytes = 700 * 1024
 
-    init(rootURL: URL? = nil, fileManager: FileManager = .default) {
+    init(rootURL: URL? = nil, manualRootURL: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         self.rootURL = Self.defaultRootURL(rootURL: rootURL, fileManager: fileManager)
+        self.manualRootURL = Self.defaultManualRootURL(rootURL: manualRootURL, fileManager: fileManager)
     }
 
     func cachedData(for url: URL) -> Data? {
-        guard let data = try? Data(contentsOf: Self.cacheFileURL(for: url, in: rootURL)),
+        let fileURL = Self.isManualCoverURL(url)
+            ? Self.manualFileURL(identifier: url.lastPathComponent, in: manualRootURL)
+            : Self.cacheFileURL(for: url, in: rootURL)
+        guard let data = try? Data(contentsOf: fileURL),
               data.count <= maxCoverBytes else {
             return nil
         }
@@ -112,6 +124,12 @@ actor BookCoverCache {
     func data(for url: URL, urlSession: URLSession = .shared) async -> Data? {
         if let cached = cachedData(for: url) {
             return cached
+        }
+
+        // Manual covers never network-fetch. If the bytes aren't on disk
+        // (e.g. the user uploaded on another device), render the placeholder.
+        if Self.isManualCoverURL(url) {
+            return nil
         }
 
         guard let (data, response) = try? await urlSession.data(from: url),
@@ -126,8 +144,29 @@ actor BookCoverCache {
         return data
     }
 
+    /// Persist a user-uploaded cover under a stable identifier. Returns the
+    /// synthetic URL to store on the model, or nil if the bytes exceed
+    /// `maxCoverBytes` or disk write fails.
+    @discardableResult
+    func storeManual(data: Data, identifier: String) -> URL? {
+        guard data.count > 0, data.count <= maxCoverBytes else { return nil }
+        let trimmedID = Self.sanitizedIdentifier(identifier)
+        guard !trimmedID.isEmpty else { return nil }
+        try? fileManager.createDirectory(at: manualRootURL, withIntermediateDirectories: true)
+        let fileURL = Self.manualFileURL(identifier: trimmedID, in: manualRootURL)
+        guard (try? data.write(to: fileURL, options: [.atomic])) != nil else { return nil }
+        return Self.manualCoverURL(identifier: trimmedID)
+    }
+
+    func removeManual(identifier: String) {
+        let trimmedID = Self.sanitizedIdentifier(identifier)
+        guard !trimmedID.isEmpty else { return }
+        try? fileManager.removeItem(at: Self.manualFileURL(identifier: trimmedID, in: manualRootURL))
+    }
+
     func purgeAll() {
         try? fileManager.removeItem(at: rootURL)
+        try? fileManager.removeItem(at: manualRootURL)
     }
 
     /// Seed the on-disk cache synchronously. MUST be called before any
@@ -135,11 +174,25 @@ actor BookCoverCache {
     /// rely on a happens-before ordering with the first actor read.
     nonisolated static func seedSync(_ mappings: [(url: URL, data: Data)], fileManager: FileManager = .default) {
         let rootURL = defaultRootURL(rootURL: nil, fileManager: fileManager)
+        let manualURL = defaultManualRootURL(rootURL: nil, fileManager: fileManager)
         try? fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try? fileManager.createDirectory(at: manualURL, withIntermediateDirectories: true)
         for (url, data) in mappings {
-            let fileURL = cacheFileURL(for: url, in: rootURL)
+            let fileURL: URL = isManualCoverURL(url)
+                ? manualFileURL(identifier: url.lastPathComponent, in: manualURL)
+                : cacheFileURL(for: url, in: rootURL)
             try? data.write(to: fileURL, options: [.atomic])
         }
+    }
+
+    nonisolated static func manualCoverURL(identifier: String) -> URL {
+        let trimmed = sanitizedIdentifier(identifier)
+        return URL(string: "\(manualCoverScheme)://\(manualCoverHost)/\(trimmed)")
+            ?? URL(string: "\(manualCoverScheme)://\(manualCoverHost)/unknown")!
+    }
+
+    nonisolated static func isManualCoverURL(_ url: URL) -> Bool {
+        url.scheme == manualCoverScheme && url.host == manualCoverHost
     }
 
     private static func defaultRootURL(rootURL: URL?, fileManager: FileManager) -> URL {
@@ -149,7 +202,31 @@ actor BookCoverCache {
         return baseURL.appendingPathComponent("BookCoverCache", isDirectory: true)
     }
 
+    /// Manual covers go in App Support so iOS doesn't purge them like cache.
+    private static func defaultManualRootURL(rootURL: URL?, fileManager: FileManager) -> URL {
+        if let rootURL { return rootURL }
+        let appSupport = (try? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
+            ?? fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        return appSupport.appendingPathComponent("ManualBookCovers", isDirectory: true)
+    }
+
     private static func cacheFileURL(for url: URL, in rootURL: URL) -> URL {
         rootURL.appendingPathComponent("\(sha256Hex(url.absoluteString)).data", isDirectory: false)
+    }
+
+    private static func manualFileURL(identifier: String, in rootURL: URL) -> URL {
+        rootURL.appendingPathComponent("\(sanitizedIdentifier(identifier)).data", isDirectory: false)
+    }
+
+    /// Strip anything that isn't a safe filename character. Identifiers come
+    /// from user-controlled IDs (selectionID / libraryID) so we don't trust
+    /// them with raw path components.
+    private static func sanitizedIdentifier(_ identifier: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        return identifier.unicodeScalars
+            .map { allowed.contains($0) ? Character($0) : Character("_") }
+            .map(String.init)
+            .joined()
     }
 }

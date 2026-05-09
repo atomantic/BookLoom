@@ -30,7 +30,7 @@ struct SubmissionDetailView: View {
 
         List {
             Section {
-                SubmissionHero(submission: submission)
+                SubmissionHero(submission: submission, onCoverChange: applyCoverChange)
                     .bookLoomListRow(top: 6, bottom: 8)
             }
 
@@ -258,6 +258,17 @@ struct SubmissionDetailView: View {
     private func apply(_ candidate: BookMetadataCandidate) {
         submission.applyMetadata(candidate)
         saveBookDetails()
+    }
+
+    private func applyCoverChange(_ newCoverURL: String) {
+        guard let club = submission.bookClub else { return }
+        submission.coverURL = newCoverURL
+        BookSubmissionDetailsEditor.recordDetailsOverride(
+            submission,
+            in: club,
+            actorMemberID: memberIdentity.memberID
+        )
+        saveSubmissionChanges()
     }
 
     private func deleteSubmission() {
@@ -553,29 +564,37 @@ private struct NotesCard: View {
 
 private struct SubmissionHero: View {
     @Bindable var submission: BookSubmission
+    let onCoverChange: (String) -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
-            BookCoverTile(
-                title: submission.displayTitle,
-                author: submission.displayAuthor,
-                coverURL: submission.coverImageURL,
-                width: 78,
-                height: 108
-            )
-            VStack(alignment: .leading, spacing: 8) {
-                Text(submission.displayTitle)
-                    .font(.title3.bold())
-                    .foregroundStyle(BookLoomStyle.ink)
-                    .lineLimit(3)
-                if !submission.displayAuthor.isEmpty {
-                    Text(submission.displayAuthor)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                BookCoverTile(
+                    title: submission.displayTitle,
+                    author: submission.displayAuthor,
+                    coverURL: submission.coverImageURL,
+                    width: 78,
+                    height: 108
+                )
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(submission.displayTitle)
+                        .font(.title3.bold())
+                        .foregroundStyle(BookLoomStyle.ink)
+                        .lineLimit(3)
+                    if !submission.displayAuthor.isEmpty {
+                        Text(submission.displayAuthor)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
                 }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            ManualCoverPicker(
+                identifier: submission.selectionID,
+                currentCoverURL: submission.coverURL,
+                onCoverChange: onCoverChange
+            )
         }
         .bookLoomCard(padding: 12)
     }
