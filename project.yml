@@ -73,8 +73,9 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.lifestyle
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
         INFOPLIST_KEY_NSCameraUsageDescription: Scan ISBN barcodes and printed ISBNs to find book details.
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        # Supported orientations are declared directly in BookLoom/App/Info.plist
+        # (UISupportedInterfaceOrientations + ~ipad). INFOPLIST_KEY_* build settings
+        # have no effect when a custom info.path plist is used, so they're omitted here.
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: false
         # BookLoom-macOS.entitlements is manually maintained because XcodeGen cannot
         # generate per-SDK entitlements. It mirrors the iOS keys (CloudKit, network)

@@ -57,7 +57,13 @@ struct ScheduleMeetingView: View {
     let meeting: ClubMeeting?
 
     @State private var title: String = ""
-    @State private var scheduledAt: Date = Date.now.addingTimeInterval(7 * 24 * 60 * 60)
+    @State private var scheduledAt: Date = Self.defaultMeetingDate
+
+    /// Meetings default to one week out. Built with `Calendar` so the time-of-day
+    /// is preserved across a DST boundary (a raw 7×86 400s interval would drift an hour).
+    private static var defaultMeetingDate: Date {
+        Calendar.current.date(byAdding: .weekOfYear, value: 1, to: .now) ?? .now
+    }
     @State private var hostName: String = ""
     @State private var location: String = ""
     @State private var meetingURL: String = ""
@@ -401,15 +407,7 @@ struct MeetingDetailView: View {
 
     private func saveMeetingChanges() {
         do {
-            try context.save()
-            if let club = meeting.bookClub {
-                SharedClubSync.publishIfNeeded(
-                    club,
-                    context: context,
-                    localMemberID: memberIdentity.memberID,
-                    localMemberName: memberIdentity.name
-                )
-            }
+            try context.saveAndPublishIfNeeded(club: meeting.bookClub, memberIdentity: memberIdentity)
         } catch {
             assertionFailure("Failed to save meeting changes: \(error.localizedDescription)")
         }

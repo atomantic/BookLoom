@@ -35,6 +35,15 @@ if [ ! -f "$KEY_PATH" ]; then
     exit 1
 fi
 
+# The App Store Connect private key uploads builds — it should not live in a
+# cloud-synced folder where it propagates to every signed-in device. Warn if it does.
+case "$KEY_PATH" in
+    *"Mobile Documents"*|*"CloudDocs"*|*"Dropbox"*|*"Google Drive"*|*"OneDrive"*)
+        echo "⚠️  API key is in a cloud-synced folder ($KEY_PATH)."
+        echo "    Move it to a local-only path (e.g. ~/.private_keys/) and update APPSTORE_API_PRIVATE_KEY_PATH in .env."
+        ;;
+esac
+
 # altool only looks in ~/.private_keys/ for the API key — symlink it in.
 mkdir -p ~/.private_keys
 KEY_FILENAME="AuthKey_${APPSTORE_API_KEY_ID}.p8"
