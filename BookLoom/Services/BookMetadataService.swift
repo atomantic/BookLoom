@@ -53,6 +53,7 @@ enum BookMetadataError: LocalizedError {
     case invalidISBN
     case isbnNotFound
     case requestFailed
+    case invalidURL
     case invalidGoodreadsURL
     case goodreadsParseFailed
 
@@ -66,6 +67,8 @@ enum BookMetadataError: LocalizedError {
             return "Couldn't find book details for that ISBN. You can still enter the book manually."
         case .requestFailed:
             return "Book details are temporarily unavailable. The ISBN was scanned, so you can save it now or try details again later."
+        case .invalidURL:
+            return "Couldn't build a valid request for that search. Try adjusting the title or author."
         case .invalidGoodreadsURL:
             return "That doesn't look like a Goodreads book link. Paste a URL like https://www.goodreads.com/book/show/60233239."
         case .goodreadsParseFailed:
@@ -158,7 +161,9 @@ struct BookMetadataService: Sendable {
     }
 
     private func searchOpenLibrary(title: String, author: String) async throws -> [BookMetadataCandidate] {
-        var components = URLComponents(string: "https://openlibrary.org/search.json")!
+        guard var components = URLComponents(string: "https://openlibrary.org/search.json") else {
+            throw BookMetadataError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "title", value: title),
             URLQueryItem(name: "author", value: author.isEmpty ? nil : author),
@@ -166,19 +171,23 @@ struct BookMetadataService: Sendable {
             URLQueryItem(name: "limit", value: "8")
         ].filter { $0.value != nil }
 
-        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: components.url!))
+        guard let url = components.url else { throw BookMetadataError.invalidURL }
+        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: url))
         return response.docs.compactMap(Self.openLibraryCandidate(from:))
     }
 
     private func searchOpenLibraryByISBN(_ isbn: String) async throws -> [BookMetadataCandidate] {
-        var components = URLComponents(string: "https://openlibrary.org/search.json")!
+        guard var components = URLComponents(string: "https://openlibrary.org/search.json") else {
+            throw BookMetadataError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "isbn", value: isbn),
             URLQueryItem(name: "fields", value: "key,title,author_name,first_publish_year,cover_i,isbn"),
             URLQueryItem(name: "limit", value: "3")
         ]
 
-        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: components.url!))
+        guard let url = components.url else { throw BookMetadataError.invalidURL }
+        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: url))
         return response.docs.compactMap(Self.openLibraryCandidate(from:))
     }
 
@@ -226,7 +235,10 @@ struct BookMetadataService: Sendable {
     }
 
     private func openLibraryWorkDetail(workID: String) async throws -> OpenLibraryWorkDetail {
-        try await fetch(openLibraryRequest(url: URL(string: "https://openlibrary.org/works/\(workID).json")!))
+        guard let url = URL(string: "https://openlibrary.org/works/\(workID).json") else {
+            throw BookMetadataError.invalidURL
+        }
+        return try await fetch(openLibraryRequest(url: url))
     }
 
     private func searchGoogleBooks(title: String, author: String) async throws -> [BookMetadataCandidate] {
@@ -242,14 +254,17 @@ struct BookMetadataService: Sendable {
     }
 
     private func searchGoogleBooks(query: String, maxResults: Int) async throws -> [BookMetadataCandidate] {
-        var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes")!
+        guard var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes") else {
+            throw BookMetadataError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "maxResults", value: "\(maxResults)"),
             URLQueryItem(name: "printType", value: "books")
         ]
 
-        let response: GoogleBooksResponse = try await fetch(components.url!)
+        guard let url = components.url else { throw BookMetadataError.invalidURL }
+        let response: GoogleBooksResponse = try await fetch(url)
         return response.items?.compactMap { item in
             let info = item.volumeInfo
             guard let title = info.title?.trimmedOrNil else { return nil }
@@ -312,7 +327,9 @@ struct BookMetadataService: Sendable {
             throw BookMetadataError.invalidGoodreadsURL
         }
 
-        let canonicalURL = URL(string: "https://www.goodreads.com/book/show/\(bookID)")!
+        guard let canonicalURL = URL(string: "https://www.goodreads.com/book/show/\(bookID)") else {
+            throw BookMetadataError.invalidGoodreadsURL
+        }
         var request = URLRequest(url: canonicalURL)
         // Goodreads serves a stripped/blocked response without a real browser UA.
         request.setValue(
@@ -367,13 +384,16 @@ struct BookMetadataService: Sendable {
         let cleanISBN = isbn.replacingOccurrences(of: "-", with: "").trimmed
         guard !cleanISBN.isEmpty else { return nil }
 
-        var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes")!
+        guard var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes") else {
+            throw BookMetadataError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "q", value: "isbn:\(cleanISBN)"),
             URLQueryItem(name: "maxResults", value: "1")
         ]
 
-        let response: GoogleBooksResponse = try await fetch(components.url!)
+        guard let url = components.url else { throw BookMetadataError.invalidURL }
+        let response: GoogleBooksResponse = try await fetch(url)
         let description = response.items?.first?.volumeInfo.description?.cleanedBookDescription
         return description?.trimmedOrNil
     }
