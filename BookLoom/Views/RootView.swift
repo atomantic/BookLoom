@@ -21,6 +21,9 @@ private struct MainTabs: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @Environment(MemberIdentity.self) private var memberIdentity
     @Environment(ActiveClubStore.self) private var activeClubStore
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
@@ -44,6 +47,14 @@ private struct MainTabs: View {
                 schedulePath: $schedulePath
             )
             #else
+            if horizontalSizeClass == .regular {
+                RegularWidthMainView(
+                    selectedTab: $selectedTab,
+                    booksPath: $booksPath,
+                    discussionsPath: $discussionsPath,
+                    schedulePath: $schedulePath
+                )
+            } else {
             TabView(selection: $selectedTab) {
                 NavigationStack {
                     LibraryTabView()
@@ -84,6 +95,7 @@ private struct MainTabs: View {
                     Label(MainTab.settings.tabTitle(for: dynamicTypeSize), systemImage: "gearshape.fill")
                 }
                 .tag(MainTab.settings)
+            }
             }
             #endif
         }
@@ -273,7 +285,7 @@ private struct GoodreadsImportPresentation<ImportContent: View>: ViewModifier {
 }
 #endif
 
-private enum MainTab: Hashable {
+enum MainTab: Hashable {
     case library
     case books
     case polls
