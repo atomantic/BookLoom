@@ -198,7 +198,7 @@ struct AddBookComposerView: View {
                 }
         }
         #if os(macOS)
-        .frame(minWidth: 620, minHeight: 560)
+        .frame(minHeight: 560)
         #endif
         .alert("Couldn't Save Book", isPresented: saveErrorBinding) {
             Button("OK", role: .cancel) {}
@@ -233,13 +233,18 @@ struct AddBookComposerView: View {
                 bookDetailsCard
                 trackingCard
                 moreCard
-                actionButtons
-                    .bookLoomCard(padding: 12)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
-            .padding(.bottom, 110)
+            .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .safeAreaInset(edge: .bottom) {
+            actionButtons
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+                .background(.regularMaterial)
         }
     }
 
