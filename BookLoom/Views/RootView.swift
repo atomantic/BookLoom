@@ -29,7 +29,9 @@ private struct MainTabs: View {
     @State private var booksPath = NavigationPath()
     @State private var schedulePath = NavigationPath()
     @State private var discussionsPath = NavigationPath()
-    private let sharedSyncTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+    // Passive background sync; real-time updates arrive via the CloudKit push path
+    // (CloudKitChangeInbox), so this only needs to be an occasional safety net.
+    private let sharedSyncTimer = Timer.publish(every: 90, on: .main, in: .common).autoconnect()
 
     var body: some View {
         @Bindable var goodreadsInbox = goodreadsInbox
