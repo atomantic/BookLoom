@@ -137,7 +137,7 @@ struct GoodreadsImportSheet: View {
     }
 
     private var isLocalShelfItem: Bool {
-        goodreadsURL.scheme == "bookloom"
+        goodreadsURL.scheme == BookLoomURL.scheme
     }
 
     private var destinationPicker: some View {

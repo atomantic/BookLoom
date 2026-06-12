@@ -1,6 +1,6 @@
 import Foundation
+import Observation
 import SwiftData
-import SwiftUI
 
 /// Tracks the currently active book club. The whole app operates in the
 /// context of this club: Books, Polls, Discussions, and Schedule tabs all

@@ -62,7 +62,7 @@ enum ScreenshotSampleData {
 
     static func populate(context: ModelContext) {
         seedBundledCovers()
-        if AppLaunchOptions.screenshotRoute == "library" {
+        if AppLaunchOptions.screenshotRoute == ScreenshotRoute.library.rawValue {
             clearShelfImports()
         } else {
             seedShelfImports()

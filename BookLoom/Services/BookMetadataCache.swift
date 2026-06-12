@@ -92,16 +92,19 @@ actor BookMetadataCache {
 actor BookCoverCache {
     static let shared = BookCoverCache()
 
-    /// URL scheme used for user-uploaded covers. The bytes live in App Support
-    /// (persistent, not iCloud-synced) and the synthetic URL string is what's
-    /// stored in `coverURL` on `BookSubmission` / `LibraryBook` so the existing
-    /// rendering path picks them up via the cache.
-    static let manualCoverScheme = "bookloom"
+    /// URL scheme used for user-uploaded covers — the app's custom scheme. The
+    /// bytes live in App Support (persistent, not iCloud-synced) and the
+    /// synthetic URL string is what's stored in `coverURL` on `BookSubmission` /
+    /// `LibraryBook` so the existing rendering path picks them up via the cache.
+    static let manualCoverScheme = BookLoomURL.scheme
     static let manualCoverHost = "manual-cover"
 
     private let fileManager: FileManager
     private let rootURL: URL
     private let manualRootURL: URL
+    /// Cover-image cap. Held below CloudKit's hard 1 MB (1024 * 1024)
+    /// per-record limit with extra headroom for the snapshot fields a cover
+    /// rides alongside, so a cached cover never blows the shared-snapshot record.
     private let maxCoverBytes = 700 * 1024
 
     /// Monotonic cache-busting token for manual cover URLs. Seeded from wall-clock

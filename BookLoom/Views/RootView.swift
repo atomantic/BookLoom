@@ -106,7 +106,7 @@ private struct MainTabs: View {
             goodreadsInbox.presentNextIfNeeded()
             #endif
             guard let route = AppLaunchOptions.screenshotRoute else { return }
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            try? await Task.sleep(for: .milliseconds(350))
             navigateToScreenshotRoute(route)
         }
         .onChange(of: scenePhase) { _, phase in
@@ -143,13 +143,13 @@ private struct MainTabs: View {
     }
 
     private func handleIncomingURL(_ url: URL) {
-        guard url.scheme == "bookloom" else { return }
+        guard url.scheme == BookLoomURL.scheme else { return }
         switch url.host() {
-        case "screenshot":
+        case BookLoomURL.Host.screenshot:
             guard AppLaunchOptions.isSampleDataEnabled else { return }
-            let route = url.pathComponents.filter { $0 != "/" }.first ?? "books"
+            let route = url.pathComponents.filter { $0 != "/" }.first ?? ScreenshotRoute.books.rawValue
             navigateToScreenshotRoute(route)
-        case "import":
+        case BookLoomURL.Host.import:
             handleImportURL(url)
         default:
             break
@@ -259,7 +259,7 @@ private struct GoodreadsImportPresentation<ImportContent: View>: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        if AppLaunchOptions.screenshotRoute == "import" {
+        if AppLaunchOptions.screenshotRoute == ScreenshotRoute.import.rawValue {
             content.fullScreenCover(item: $item, content: importContent)
         } else {
             content.sheet(item: $item, content: importContent)

@@ -1,6 +1,52 @@
 import Foundation
 import SwiftUI
 
+/// The app's custom URL scheme and the deep-link hosts it serves. Centralized so
+/// the scheme string isn't retyped at every `url.scheme ==` / `url.host ==` site,
+/// where a typo would silently drop the link instead of failing to compile.
+enum BookLoomURL {
+    /// `bookloom://…` — the app's registered custom scheme. Also the scheme of
+    /// the internal `manual-cover` URLs minted by `BookMetadataCache`.
+    static let scheme = "bookloom"
+
+    enum Host {
+        /// `bookloom://screenshot/<route>` — drives the App Store screenshot harness.
+        static let screenshot = "screenshot"
+        /// `bookloom://import?url=…` — Share Extension / shelf import landing.
+        static let `import` = "import"
+    }
+}
+
+/// The navigation targets reachable via the screenshot harness
+/// (`-screenshotRoute <name>`) and `bookloom://screenshot/<route>` deep links.
+/// Several routes share a destination tab; the raw values are the on-the-wire
+/// strings the harness passes. Unknown strings fall back to `.books`.
+enum ScreenshotRoute: String {
+    case library
+    case books
+    case clubs
+    case clubHome
+    case shelf
+    case `import`
+    case imports
+    case currentRead
+    case polls
+    case poll
+    case vote
+    case schedule
+    case meeting
+    case meetings
+    case discussion
+    case discussions
+    case settings
+
+    /// Maps any raw route string to a case, defaulting to `.books` for unknown
+    /// input so a stale or mistyped route still lands somewhere sensible.
+    init(rawValueOrBooks raw: String) {
+        self = ScreenshotRoute(rawValue: raw) ?? .books
+    }
+}
+
 /// Centralizes top-level navigation state for `MainTabs` and `RegularWidthMainView`.
 ///
 /// Owns the selected tab plus the per-tab `NavigationPath` instances that were
@@ -72,33 +118,31 @@ final class NavigationCoordinator {
             return
         }
 
-        switch route {
-        case "library":
+        switch ScreenshotRoute(rawValueOrBooks: route) {
+        case .library:
             selectedTab = .library
-        case "books", "clubs", "clubHome", "shelf":
+        case .books, .clubs, .clubHome, .shelf, .imports:
             selectedTab = .books
-        case "import":
+        case .import:
             selectedTab = .books
             presentFirstPendingImport()
-        case "currentRead":
+        case .currentRead:
             selectedTab = .books
             pushCurrentRead()
-        case "polls":
+        case .polls:
             selectedTab = .books
-        case "poll", "vote":
+        case .poll, .vote:
             selectedTab = .books
             pushFirstSelectionPoll()
-        case "schedule":
+        case .schedule:
             selectedTab = .schedule
-        case "meeting", "meetings":
+        case .meeting, .meetings:
             selectedTab = .schedule
             pushFirstMeeting()
-        case "discussion", "discussions":
+        case .discussion, .discussions:
             selectedTab = .discussions
-        case "settings":
+        case .settings:
             selectedTab = .settings
-        default:
-            selectedTab = .books
         }
     }
 }

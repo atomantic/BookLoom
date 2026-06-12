@@ -198,25 +198,25 @@ struct BookLoomApp: App {
 #if os(macOS)
 private struct ScreenshotWindowFrameOverride: ViewModifier {
     func body(content: Content) -> some View {
-        content.onAppear {
+        content.task {
             guard AppLaunchOptions.screenshotRoute != nil else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                guard let screen = NSScreen.main,
-                      let window = NSApplication.shared.windows.first(where: { $0.isVisible }) else {
-                    return
-                }
-
-                let visibleFrame = screen.visibleFrame
-                let size = NSSize(width: 1440, height: 900)
-                let origin = NSPoint(
-                    x: visibleFrame.midX - size.width / 2,
-                    y: visibleFrame.maxY - size.height
-                )
-
-                window.setFrame(NSRect(origin: origin, size: size), display: true)
-                window.makeKeyAndOrderFront(nil)
-                NSApplication.shared.activate(ignoringOtherApps: true)
+            // Let the window finish materializing before we reposition it.
+            try? await Task.sleep(for: .milliseconds(300))
+            guard let screen = NSScreen.main,
+                  let window = NSApplication.shared.windows.first(where: { $0.isVisible }) else {
+                return
             }
+
+            let visibleFrame = screen.visibleFrame
+            let size = NSSize(width: 1440, height: 900)
+            let origin = NSPoint(
+                x: visibleFrame.midX - size.width / 2,
+                y: visibleFrame.maxY - size.height
+            )
+
+            window.setFrame(NSRect(origin: origin, size: size), display: true)
+            window.makeKeyAndOrderFront(nil)
+            NSApplication.shared.activate(ignoringOtherApps: true)
         }
     }
 }
