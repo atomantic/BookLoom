@@ -265,6 +265,10 @@ final class ClubAdminServiceTests: XCTestCase {
         try context.save()
 
         let activeStore = ActiveClubStore()
+        // ActiveClubStore persists to a process-global UserDefaults key; clear
+        // it unconditionally so a throwing assertion below can't leak it into a
+        // later test.
+        addTeardownBlock { @MainActor in activeStore.clearActiveClub() }
         activeStore.setActiveClub(club)
         XCTAssertEqual(activeStore.activeClubZoneName, club.cloudZoneName)
 
@@ -277,8 +281,6 @@ final class ClubAdminServiceTests: XCTestCase {
 
         XCTAssertTrue(try context.fetch(FetchDescriptor<BookClub>()).isEmpty, "Deleting removes the local row")
         XCTAssertNil(activeStore.activeClubZoneName, "Deleting the active club clears the active selection")
-
-        activeStore.clearActiveClub() // leave UserDefaults clean
     }
 
     func test_deleteClub_leavesActiveSelectionWhenDeletingDifferentClub() async throws {
@@ -290,6 +292,7 @@ final class ClubAdminServiceTests: XCTestCase {
         try context.save()
 
         let activeStore = ActiveClubStore()
+        addTeardownBlock { @MainActor in activeStore.clearActiveClub() }
         activeStore.setActiveClub(active)
 
         try await ClubAdminService.deleteClub(
@@ -304,8 +307,6 @@ final class ClubAdminServiceTests: XCTestCase {
             active.cloudZoneName,
             "Deleting a non-active club must leave the active selection untouched"
         )
-
-        activeStore.clearActiveClub()
     }
 
     // MARK: - Helpers
