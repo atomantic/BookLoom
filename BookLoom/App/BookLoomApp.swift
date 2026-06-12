@@ -70,7 +70,11 @@ struct BookLoomApp: App {
         } catch {
             appLogger.error("⚠️ ModelContainer init failed: \(error.localizedDescription, privacy: .public) — falling back to in-memory")
             let memoryConfig = ModelConfiguration(schema: Self.appSchema, isStoredInMemoryOnly: true)
-            return try! ModelContainer(for: Self.appSchema, configurations: [memoryConfig])
+            do {
+                return try ModelContainer(for: Self.appSchema, configurations: [memoryConfig])
+            } catch let fallbackError {
+                fatalError("Failed to create ModelContainer: \(fallbackError) (original error: \(error))")
+            }
         }
     }()
 
