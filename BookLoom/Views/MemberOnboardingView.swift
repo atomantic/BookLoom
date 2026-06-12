@@ -33,11 +33,7 @@ struct MemberOnboardingView: View {
                     Text("Your Name")
                         .font(.headline)
                         .foregroundStyle(BookLoomStyle.ink)
-                    TextField("Alex", text: $draftName)
-                        .textFieldStyle(.roundedBorder)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.words)
-                        #endif
+                    BookLoomCompactTextField("Your Name", text: $draftName, placeholder: "Alex")
                         .submitLabel(.done)
                         .onSubmit(saveName)
 
