@@ -136,6 +136,7 @@ private struct MainTabs: View {
         guard url.scheme == "bookloom" else { return }
         switch url.host() {
         case "screenshot":
+            guard AppLaunchOptions.isSampleDataEnabled else { return }
             let route = url.pathComponents.filter { $0 != "/" }.first ?? "books"
             navigateToScreenshotRoute(route)
         case "import":
