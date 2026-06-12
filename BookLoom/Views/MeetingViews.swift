@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct MeetingRow: View {
+    @Environment(\.openURL) private var openURL
     @Bindable var meeting: ClubMeeting
 
     var body: some View {
@@ -34,6 +35,15 @@ struct MeetingRow: View {
             TintedCapsuleLabel(text: "\(acceptedCount) going", tint: BookLoomStyle.sage, horizontalPadding: 7, verticalPadding: 3)
         }
         .bookLoomCard(padding: 10)
+        .contextMenu {
+            if let directionsURL = MeetingDirections.directionsURL(for: meeting.location) {
+                Button {
+                    openURL(directionsURL)
+                } label: {
+                    Label("Directions in Maps", systemImage: "map.fill")
+                }
+            }
+        }
     }
 }
 
@@ -233,6 +243,7 @@ struct ScheduleMeetingView: View {
 
 struct MeetingDetailView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.openURL) private var openURL
     @Environment(MemberIdentity.self) private var memberIdentity
     @Bindable var meeting: ClubMeeting
 
@@ -248,8 +259,16 @@ struct MeetingDetailView: View {
                         .font(.headline.bold())
                         .foregroundStyle(BookLoomStyle.ink)
                     Label(meeting.scheduledAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-                    if !meeting.location.trimmed.isEmpty {
-                        Label(meeting.location.trimmed, systemImage: "mappin.and.ellipse")
+                    if let directionsURL = MeetingDirections.directionsURL(for: meeting.location) {
+                        Button {
+                            openURL(directionsURL)
+                        } label: {
+                            Label(meeting.location.trimmed, systemImage: "mappin.and.ellipse")
+                        }
+                        .buttonStyle(.plain)
+                        Link(destination: directionsURL) {
+                            Label("Directions in Maps", systemImage: "map.fill")
+                        }
                     }
                     if let url = meeting.meetingURL.trimmedOrNil.flatMap(URL.init(string:)) {
                         Link(destination: url) {

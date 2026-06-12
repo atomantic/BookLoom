@@ -333,8 +333,7 @@ if $BUILD_IOS; then
         --file "$IPA_PATH" \
         --type ios \
         --apiKey "$APPSTORE_API_KEY_ID" \
-        --apiIssuer "$APPSTORE_ISSUER_ID" \
-        --transport DAV 2>&1 | tee "$IOS_UPLOAD_LOG"
+        --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$IOS_UPLOAD_LOG"
     IOS_UPLOAD_STATUS=${PIPESTATUS[0]}
     set -e
     if [ "$IOS_UPLOAD_STATUS" -ne 0 ] || grep -qE "$FAIL_MARKERS" "$IOS_UPLOAD_LOG"; then

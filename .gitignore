@@ -33,3 +33,7 @@ Package.resolved
 
 # Screenshots
 screenshots/
+
+# Python bytecode
+__pycache__/
+*.pyc
