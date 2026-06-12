@@ -7,9 +7,9 @@ import XCTest
 /// three metadata import controls (search, ISBN scan, Goodreads paste) funnel
 /// through. It copies a chosen candidate's fields into the form's bindings.
 ///
-/// The type wraps `@Binding` properties, so the test backs each binding with a
-/// captured local value (the standard way to drive a `Binding` outside SwiftUI)
-/// and asserts on those locals after `apply`.
+/// The type wraps `@Binding` properties, so each test backs the bindings with
+/// captured local `var`s (the standard way to drive a `Binding` outside
+/// SwiftUI) and asserts on those locals after `apply`.
 @MainActor
 final class BookMetadataSelectionTests: XCTestCase {
 
@@ -18,12 +18,11 @@ final class BookMetadataSelectionTests: XCTestCase {
         var author = ""
         var isbn = ""
         var selected: BookMetadataCandidate?
-
-        let selection = makeSelection(
-            title: { title }, setTitle: { title = $0 },
-            author: { author }, setAuthor: { author = $0 },
-            isbn: { isbn }, setISBN: { isbn = $0 },
-            selected: { selected }, setSelected: { selected = $0 }
+        let selection = BookMetadataSelection(
+            title: Binding(get: { title }, set: { title = $0 }),
+            author: Binding(get: { author }, set: { author = $0 }),
+            isbn: Binding(get: { isbn }, set: { isbn = $0 }),
+            selectedMetadata: Binding(get: { selected }, set: { selected = $0 })
         )
 
         let candidate = makeCandidate(
@@ -44,12 +43,11 @@ final class BookMetadataSelectionTests: XCTestCase {
         var author = ""
         var isbn = ""
         var selected: BookMetadataCandidate?
-
-        let selection = makeSelection(
-            title: { title }, setTitle: { title = $0 },
-            author: { author }, setAuthor: { author = $0 },
-            isbn: { isbn }, setISBN: { isbn = $0 },
-            selected: { selected }, setSelected: { selected = $0 }
+        let selection = BookMetadataSelection(
+            title: Binding(get: { title }, set: { title = $0 }),
+            author: Binding(get: { author }, set: { author = $0 }),
+            isbn: Binding(get: { isbn }, set: { isbn = $0 }),
+            selectedMetadata: Binding(get: { selected }, set: { selected = $0 })
         )
 
         selection.apply(makeCandidate(
@@ -66,12 +64,11 @@ final class BookMetadataSelectionTests: XCTestCase {
         var author = ""
         var isbn = "existing-isbn"
         var selected: BookMetadataCandidate?
-
-        let selection = makeSelection(
-            title: { title }, setTitle: { title = $0 },
-            author: { author }, setAuthor: { author = $0 },
-            isbn: { isbn }, setISBN: { isbn = $0 },
-            selected: { selected }, setSelected: { selected = $0 }
+        let selection = BookMetadataSelection(
+            title: Binding(get: { title }, set: { title = $0 }),
+            author: Binding(get: { author }, set: { author = $0 }),
+            isbn: Binding(get: { isbn }, set: { isbn = $0 }),
+            selectedMetadata: Binding(get: { selected }, set: { selected = $0 })
         )
 
         // A candidate with no ISBN must not clobber an ISBN the user already
@@ -83,20 +80,6 @@ final class BookMetadataSelectionTests: XCTestCase {
     }
 
     // MARK: - Helpers
-
-    private func makeSelection(
-        title: @escaping () -> String, setTitle: @escaping (String) -> Void,
-        author: @escaping () -> String, setAuthor: @escaping (String) -> Void,
-        isbn: @escaping () -> String, setISBN: @escaping (String) -> Void,
-        selected: @escaping () -> BookMetadataCandidate?, setSelected: @escaping (BookMetadataCandidate?) -> Void
-    ) -> BookMetadataSelection {
-        BookMetadataSelection(
-            title: Binding(get: title, set: setTitle),
-            author: Binding(get: author, set: setAuthor),
-            isbn: Binding(get: isbn, set: setISBN),
-            selectedMetadata: Binding(get: selected, set: setSelected)
-        )
-    }
 
     private func makeCandidate(
         title: String,

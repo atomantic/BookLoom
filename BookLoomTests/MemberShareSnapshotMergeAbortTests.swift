@@ -3,7 +3,7 @@ import SwiftData
 import XCTest
 @testable import BookLoom
 
-/// Regression coverage for the mass-delete failure mode that issue #25 fixed.
+/// Coverage adjacent to the mass-delete failure mode that issue #25 fixed.
 ///
 /// `MemberShareSnapshotStore.merge` indexes the club's existing local rows
 /// (step 2) with `try context.fetch(...)` rather than `try?`. The earlier bug
