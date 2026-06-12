@@ -112,7 +112,29 @@ struct GoodreadsMetadataImportControls: View {
     @State private var isImporting = false
     @State private var importError: String?
 
-    private let metadataService = BookMetadataService()
+    private let metadataService: BookMetadataService
+
+    init(
+        title: Binding<String>,
+        author: Binding<String>,
+        isbn: Binding<String>,
+        selectedMetadata: Binding<BookMetadataCandidate?>,
+        importButtonTitle: String,
+        importButtonSystemImage: String,
+        tint: Color = BookLoomStyle.plum,
+        fillsAvailableWidth: Bool = false,
+        metadataService: BookMetadataService = BookMetadataService()
+    ) {
+        _title = title
+        _author = author
+        _isbn = isbn
+        _selectedMetadata = selectedMetadata
+        self.importButtonTitle = importButtonTitle
+        self.importButtonSystemImage = importButtonSystemImage
+        self.tint = tint
+        self.fillsAvailableWidth = fillsAvailableWidth
+        self.metadataService = metadataService
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -201,7 +223,25 @@ struct ISBNMetadataLookupControls: View {
     @State private var isLookingUp = false
     @State private var lookupError: String?
 
-    private let metadataService = BookMetadataService()
+    private let metadataService: BookMetadataService
+
+    init(
+        title: Binding<String>,
+        author: Binding<String>,
+        isbn: Binding<String>,
+        selectedMetadata: Binding<BookMetadataCandidate?>,
+        layout: ISBNMetadataLookupLayout,
+        fillsAvailableWidth: Bool = false,
+        metadataService: BookMetadataService = BookMetadataService()
+    ) {
+        _title = title
+        _author = author
+        _isbn = isbn
+        _selectedMetadata = selectedMetadata
+        self.layout = layout
+        self.fillsAvailableWidth = fillsAvailableWidth
+        self.metadataService = metadataService
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

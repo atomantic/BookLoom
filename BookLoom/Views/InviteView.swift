@@ -2,6 +2,16 @@ import SwiftUI
 import SwiftData
 import CloudKit
 
+/// The slice of `CloudKitSharingService` the invite flow depends on. Injecting
+/// it lets previews/tests stub sharing without a provisioned CloudKit container.
+@MainActor
+protocol ClubSharingProviding {
+    func createOrFetchShare(for club: BookClub, context: ModelContext, ownerMemberID: String, ownerName: String) async throws -> CKShare
+    func cloudKitContainer() -> CKContainer
+}
+
+extension CloudKitSharingService: ClubSharingProviding {}
+
 /// Sheet presented when the owner taps "Invite Members". Splits behavior
 /// between iOS (native UICloudSharingController) and macOS (copy-link UX).
 /// When `Features.cloudKitSharing` is off, shows a "coming soon" placeholder
@@ -12,10 +22,17 @@ struct InviteView: View {
     @Environment(MemberIdentity.self) private var memberIdentity
     @Bindable var club: BookClub
 
+    private let sharingService: ClubSharingProviding
+
     @State private var share: CKShare? = nil
     @State private var loadError: InviteLoadError? = nil
     @State private var didCopyURL: Bool = false
     @State private var isLoading: Bool = false
+
+    init(club: BookClub, sharingService: ClubSharingProviding = CloudKitSharingService.shared) {
+        self.club = club
+        self.sharingService = sharingService
+    }
 
     var body: some View {
         NavigationStack {
@@ -128,7 +145,7 @@ struct InviteView: View {
         #if os(iOS)
         CloudSharingControllerView(
             share: share,
-            container: CloudKitSharingService.shared.cloudKitContainer()
+            container: sharingService.cloudKitContainer()
         )
         .ignoresSafeArea()
         #else
@@ -163,7 +180,7 @@ struct InviteView: View {
         }
         defer { isLoading = false }
         do {
-            let s = try await CloudKitSharingService.shared.createOrFetchShare(
+            let s = try await sharingService.createOrFetchShare(
                 for: club,
                 context: context,
                 ownerMemberID: memberIdentity.memberID,

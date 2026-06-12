@@ -3,7 +3,7 @@ import SwiftUI
 struct BookMetadataSearchView: View {
     let title: String
     let author: String
-    var isbn: String = ""
+    let isbn: String
     let onSelect: (BookMetadataCandidate) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -12,7 +12,21 @@ struct BookMetadataSearchView: View {
     @State private var isSearching = true
     @State private var errorMessage: String?
 
-    private let service = BookMetadataService()
+    private let service: BookMetadataService
+
+    init(
+        title: String,
+        author: String,
+        isbn: String = "",
+        service: BookMetadataService = BookMetadataService(),
+        onSelect: @escaping (BookMetadataCandidate) -> Void
+    ) {
+        self.title = title
+        self.author = author
+        self.isbn = isbn
+        self.service = service
+        self.onSelect = onSelect
+    }
 
     var body: some View {
         NavigationStack {
