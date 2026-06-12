@@ -420,7 +420,8 @@ private struct PendingShelfRow: View {
                     Text(author)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 HStack(spacing: 6) {
@@ -469,7 +470,8 @@ private struct LibraryBookSidebarRow: View {
                     Text(book.displayAuthor)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 LibraryBadgeLine(badges: book.ownershipBadges)
             }
