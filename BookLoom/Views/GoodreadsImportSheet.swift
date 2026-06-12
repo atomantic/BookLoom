@@ -26,17 +26,19 @@ struct GoodreadsImportSheet: View {
     @State private var saveToShelf = true
     @State private var selectedClubIDs: Set<PersistentIdentifier> = []
 
-    private let metadataService = BookMetadataService()
+    private let metadataService: BookMetadataService
 
     init(
         pendingItem: SharedImportInbox.PendingImport,
         clubs: [BookClub],
         initiallyActiveClub: BookClub?,
+        metadataService: BookMetadataService = BookMetadataService(),
         onDismiss: @escaping (GoodreadsImportCompletion) -> Void
     ) {
         self.pendingItem = pendingItem
         self.clubs = clubs
         self.initiallyActiveClub = initiallyActiveClub
+        self.metadataService = metadataService
         self.onDismiss = onDismiss
         let prefetched = pendingItem.resolvedCandidate
         _candidate = State(initialValue: prefetched)
