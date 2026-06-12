@@ -61,6 +61,7 @@ private struct ImportInboxRow: View {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
                 .frame(minHeight: 48)
                 .contentShape(Rectangle())
@@ -76,6 +77,7 @@ private struct ImportInboxRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove import")
+            .bookLoomPointerCursor()
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)

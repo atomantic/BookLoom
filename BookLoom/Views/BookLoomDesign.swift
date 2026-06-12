@@ -133,6 +133,22 @@ extension View {
     func bookLoomActionWidth(minWidth: CGFloat = 180) -> some View {
         modifier(BookLoomActionWidthModifier(minWidth: minWidth))
     }
+
+    /// Show the pointing-hand cursor on hover for clickable controls on macOS.
+    /// No-op on iOS where pointer affordances aren't applicable.
+    func bookLoomPointerCursor() -> some View {
+        #if os(macOS)
+        onHover { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        #else
+        self
+        #endif
+    }
 }
 
 extension DynamicTypeSize {

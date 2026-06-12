@@ -1007,6 +1007,7 @@ private struct SyncStatusBanner: View {
             Image(systemName: issue.systemImage)
                 .foregroundStyle(iconTint)
                 .font(.title3)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(issue.title)
                     .font(.subheadline.weight(.semibold))
