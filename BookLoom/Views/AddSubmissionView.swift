@@ -75,6 +75,24 @@ struct AddSubmissionView: View {
     }
 }
 
+/// Shared target for the three metadata import controls. Bundles the four
+/// fields a candidate writes back into so the apply logic lives in one place.
+struct BookMetadataSelection {
+    @Binding var title: String
+    @Binding var author: String
+    @Binding var isbn: String
+    @Binding var selectedMetadata: BookMetadataCandidate?
+
+    func apply(_ candidate: BookMetadataCandidate) {
+        title = candidate.title
+        author = candidate.authorLine
+        if let candidateISBN = candidate.isbn {
+            isbn = candidateISBN
+        }
+        selectedMetadata = candidate
+    }
+}
+
 struct GoodreadsMetadataImportControls: View {
     @Binding var title: String
     @Binding var author: String
@@ -138,19 +156,14 @@ struct GoodreadsMetadataImportControls: View {
 
         do {
             let candidate = try await metadataService.importFromGoodreads(url: url)
-            apply(candidate)
+            selection.apply(candidate)
         } catch {
             importError = error.localizedDescription
         }
     }
 
-    private func apply(_ candidate: BookMetadataCandidate) {
-        title = candidate.title
-        author = candidate.authorLine
-        if let candidateISBN = candidate.isbn {
-            isbn = candidateISBN
-        }
-        selectedMetadata = candidate
+    private var selection: BookMetadataSelection {
+        BookMetadataSelection(title: $title, author: $author, isbn: $isbn, selectedMetadata: $selectedMetadata)
     }
 
     private static func clipboardString() -> String? {
@@ -259,19 +272,14 @@ struct ISBNMetadataLookupControls: View {
 
         do {
             let candidate = try await metadataService.lookupISBN(scannedISBN)
-            apply(candidate)
+            selection.apply(candidate)
         } catch {
             lookupError = error.localizedDescription
         }
     }
 
-    private func apply(_ candidate: BookMetadataCandidate) {
-        title = candidate.title
-        author = candidate.authorLine
-        if let candidateISBN = candidate.isbn {
-            isbn = candidateISBN
-        }
-        selectedMetadata = candidate
+    private var selection: BookMetadataSelection {
+        BookMetadataSelection(title: $title, author: $author, isbn: $isbn, selectedMetadata: $selectedMetadata)
     }
 }
 #endif
@@ -300,7 +308,7 @@ struct BookMetadataSearchControls: View {
         }
         .sheet(isPresented: $showingMetadataSearch) {
             BookMetadataSearchView(title: title, author: author, isbn: isbn) { candidate in
-                apply(candidate)
+                selection.apply(candidate)
             }
         }
     }
@@ -320,13 +328,8 @@ struct BookMetadataSearchControls: View {
         .buttonStyle(BookLoomSecondaryButtonStyle(tint: tint))
     }
 
-    private func apply(_ candidate: BookMetadataCandidate) {
-        title = candidate.title
-        author = candidate.authorLine
-        if let candidateISBN = candidate.isbn {
-            isbn = candidateISBN
-        }
-        selectedMetadata = candidate
+    private var selection: BookMetadataSelection {
+        BookMetadataSelection(title: $title, author: $author, isbn: $isbn, selectedMetadata: $selectedMetadata)
     }
 }
 
