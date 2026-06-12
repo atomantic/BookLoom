@@ -61,6 +61,18 @@ private struct BooksTabContent: View {
     @State private var librarySearchText: String = ""
     @State private var didResolveInitialLibraryTab = false
 
+    /// Lazily created once the SwiftData context and member identity are
+    /// available. Owns the sync orchestration and SwiftData mutations that used
+    /// to live in this view's action methods (see #18).
+    @State private var coordinator: ClubActionCoordinator?
+
+    private func makeCoordinator() -> ClubActionCoordinator {
+        if let coordinator { return coordinator }
+        let created = ClubActionCoordinator(context: context, memberIdentity: memberIdentity)
+        coordinator = created
+        return created
+    }
+
     var body: some View {
         let displayedSections = sections
         let filteredProposed = filteredSubmissions(displayedSections.proposed)
@@ -413,12 +425,7 @@ private struct BooksTabContent: View {
     }
 
     private func syncClubForCurrentRole() async {
-        await SharedClubSync.synchronizeIfNeeded(
-            club,
-            context: context,
-            localMemberID: memberIdentity.memberID,
-            localMemberName: memberIdentity.name
-        )
+        await makeCoordinator().synchronizeIfNeeded(club)
     }
 
     private func refreshShelfFromSharedQueue(selectShelfWhenPending: Bool) {
@@ -430,125 +437,51 @@ private struct BooksTabContent: View {
     }
 
     private func pickRandomNext() {
-        guard let pick = BookPicker.pickNext(from: sections.proposed) else { return }
-        assignCurrent(pick)
+        makeCoordinator().pickRandomNext(in: club, from: sections.proposed)
     }
 
     private func openOrCreatePoll() {
-        if let activePoll {
-            path.append(activePoll)
-            return
-        }
-
-        let proposed = sections.proposed
-        guard proposed.count >= 2 else { return }
-        let poll = SelectionPoll(
-            title: "Next Book Vote",
-            candidates: proposed,
-            isAnonymousResults: true
-        )
-        poll.createdByMemberID = memberIdentity.memberID
-        context.insert(poll)
-        club.addSelectionPoll(poll)
-        saveClubChanges()
+        guard let poll = makeCoordinator().openOrCreatePoll(
+            in: club,
+            activePoll: activePoll,
+            proposed: sections.proposed
+        ) else { return }
         path.append(poll)
     }
 
     private func assignCurrent(_ submission: BookSubmission) {
-        SelectionPollCoordinator.promoteWinner(submission, in: club, actorMemberID: memberIdentity.memberID)
-        DiscussionPromptLibrary.ensureStarterPrompts(for: submission, context: context)
-        saveClubChanges()
+        makeCoordinator().assignCurrent(submission, in: club)
     }
 
     private func markComplete(_ submission: BookSubmission) {
-        BookSubmissionStatusEditor.markComplete(submission, in: club, actorMemberID: memberIdentity.memberID)
-        saveClubChanges()
+        makeCoordinator().markComplete(submission, in: club)
     }
 
     private func offerToKeepInLibrary(_ submission: BookSubmission) {
-        guard existingLibraryBook(matching: submission) == nil else { return }
+        guard !makeCoordinator().hasPersonalLibraryCopy(of: submission) else { return }
         pendingLibrarySubmission = submission
         showingKeepInLibraryConfirmation = true
     }
 
     private func saveToPersonalLibrary(_ submission: BookSubmission) {
-        if let existing = existingLibraryBook(matching: submission) {
-            existing.didRead = true
-            existing.updatedAt = .now
-            savePersonalLibraryChanges()
-            return
-        }
-
-        let book = LibraryBook.fromSubmission(submission)
-        book.didRead = true
-        context.insert(book)
-        savePersonalLibraryChanges()
-    }
-
-    /// Targeted lookup for the Shelf copy of a submission instead of querying
-    /// the whole `LibraryBook` table just to run a `contains` scan. A match
-    /// requires the submission to carry external identifiers (see
-    /// `LibraryBook.matchesSubmission`), so bail early when it has none.
-    private func existingLibraryBook(matching submission: BookSubmission) -> LibraryBook? {
-        let provider = submission.externalProvider
-        let externalID = submission.externalID
-        guard !provider.isEmpty, !externalID.isEmpty else { return nil }
-
-        let descriptor = FetchDescriptor<LibraryBook>(
-            predicate: #Predicate { $0.externalProvider == provider && $0.externalID == externalID }
-        )
-        return try? context.fetch(descriptor).first
-    }
-
-    private func savePersonalLibraryChanges() {
-        do {
-            try context.save()
-        } catch {
-            assertionFailure("Failed to save personal library changes: \(error.localizedDescription)")
-        }
+        makeCoordinator().saveToPersonalLibrary(submission)
     }
 
     private func moveCurrentToProposals(_ submission: BookSubmission) {
-        BookSubmissionStatusEditor.moveToProposals(submission, in: club, actorMemberID: memberIdentity.memberID)
-        saveClubChanges()
+        makeCoordinator().moveCurrentToProposals(submission, in: club)
     }
 
     private func delete(_ items: [BookSubmission], at offsets: IndexSet) {
-        for index in offsets {
-            delete(items[index], shouldSave: false)
-        }
-        saveClubChanges()
+        makeCoordinator().delete(items, at: offsets, in: club)
     }
 
     private func delete(_ submission: BookSubmission, shouldSave: Bool = true) {
-        BookSubmissionDetailsEditor.recordDeletion(
-            submission,
-            in: club,
-            actorMemberID: memberIdentity.memberID
-        )
-        context.delete(submission)
-        if shouldSave {
-            saveClubChanges()
-        }
+        makeCoordinator().delete(submission, in: club, shouldSave: shouldSave)
     }
 
     private func moveSubmissionToImports(_ submission: BookSubmission) {
-        guard goodreadsInbox.moveSubmissionToShelf(submission, context: context) else { return }
-        saveClubChanges()
+        guard makeCoordinator().moveSubmissionToImports(submission, inbox: goodreadsInbox, in: club) else { return }
         libraryTab = .imports
-    }
-
-    private func saveClubChanges() {
-        do {
-            try SharedClubSync.saveAndPublish(
-                context: context,
-                club: club,
-                localMemberID: memberIdentity.memberID,
-                localMemberName: memberIdentity.name
-            )
-        } catch {
-            assertionFailure("Failed to save club changes: \(error.localizedDescription)")
-        }
     }
 }
 
