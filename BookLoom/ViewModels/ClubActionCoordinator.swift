@@ -9,15 +9,20 @@ import SwiftData
 /// The coordinator deliberately does NOT own the navigation path. Poll creation
 /// returns the poll for the view to append, so navigation semantics stay in the
 /// view layer where the `NavigationPath` binding lives.
+///
+/// The active `club` is fixed for the coordinator's lifetime (it is created once
+/// per Club tab against a single club), so it is held rather than threaded
+/// through every method, matching how `context` and `memberIdentity` are stored.
 @MainActor
-@Observable
 final class ClubActionCoordinator {
     private let context: ModelContext
     private let memberIdentity: MemberIdentity
+    private let club: BookClub
 
-    init(context: ModelContext, memberIdentity: MemberIdentity) {
+    init(context: ModelContext, memberIdentity: MemberIdentity, club: BookClub) {
         self.context = context
         self.memberIdentity = memberIdentity
+        self.club = club
     }
 
     private var localMemberID: String { memberIdentity.memberID }
@@ -26,7 +31,7 @@ final class ClubActionCoordinator {
     // MARK: - Sync
 
     /// Publish local changes and merge remote snapshots for the active club.
-    func synchronizeIfNeeded(_ club: BookClub) async {
+    func synchronizeIfNeeded() async {
         await SharedClubSync.synchronizeIfNeeded(
             club,
             context: context,
@@ -37,25 +42,25 @@ final class ClubActionCoordinator {
 
     // MARK: - Submission status mutations
 
-    func pickRandomNext(in club: BookClub, from proposed: [BookSubmission]) {
+    func pickRandomNext(from proposed: [BookSubmission]) {
         guard let pick = BookPicker.pickNext(from: proposed) else { return }
-        assignCurrent(pick, in: club)
+        assignCurrent(pick)
     }
 
-    func assignCurrent(_ submission: BookSubmission, in club: BookClub) {
+    func assignCurrent(_ submission: BookSubmission) {
         SelectionPollCoordinator.promoteWinner(submission, in: club, actorMemberID: localMemberID)
         DiscussionPromptLibrary.ensureStarterPrompts(for: submission, context: context)
-        saveClubChanges(club)
+        saveClubChanges()
     }
 
-    func markComplete(_ submission: BookSubmission, in club: BookClub) {
+    func markComplete(_ submission: BookSubmission) {
         BookSubmissionStatusEditor.markComplete(submission, in: club, actorMemberID: localMemberID)
-        saveClubChanges(club)
+        saveClubChanges()
     }
 
-    func moveCurrentToProposals(_ submission: BookSubmission, in club: BookClub) {
+    func moveCurrentToProposals(_ submission: BookSubmission) {
         BookSubmissionStatusEditor.moveToProposals(submission, in: club, actorMemberID: localMemberID)
-        saveClubChanges(club)
+        saveClubChanges()
     }
 
     // MARK: - Polls
@@ -64,7 +69,7 @@ final class ClubActionCoordinator {
     /// poll over the proposed candidates and returns it. Returns `nil` when
     /// there aren't enough proposals to vote on. The caller is responsible for
     /// any navigation.
-    func openOrCreatePoll(in club: BookClub, activePoll: SelectionPoll?, proposed: [BookSubmission]) -> SelectionPoll? {
+    func openOrCreatePoll(activePoll: SelectionPoll?, proposed: [BookSubmission]) -> SelectionPoll? {
         if let activePoll {
             return activePoll
         }
@@ -78,20 +83,20 @@ final class ClubActionCoordinator {
         poll.createdByMemberID = localMemberID
         context.insert(poll)
         club.addSelectionPoll(poll)
-        saveClubChanges(club)
+        saveClubChanges()
         return poll
     }
 
     // MARK: - Deletion
 
-    func delete(_ items: [BookSubmission], at offsets: IndexSet, in club: BookClub) {
+    func delete(_ items: [BookSubmission], at offsets: IndexSet) {
         for index in offsets {
-            delete(items[index], in: club, shouldSave: false)
+            delete(items[index], shouldSave: false)
         }
-        saveClubChanges(club)
+        saveClubChanges()
     }
 
-    func delete(_ submission: BookSubmission, in club: BookClub, shouldSave: Bool = true) {
+    func delete(_ submission: BookSubmission, shouldSave: Bool = true) {
         BookSubmissionDetailsEditor.recordDeletion(
             submission,
             in: club,
@@ -99,15 +104,15 @@ final class ClubActionCoordinator {
         )
         context.delete(submission)
         if shouldSave {
-            saveClubChanges(club)
+            saveClubChanges()
         }
     }
 
     /// Moves a club proposal into the shared import inbox. Returns `true` when
     /// the move succeeded so the view can switch tabs.
-    func moveSubmissionToImports(_ submission: BookSubmission, inbox: GoodreadsImportInbox, in club: BookClub) -> Bool {
+    func moveSubmissionToImports(_ submission: BookSubmission, inbox: GoodreadsImportInbox) -> Bool {
         guard inbox.moveSubmissionToShelf(submission, context: context) else { return false }
-        saveClubChanges(club)
+        saveClubChanges()
         return true
     }
 
@@ -158,7 +163,7 @@ final class ClubActionCoordinator {
 
     // MARK: - Persistence
 
-    private func saveClubChanges(_ club: BookClub) {
+    private func saveClubChanges() {
         do {
             try SharedClubSync.saveAndPublish(
                 context: context,

@@ -25,11 +25,11 @@ final class ClubActionCoordinatorTests: XCTestCase {
         return ModelContext(container)
     }
 
-    private func makeCoordinator(context: ModelContext) -> ClubActionCoordinator {
+    private func makeCoordinator(context: ModelContext, club: BookClub) -> ClubActionCoordinator {
         let identity = MemberIdentity()
         identity.memberID = "member-1"
         identity.name = "Alex"
-        return ClubActionCoordinator(context: context, memberIdentity: identity)
+        return ClubActionCoordinator(context: context, memberIdentity: identity, club: club)
     }
 
     func test_assignCurrentPromotesSubmissionAndPersists() throws {
@@ -39,8 +39,8 @@ final class ClubActionCoordinatorTests: XCTestCase {
         club.addSubmission(proposed)
         context.insert(club)
 
-        let coordinator = makeCoordinator(context: context)
-        coordinator.assignCurrent(proposed, in: club)
+        let coordinator = makeCoordinator(context: context, club: club)
+        coordinator.assignCurrent(proposed)
 
         XCTAssertEqual(proposed.status, .current)
         XCTAssertNotNil(proposed.pickedAt)
@@ -56,8 +56,8 @@ final class ClubActionCoordinatorTests: XCTestCase {
         club.addSubmission(current)
         context.insert(club)
 
-        let coordinator = makeCoordinator(context: context)
-        coordinator.markComplete(current, in: club)
+        let coordinator = makeCoordinator(context: context, club: club)
+        coordinator.markComplete(current)
 
         XCTAssertEqual(current.status, .completed)
         XCTAssertNotNil(current.completedAt)
@@ -71,8 +71,8 @@ final class ClubActionCoordinatorTests: XCTestCase {
         club.addSubmission(current)
         context.insert(club)
 
-        let coordinator = makeCoordinator(context: context)
-        coordinator.moveCurrentToProposals(current, in: club)
+        let coordinator = makeCoordinator(context: context, club: club)
+        coordinator.moveCurrentToProposals(current)
 
         XCTAssertEqual(current.status, .proposed)
         XCTAssertNil(current.pickedAt)
@@ -88,8 +88,8 @@ final class ClubActionCoordinatorTests: XCTestCase {
         club.addSubmission(b)
         context.insert(club)
 
-        let coordinator = makeCoordinator(context: context)
-        coordinator.pickRandomNext(in: club, from: club.sections.proposed)
+        let coordinator = makeCoordinator(context: context, club: club)
+        coordinator.pickRandomNext(from: club.sections.proposed)
 
         XCTAssertEqual(club.sections.current != nil ? 1 : 0, 1, "exactly one book should become current")
     }
@@ -106,8 +106,8 @@ final class ClubActionCoordinatorTests: XCTestCase {
         context.insert(existing)
         club.addSelectionPoll(existing)
 
-        let coordinator = makeCoordinator(context: context)
-        let result = coordinator.openOrCreatePoll(in: club, activePoll: existing, proposed: [a, b])
+        let coordinator = makeCoordinator(context: context, club: club)
+        let result = coordinator.openOrCreatePoll(activePoll: existing, proposed: [a, b])
 
         XCTAssertTrue(result === existing, "should return the already-open poll without creating a new one")
         XCTAssertEqual((club.selectionPolls ?? []).count, 1)
@@ -122,8 +122,8 @@ final class ClubActionCoordinatorTests: XCTestCase {
         club.addSubmission(b)
         context.insert(club)
 
-        let coordinator = makeCoordinator(context: context)
-        let result = coordinator.openOrCreatePoll(in: club, activePoll: nil, proposed: [a, b])
+        let coordinator = makeCoordinator(context: context, club: club)
+        let result = coordinator.openOrCreatePoll(activePoll: nil, proposed: [a, b])
 
         let poll = try XCTUnwrap(result)
         XCTAssertEqual(poll.createdByMemberID, "member-1")
@@ -138,8 +138,8 @@ final class ClubActionCoordinatorTests: XCTestCase {
         club.addSubmission(a)
         context.insert(club)
 
-        let coordinator = makeCoordinator(context: context)
-        let result = coordinator.openOrCreatePoll(in: club, activePoll: nil, proposed: [a])
+        let coordinator = makeCoordinator(context: context, club: club)
+        let result = coordinator.openOrCreatePoll(activePoll: nil, proposed: [a])
 
         XCTAssertNil(result)
         XCTAssertEqual((club.selectionPolls ?? []).count, 0)
@@ -152,8 +152,8 @@ final class ClubActionCoordinatorTests: XCTestCase {
         club.addSubmission(a)
         context.insert(club)
 
-        let coordinator = makeCoordinator(context: context)
-        coordinator.delete(a, in: club)
+        let coordinator = makeCoordinator(context: context, club: club)
+        coordinator.delete(a)
 
         let remaining = try context.fetch(FetchDescriptor<BookSubmission>())
         XCTAssertTrue(remaining.isEmpty)
@@ -166,7 +166,7 @@ final class ClubActionCoordinatorTests: XCTestCase {
         submission.externalID = "abc123"
         context.insert(submission)
 
-        let coordinator = makeCoordinator(context: context)
+        let coordinator = makeCoordinator(context: context, club: BookClub(name: "Tuesday"))
         XCTAssertFalse(coordinator.hasPersonalLibraryCopy(of: submission))
 
         coordinator.saveToPersonalLibrary(submission)
@@ -184,7 +184,7 @@ final class ClubActionCoordinatorTests: XCTestCase {
         submission.externalID = "abc123"
         context.insert(submission)
 
-        let coordinator = makeCoordinator(context: context)
+        let coordinator = makeCoordinator(context: context, club: BookClub(name: "Tuesday"))
         coordinator.saveToPersonalLibrary(submission)
         coordinator.saveToPersonalLibrary(submission)
 

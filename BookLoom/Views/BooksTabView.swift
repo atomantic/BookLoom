@@ -68,7 +68,7 @@ private struct BooksTabContent: View {
 
     private func makeCoordinator() -> ClubActionCoordinator {
         if let coordinator { return coordinator }
-        let created = ClubActionCoordinator(context: context, memberIdentity: memberIdentity)
+        let created = ClubActionCoordinator(context: context, memberIdentity: memberIdentity, club: club)
         coordinator = created
         return created
     }
@@ -425,7 +425,7 @@ private struct BooksTabContent: View {
     }
 
     private func syncClubForCurrentRole() async {
-        await makeCoordinator().synchronizeIfNeeded(club)
+        await makeCoordinator().synchronizeIfNeeded()
     }
 
     private func refreshShelfFromSharedQueue(selectShelfWhenPending: Bool) {
@@ -437,12 +437,11 @@ private struct BooksTabContent: View {
     }
 
     private func pickRandomNext() {
-        makeCoordinator().pickRandomNext(in: club, from: sections.proposed)
+        makeCoordinator().pickRandomNext(from: sections.proposed)
     }
 
     private func openOrCreatePoll() {
         guard let poll = makeCoordinator().openOrCreatePoll(
-            in: club,
             activePoll: activePoll,
             proposed: sections.proposed
         ) else { return }
@@ -450,11 +449,11 @@ private struct BooksTabContent: View {
     }
 
     private func assignCurrent(_ submission: BookSubmission) {
-        makeCoordinator().assignCurrent(submission, in: club)
+        makeCoordinator().assignCurrent(submission)
     }
 
     private func markComplete(_ submission: BookSubmission) {
-        makeCoordinator().markComplete(submission, in: club)
+        makeCoordinator().markComplete(submission)
     }
 
     private func offerToKeepInLibrary(_ submission: BookSubmission) {
@@ -468,19 +467,19 @@ private struct BooksTabContent: View {
     }
 
     private func moveCurrentToProposals(_ submission: BookSubmission) {
-        makeCoordinator().moveCurrentToProposals(submission, in: club)
+        makeCoordinator().moveCurrentToProposals(submission)
     }
 
     private func delete(_ items: [BookSubmission], at offsets: IndexSet) {
-        makeCoordinator().delete(items, at: offsets, in: club)
+        makeCoordinator().delete(items, at: offsets)
     }
 
     private func delete(_ submission: BookSubmission, shouldSave: Bool = true) {
-        makeCoordinator().delete(submission, in: club, shouldSave: shouldSave)
+        makeCoordinator().delete(submission, shouldSave: shouldSave)
     }
 
     private func moveSubmissionToImports(_ submission: BookSubmission) {
-        guard makeCoordinator().moveSubmissionToImports(submission, inbox: goodreadsInbox, in: club) else { return }
+        guard makeCoordinator().moveSubmissionToImports(submission, inbox: goodreadsInbox) else { return }
         libraryTab = .imports
     }
 }
