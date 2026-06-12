@@ -42,7 +42,7 @@ struct DiscussionPromptCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .bookLoomCardSurface()
                     }
                 }
 
@@ -111,7 +111,7 @@ struct DiscussionModeView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(24)
                     .frame(maxWidth: 620)
-                    .background(.white.opacity(0.22), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .bookLoomCardSurface()
                 Spacer(minLength: 12)
                 HStack {
                     Button {

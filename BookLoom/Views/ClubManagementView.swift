@@ -357,7 +357,7 @@ private struct ClubDeleteCard: View {
                         .foregroundStyle(.white)
                 }
             }
-            .buttonStyle(BookLoomProminentButtonStyle(tint: .red))
+            .buttonStyle(BookLoomProminentButtonStyle(tint: BookLoomStyle.coral))
             .bookLoomActionWidth()
             .disabled(isDeleting)
         }
@@ -415,7 +415,7 @@ private struct ClubMemberRow: View {
                         .font(.subheadline.weight(.semibold))
                 }
                 .buttonStyle(.borderless)
-                .foregroundStyle(.red)
+                .foregroundStyle(BookLoomStyle.coral)
                 .accessibilityLabel("Remove \(member.name)")
             }
         }

@@ -33,6 +33,18 @@ enum BookLoomStyle {
         dark: RGB(0.94, 0.72, 0.36)
     )
 
+    /// Adaptive card surface. Light mode needs a meaningfully opaque fill;
+    /// a near-transparent white reads as invisible over the parchment
+    /// background (the light-mode prompt-bubble bug).
+    static let cardFill = adaptiveColor(
+        light: RGB(1, 1, 1, alpha: 0.36),
+        dark: RGB(1, 1, 1, alpha: 0.08)
+    )
+    static let cardStroke = adaptiveColor(
+        light: RGB(1, 1, 1, alpha: 0.50),
+        dark: RGB(1, 1, 1, alpha: 0.16)
+    )
+
     static func screenGradient(for colorScheme: ColorScheme) -> LinearGradient {
         let colors: [Color]
         if colorScheme == .dark {

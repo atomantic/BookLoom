@@ -250,8 +250,8 @@ enum InviteLoadError: Equatable {
 
     var tint: Color {
         switch self {
-        case .productionSchemaMissing, .other: return .orange
-        default: return .blue
+        case .productionSchemaMissing, .other: return BookLoomStyle.coral
+        default: return BookLoomStyle.indigo
         }
     }
 

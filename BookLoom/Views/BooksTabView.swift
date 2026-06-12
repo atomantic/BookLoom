@@ -101,7 +101,7 @@ private struct BooksTabContent: View {
                         } label: {
                             Label("Complete", systemImage: "checkmark.seal.fill")
                         }
-                        .tint(.green)
+                        .tint(BookLoomStyle.sage)
                     }
                     .swipeActions(edge: .leading) {
                         Button {
