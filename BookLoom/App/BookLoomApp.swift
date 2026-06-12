@@ -158,6 +158,9 @@ struct BookLoomApp: App {
         }
         #endif
 
+        // Separate #if: the modifiers above attach to WindowGroup, while
+        // Settings is its own Scene. A merged #if puts a Scene statement after
+        // a modifier chain, which the @SceneBuilder #if handling rejects.
         #if os(macOS)
         Settings {
             SettingsView()
