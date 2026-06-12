@@ -23,16 +23,20 @@ struct BookCoverTile: View {
                     Text(initials)
                         .font(.system(size: width > 80 ? 26 : 18, weight: .bold, design: .serif))
                         .foregroundStyle(.white)
-                        .minimumScaleFactor(0.6)
+                        .minimumScaleFactor(0.8)
                         .lineLimit(1)
                     if !author.isEmpty {
                         Text(author)
                             .font(.system(size: width > 80 ? 9 : 7, weight: .medium))
+                            .minimumScaleFactor(0.8)
                             .lineLimit(2)
                             .foregroundStyle(.white.opacity(0.78))
                     }
                 }
                 .padding(width > 80 ? 12 : 8)
+                // The cover art is a fixed-size thumbnail; cap Dynamic Type so the
+                // placeholder text can't overflow the frame at accessibility sizes.
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
         }
         .frame(width: width, height: height)

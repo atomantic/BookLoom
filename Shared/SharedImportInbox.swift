@@ -1,15 +1,5 @@
 import Foundation
 
-extension String {
-    /// Whitespace-trimmed value, or `nil` if the trim leaves nothing.
-    /// Lives in `Shared/` because the share extension can't import the main
-    /// app's design system where `String.trimmedOrNil` lives.
-    fileprivate var trimmedNonEmpty: String? {
-        let value = trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
-    }
-}
-
 /// Queue for handing book imports to the main app. On iOS this is App
 /// Group-backed because the Share Extension enqueues Goodreads URLs from a
 /// separate process. On macOS there is no share extension, so the queue stays
@@ -53,7 +43,7 @@ enum SharedImportInbox {
         var id: String { url.absoluteString }
 
         var coverURL: URL? {
-            guard let value = coverURLString?.trimmedNonEmpty else { return nil }
+            guard let value = coverURLString?.trimmedOrNil else { return nil }
             return URL(string: value)
         }
 
@@ -61,8 +51,8 @@ enum SharedImportInbox {
             metadataFetchedAt != nil
         }
 
-        var displayTitle: String? { title?.trimmedNonEmpty }
-        var displayAuthor: String? { author?.trimmedNonEmpty }
+        var displayTitle: String? { title?.trimmedOrNil }
+        var displayAuthor: String? { author?.trimmedOrNil }
     }
 
     /// Append a Goodreads URL to the back of the queue. Duplicate URLs already

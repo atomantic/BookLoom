@@ -356,15 +356,11 @@ struct MobileLibraryBookDetailView: View {
     }
 
     private var heroLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14))
-            : AnyLayout(HStackLayout(spacing: 16))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 14), compact: HStackLayout(spacing: 16))
     }
 
     private var ratingLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-            : AnyLayout(HStackLayout(alignment: .center))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 8), compact: HStackLayout(alignment: .center))
     }
 
     private func apply(_ candidate: BookMetadataCandidate) {
@@ -457,13 +453,7 @@ private struct MobileBookMenuRow<Content: View>: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(BookLoomStyle.plum)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-            }
+            .bookLoomInputFieldStyle()
         }
         .buttonStyle(.plain)
     }

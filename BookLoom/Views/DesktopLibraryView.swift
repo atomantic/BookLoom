@@ -118,7 +118,11 @@ struct DesktopLibraryView: View {
             .padding(.horizontal, 14)
             .padding(.top, 14)
 
-            DesktopLibrarySearchField(text: $searchText)
+            LibrarySearchField(
+                text: $searchText,
+                placeholder: "Search personal shelf",
+                clearAccessibilityLabel: "Clear shelf search"
+            )
                 .padding(.horizontal, 14)
 
             Picker("Shelf filter", selection: $filter) {
@@ -281,33 +285,6 @@ private enum DesktopLibrarySidebar: String, Identifiable {
     var id: String { rawValue }
 }
 
-private struct DesktopLibrarySearchField: View {
-    @Binding var text: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search personal shelf", text: $text)
-                .textFieldStyle(.plain)
-            if !text.isEmpty {
-                Button {
-                    text = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear shelf search")
-            }
-        }
-        .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(BookLoomStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
 private struct LibrarySummaryHeader: View {
     let allCount: Int
     let ownedCount: Int
@@ -420,7 +397,8 @@ private struct PendingShelfRow: View {
                     Text(author)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 HStack(spacing: 6) {
@@ -469,7 +447,8 @@ private struct LibraryBookSidebarRow: View {
                     Text(book.displayAuthor)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 LibraryBadgeLine(badges: book.ownershipBadges)
             }

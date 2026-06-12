@@ -78,6 +78,14 @@ extension DynamicTypeSize {
     var prefersExpandedControlLayout: Bool {
         self >= .xxLarge
     }
+
+    /// Pick a roomier vertical stack at expanded text sizes and a compact
+    /// horizontal one otherwise. Collapses the repeated
+    /// `prefersExpandedControlLayout ? AnyLayout(VStackLayout(...)) : AnyLayout(HStackLayout(...))`
+    /// computed properties scattered across the tab and detail views.
+    func adaptiveLayout(expanded: VStackLayout, compact: HStackLayout) -> AnyLayout {
+        prefersExpandedControlLayout ? AnyLayout(expanded) : AnyLayout(compact)
+    }
 }
 
 struct BookLoomActionWidthModifier: ViewModifier {
@@ -114,26 +122,36 @@ private struct BookLoomScreenBackground: View {
 }
 
 private struct BookLoomCardModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
     let padding: CGFloat
     let radius: CGFloat
 
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(cardFill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .bookLoomCardSurface(radius: radius)
+    }
+}
+
+extension View {
+    /// Apply the adaptive card fill + stroke without the card's own padding,
+    /// for content that supplies its own inset (e.g. discussion prompt bubbles).
+    func bookLoomCardSurface(radius: CGFloat = 8) -> some View {
+        background(BookLoomStyle.cardFill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(cardStroke, lineWidth: 1)
+                    .stroke(BookLoomStyle.cardStroke, lineWidth: 1)
             }
     }
 
-    private var cardFill: Color {
-        colorScheme == .dark ? .white.opacity(0.08) : .white.opacity(0.36)
-    }
-
-    private var cardStroke: Color {
-        colorScheme == .dark ? .white.opacity(0.16) : .white.opacity(0.50)
+    /// The shared compact input-field treatment (padding + filled background +
+    /// stroke) used by BookLoomCompactTextField and the menu rows that mirror it.
+    func bookLoomInputFieldStyle() -> some View {
+        padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            }
     }
 }

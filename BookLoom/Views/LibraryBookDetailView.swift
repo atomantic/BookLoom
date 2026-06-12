@@ -300,6 +300,9 @@ private struct LibraryBookHero: View {
             }
         }
         .bookLoomCard(padding: 16)
+        // The .largeTitle hero title can fill the entire macOS detail pane at
+        // the highest system text sizes; cap it while still honoring AX tiers.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 }
 

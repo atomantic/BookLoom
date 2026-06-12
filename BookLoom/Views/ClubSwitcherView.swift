@@ -190,7 +190,8 @@ private struct ClubSwitcherRow: View {
                         Text(club.name)
                             .font(.headline)
                             .foregroundStyle(BookLoomStyle.ink)
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                         if !club.isOwner {
                             Image(systemName: "person.2.fill")
                                 .font(.caption2)

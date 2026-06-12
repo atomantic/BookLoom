@@ -499,9 +499,7 @@ private struct MobileShelfImportRow: View {
     }
 
     private var actionLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 8))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(spacing: 8), compact: HStackLayout(spacing: 8))
     }
 }
 

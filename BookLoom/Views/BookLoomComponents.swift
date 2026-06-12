@@ -74,7 +74,7 @@ struct TintedCapsuleLabel: View {
             .foregroundStyle(tint)
             .background(tint.opacity(0.13), in: Capsule())
             .lineLimit(2)
-            .minimumScaleFactor(0.75)
+            .minimumScaleFactor(0.8)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -350,13 +350,7 @@ struct BookLoomCompactTextField: View {
                 .font(.body)
                 .foregroundStyle(BookLoomStyle.ink)
                 .lineLimit(isMultiline ? 4...8 : 1...1)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 11)
-                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-                }
+                .bookLoomInputFieldStyle()
                 .accessibilityLabel(title)
         }
     }
@@ -451,7 +445,7 @@ struct MetricTile: View {
             .font(.headline.bold())
             .foregroundStyle(BookLoomStyle.ink)
             .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .minimumScaleFactor(0.8)
             .allowsTightening(true)
     }
 
@@ -460,7 +454,7 @@ struct MetricTile: View {
             .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)
             .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? 2 : 1)
-            .minimumScaleFactor(dynamicTypeSize.prefersExpandedControlLayout ? 0.85 : 0.55)
+            .minimumScaleFactor(0.8)
             .allowsTightening(true)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -497,7 +491,7 @@ struct InlineEmptyState: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 22, weight: .semibold))
+                .font(.title2.weight(.semibold))
                 .foregroundStyle(BookLoomStyle.plum)
                 .symbolRenderingMode(.hierarchical)
             Text(title)
