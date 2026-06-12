@@ -92,7 +92,7 @@ struct InviteView: View {
     private func errorView(_ error: InviteLoadError) -> some View {
         VStack(spacing: 12) {
             Image(systemName: error.systemImage)
-                .font(.system(size: 36))
+                .font(.largeTitle)
                 .foregroundStyle(error.tint)
             Text(error.title)
                 .font(.title3.bold())
@@ -126,7 +126,7 @@ struct InviteView: View {
     private var comingSoonView: some View {
         VStack(spacing: 12) {
             Image(systemName: "icloud.and.arrow.up")
-                .font(.system(size: 36))
+                .font(.largeTitle)
                 .foregroundStyle(.tint)
             Text("Coming Soon")
                 .font(.title2.bold())
@@ -302,7 +302,7 @@ private struct CopyInviteLinkView: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "link.circle.fill")
-                .font(.system(size: 36))
+                .font(.largeTitle)
                 .foregroundStyle(.tint)
             Text("Invite to \"\(clubName)\"")
                 .font(.title3.bold())
@@ -344,7 +344,7 @@ private struct InviteStatusView: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 36))
+                .font(.largeTitle)
                 .foregroundStyle(.tint)
             Text(title)
                 .font(.title3.bold())

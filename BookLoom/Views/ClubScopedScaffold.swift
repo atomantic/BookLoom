@@ -165,7 +165,8 @@ private struct ClubSwitcherButton: View {
             Image(systemName: "books.vertical.fill")
                 .font(.headline)
                 .foregroundStyle(BookLoomStyle.indigo)
-                .frame(width: 42, height: 34)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
                 .background(.white.opacity(0.18), in: Capsule(style: .continuous))
             #else
             HStack(spacing: 6) {

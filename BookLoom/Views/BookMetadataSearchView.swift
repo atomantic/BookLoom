@@ -37,7 +37,7 @@ struct BookMetadataSearchView: View {
                 } else if let errorMessage {
                     VStack(spacing: 14) {
                         Image(systemName: "wifi.exclamationmark")
-                            .font(.system(size: 42))
+                            .font(.largeTitle)
                             .foregroundStyle(BookLoomStyle.coral)
                         Text("Couldn't Search")
                             .font(.title3.bold())
