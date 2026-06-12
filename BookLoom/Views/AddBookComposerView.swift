@@ -198,7 +198,7 @@ struct AddBookComposerView: View {
                 }
         }
         #if os(macOS)
-        .frame(minHeight: 560)
+        .frame(minWidth: 480, minHeight: 560)
         #endif
         .alert("Couldn't Save Book", isPresented: saveErrorBinding) {
             Button("OK", role: .cancel) {}
