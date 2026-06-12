@@ -268,7 +268,7 @@ private struct BooksTabContent: View {
         .navigationDestination(for: SelectionPoll.self) { poll in
             SelectionPollDetailView(poll: poll, candidates: clubSubmissions)
         }
-        .navigationDestination(isPresented: $showingAddBook) {
+        .sheet(isPresented: $showingAddBook) {
             AddSubmissionView(club: club)
         }
         .toolbar {
