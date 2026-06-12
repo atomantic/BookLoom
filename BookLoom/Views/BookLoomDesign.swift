@@ -730,15 +730,9 @@ private struct BookCardIndicatorPill: View {
     }
 }
 
-struct StatusPill: View {
-    let status: BookSubmissionStatus
-
-    var body: some View {
-        TintedCapsuleLabel(text: status.displayName, tint: tint, systemImage: systemImage)
-    }
-
-    private var systemImage: String {
-        switch status {
+extension BookSubmissionStatus {
+    var systemImage: String {
+        switch self {
         case .proposed: "tray.full.fill"
         case .current: "book.fill"
         case .completed: "checkmark.seal.fill"
@@ -746,13 +740,70 @@ struct StatusPill: View {
         }
     }
 
-    private var tint: Color {
-        switch status {
+    var tint: Color {
+        switch self {
         case .proposed: BookLoomStyle.plum
         case .current: BookLoomStyle.sage
         case .completed: BookLoomStyle.indigo
         case .skipped: BookLoomStyle.coral
         }
+    }
+}
+
+struct StatusPill: View {
+    let status: BookSubmissionStatus
+
+    var body: some View {
+        TintedCapsuleLabel(text: status.displayName, tint: status.tint, systemImage: status.systemImage)
+    }
+}
+
+/// Capsule action button shared by the Club tab's current-book row and the
+/// submission detail hero card so both render identically.
+struct BookLoomActionButton: View {
+    let title: String
+    var accessibilityTitle: String?
+    let systemImage: String
+    let tint: Color
+    let prominent: Bool
+    var role: ButtonRole?
+    let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(
+        title: String,
+        accessibilityTitle: String? = nil,
+        systemImage: String,
+        tint: Color,
+        prominent: Bool,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.accessibilityTitle = accessibilityTitle
+        self.systemImage = systemImage
+        self.tint = tint
+        self.prominent = prominent
+        self.role = role
+        self.action = action
+    }
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Label(title, systemImage: systemImage)
+                .font(dynamicTypeSize.prefersExpandedControlLayout ? .body.weight(.bold) : .footnote.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+                .padding(.vertical, dynamicTypeSize.prefersExpandedControlLayout ? 12 : 8)
+                .bookLoomActionWidth(minWidth: 128)
+                .frame(minHeight: dynamicTypeSize.prefersExpandedControlLayout ? 52 : 40)
+                .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
+                .foregroundStyle(prominent ? Color.white : tint)
+                .accessibilityLabel(accessibilityTitle ?? title)
+        }
+        .buttonStyle(.plain)
     }
 }
 

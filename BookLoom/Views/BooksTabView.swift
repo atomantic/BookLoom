@@ -692,35 +692,17 @@ private struct CompactBookStatusBadge: View {
     let status: BookSubmissionStatus
 
     var body: some View {
-        Image(systemName: systemImage)
+        Image(systemName: status.systemImage)
             .font(.caption.weight(.bold))
-            .foregroundStyle(tint)
+            .foregroundStyle(status.tint)
             .frame(width: 30, height: 30)
             .background(BookLoomStyle.paper.opacity(0.94), in: Circle())
             .overlay {
                 Circle()
-                    .stroke(tint.opacity(0.28), lineWidth: 1)
+                    .stroke(status.tint.opacity(0.28), lineWidth: 1)
             }
             .shadow(color: BookLoomStyle.ink.opacity(0.16), radius: 4, y: 2)
             .accessibilityLabel(status.displayName)
-    }
-
-    private var systemImage: String {
-        switch status {
-        case .proposed: "tray.full.fill"
-        case .current: "book.fill"
-        case .completed: "checkmark.seal.fill"
-        case .skipped: "forward.fill"
-        }
-    }
-
-    private var tint: Color {
-        switch status {
-        case .proposed: BookLoomStyle.plum
-        case .current: BookLoomStyle.sage
-        case .completed: BookLoomStyle.indigo
-        case .skipped: BookLoomStyle.coral
-        }
     }
 }
 
@@ -794,14 +776,14 @@ private struct CurrentSubmissionRow: View {
             .buttonStyle(.plain)
 
             actionLayout {
-                CurrentActionButton(
+                BookLoomActionButton(
                     title: "Mark Read",
                     systemImage: "checkmark.seal.fill",
                     tint: BookLoomStyle.sage,
                     prominent: true,
                     action: onMarkRead
                 )
-                CurrentActionButton(
+                BookLoomActionButton(
                     title: "Move Back",
                     systemImage: "tray.full.fill",
                     tint: BookLoomStyle.plum,
@@ -830,33 +812,6 @@ private struct CurrentSubmissionRow: View {
         dynamicTypeSize.prefersExpandedControlLayout
             ? AnyLayout(VStackLayout(spacing: 8))
             : AnyLayout(HStackLayout(spacing: 8))
-    }
-}
-
-private struct CurrentActionButton: View {
-    let title: String
-    let systemImage: String
-    let tint: Color
-    let prominent: Bool
-    let action: () -> Void
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(dynamicTypeSize.prefersExpandedControlLayout ? .body.weight(.bold) : .footnote.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 12)
-                .padding(.vertical, dynamicTypeSize.prefersExpandedControlLayout ? 12 : 8)
-                .bookLoomActionWidth(minWidth: 128)
-                .frame(minHeight: dynamicTypeSize.prefersExpandedControlLayout ? 52 : 40)
-                .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
-                .foregroundStyle(prominent ? Color.white : tint)
-                .accessibilityLabel(title)
-        }
-        .buttonStyle(.plain)
     }
 }
 
