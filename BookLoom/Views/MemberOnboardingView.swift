@@ -33,6 +33,7 @@ struct MemberOnboardingView: View {
                     Text("Your Name")
                         .font(.headline)
                         .foregroundStyle(BookLoomStyle.ink)
+                        .accessibilityHidden(true)
                     BookLoomCompactTextField("Your Name", text: $draftName, placeholder: "Alex")
                         .submitLabel(.done)
                         .onSubmit(saveName)
