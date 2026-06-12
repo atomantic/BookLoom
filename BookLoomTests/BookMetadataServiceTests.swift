@@ -477,6 +477,113 @@ final class BookMetadataServiceTests: XCTestCase {
         XCTAssertEqual(second, first)
         XCTAssertEqual(second.first?.description, "A labyrinthine novel.")
     }
+
+    // MARK: - Error paths
+
+    func test_search_throwsMissingTitleForWhitespaceTitle() async {
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        await assertThrowsBookMetadataError(.missingTitle) {
+            _ = try await service.search(title: "   ", author: "Dan Simmons")
+        }
+    }
+
+    func test_lookupISBN_throwsInvalidISBNForNonISBNString() async {
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        await assertThrowsBookMetadataError(.invalidISBN) {
+            _ = try await service.lookupISBN("not-an-isbn")
+        }
+    }
+
+    func test_lookupISBN_throwsISBNNotFoundWhenBothProvidersReturnEmpty() async {
+        // Both providers respond 200 with zero results → reachedProvider is
+        // true, so the service surfaces .isbnNotFound (not .requestFailed).
+        MockURLProtocol.responses = [
+            "https://openlibrary.org/search.json?isbn=9781419707742&fields=key,title,author_name,first_publish_year,cover_i,isbn&limit=3": #"{"docs":[]}"#.data(using: .utf8)!,
+            "https://www.googleapis.com/books/v1/volumes?q=isbn:9781419707742&maxResults=1&printType=books": #"{"items":[]}"#.data(using: .utf8)!
+        ]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        await assertThrowsBookMetadataError(.isbnNotFound) {
+            _ = try await service.lookupISBN("9781419707742")
+        }
+    }
+
+    func test_lookupISBN_throwsRequestFailedWhenProvidersReturn5xx() async {
+        // Both providers 5xx → fetch() throws .requestFailed and reachedProvider
+        // stays false, so the service rethrows .requestFailed.
+        let openLibraryURL = "https://openlibrary.org/search.json?isbn=9781419707742&fields=key,title,author_name,first_publish_year,cover_i,isbn&limit=3"
+        let googleURL = "https://www.googleapis.com/books/v1/volumes?q=isbn:9781419707742&maxResults=1&printType=books"
+        MockURLProtocol.responses = [
+            openLibraryURL: #"{"docs":[]}"#.data(using: .utf8)!,
+            googleURL: #"{"items":[]}"#.data(using: .utf8)!
+        ]
+        MockURLProtocol.statusCodes = [openLibraryURL: 503, googleURL: 500]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        await assertThrowsBookMetadataError(.requestFailed) {
+            _ = try await service.lookupISBN("9781419707742")
+        }
+    }
+
+    func test_importFromGoodreads_throwsGoodreadsParseFailedForUnparseableHTML() async {
+        // Valid Goodreads URL + 200 response, but HTML has no JSON-LD, no
+        // __NEXT_DATA__, and no usable og:title → parse yields nil → throws.
+        MockURLProtocol.responses = [
+            "https://www.goodreads.com/book/show/60233239": "<html><head></head><body>No metadata here.</body></html>".data(using: .utf8)!
+        ]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        await assertThrowsBookMetadataError(.goodreadsParseFailed) {
+            _ = try await service.importFromGoodreads(
+                url: URL(string: "https://www.goodreads.com/book/show/60233239-babel")!
+            )
+        }
+    }
+
+    func test_importFromGoodreads_throwsRequestFailedOn5xx() async {
+        let canonicalURL = "https://www.goodreads.com/book/show/60233239"
+        MockURLProtocol.responses = [
+            canonicalURL: "<html></html>".data(using: .utf8)!
+        ]
+        MockURLProtocol.statusCodes = [canonicalURL: 502]
+
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        await assertThrowsBookMetadataError(.requestFailed) {
+            _ = try await service.importFromGoodreads(
+                url: URL(string: "https://www.goodreads.com/book/show/60233239")!
+            )
+        }
+    }
+
+    /// Asserts the operation throws exactly the expected `BookMetadataError`.
+    private func assertThrowsBookMetadataError(
+        _ expected: BookMetadataError,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ operation: () async throws -> Void
+    ) async {
+        do {
+            try await operation()
+            XCTFail("Expected BookMetadataError.\(expected) but no error was thrown", file: file, line: line)
+        } catch let error as BookMetadataError {
+            XCTAssertEqual(
+                Self.caseName(error),
+                Self.caseName(expected),
+                "Expected \(expected) but got \(error)",
+                file: file,
+                line: line
+            )
+        } catch {
+            XCTFail("Expected BookMetadataError.\(expected) but got \(error)", file: file, line: line)
+        }
+    }
+
+    /// `BookMetadataError` has no associated values, so `String(describing:)`
+    /// yields a stable case label usable as an equality identity in tests
+    /// without requiring an `Equatable` conformance on the production type.
+    private static func caseName(_ error: BookMetadataError) -> String {
+        String(describing: error)
+    }
 }
 
 private final class MockURLProtocol: URLProtocol {
