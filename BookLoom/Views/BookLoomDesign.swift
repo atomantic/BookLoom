@@ -133,6 +133,22 @@ extension View {
     func bookLoomActionWidth(minWidth: CGFloat = 180) -> some View {
         modifier(BookLoomActionWidthModifier(minWidth: minWidth))
     }
+
+    /// Show the pointing-hand cursor on hover for clickable controls on macOS.
+    /// No-op on iOS where pointer affordances aren't applicable.
+    func bookLoomPointerCursor() -> some View {
+        #if os(macOS)
+        // Set the cursor directly rather than push/pop: a hovered view can be
+        // removed (e.g. an import row's swipe-to-remove) before the exit event
+        // fires, which would strand a pushed cursor on the stack with no
+        // matching pop. `set()` carries no such balance requirement.
+        onHover { hovering in
+            (hovering ? NSCursor.pointingHand : NSCursor.arrow).set()
+        }
+        #else
+        self
+        #endif
+    }
 }
 
 extension DynamicTypeSize {
@@ -714,15 +730,9 @@ private struct BookCardIndicatorPill: View {
     }
 }
 
-struct StatusPill: View {
-    let status: BookSubmissionStatus
-
-    var body: some View {
-        TintedCapsuleLabel(text: status.displayName, tint: tint, systemImage: systemImage)
-    }
-
-    private var systemImage: String {
-        switch status {
+extension BookSubmissionStatus {
+    var systemImage: String {
+        switch self {
         case .proposed: "tray.full.fill"
         case .current: "book.fill"
         case .completed: "checkmark.seal.fill"
@@ -730,13 +740,52 @@ struct StatusPill: View {
         }
     }
 
-    private var tint: Color {
-        switch status {
+    var tint: Color {
+        switch self {
         case .proposed: BookLoomStyle.plum
         case .current: BookLoomStyle.sage
         case .completed: BookLoomStyle.indigo
         case .skipped: BookLoomStyle.coral
         }
+    }
+}
+
+struct StatusPill: View {
+    let status: BookSubmissionStatus
+
+    var body: some View {
+        TintedCapsuleLabel(text: status.displayName, tint: status.tint, systemImage: status.systemImage)
+    }
+}
+
+/// Capsule action button shared by the Club tab's current-book row and the
+/// submission detail hero card so both render identically.
+struct BookLoomActionButton: View {
+    let title: String
+    var accessibilityTitle: String? = nil
+    let systemImage: String
+    let tint: Color
+    let prominent: Bool
+    var role: ButtonRole? = nil
+    let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Label(title, systemImage: systemImage)
+                .font(dynamicTypeSize.prefersExpandedControlLayout ? .body.weight(.bold) : .footnote.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+                .padding(.vertical, dynamicTypeSize.prefersExpandedControlLayout ? 12 : 8)
+                .bookLoomActionWidth(minWidth: 128)
+                .frame(minHeight: dynamicTypeSize.prefersExpandedControlLayout ? 52 : 40)
+                .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
+                .foregroundStyle(prominent ? Color.white : tint)
+                .accessibilityLabel(accessibilityTitle ?? title)
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -27,9 +27,29 @@ private struct BooksTabContent: View {
     @Bindable var club: BookClub
     @Binding var path: NavigationPath
     @ObservedObject private var syncStatus = SharedClubSyncStatus.shared
-    @Query(sort: \BookSubmission.submittedAt) private var submissions: [BookSubmission]
-    @Query(sort: \SelectionPoll.createdAt, order: .reverse) private var polls: [SelectionPoll]
-    @Query(sort: \LibraryBook.updatedAt, order: .reverse) private var libraryBooks: [LibraryBook]
+
+    /// Scoped to the active club at the database level so the view never
+    /// materializes other clubs' submissions/polls just to filter them out in
+    /// memory. The downstream `clubSubmissions`/`clubPolls` filters remain as a
+    /// belt-and-suspenders identity check.
+    @Query private var submissions: [BookSubmission]
+    @Query private var polls: [SelectionPoll]
+
+    init(club: BookClub, path: Binding<NavigationPath>) {
+        self.club = club
+        _path = path
+
+        let zone = club.cloudZoneName
+        _submissions = Query(
+            filter: #Predicate<BookSubmission> { $0.bookClub?.cloudZoneName == zone },
+            sort: \.submittedAt
+        )
+        _polls = Query(
+            filter: #Predicate<SelectionPoll> { $0.bookClub?.cloudZoneName == zone },
+            sort: \.createdAt,
+            order: .reverse
+        )
+    }
 
     @State private var showingPickConfirmation: Bool = false
     @State private var showingCompleteConfirmation: Bool = false
@@ -272,7 +292,7 @@ private struct BooksTabContent: View {
             titleVisibility: .visible
         ) {
             Button("Mark Read") {
-                if let current = sections.current {
+                if let current = displayedSections.current {
                     markComplete(current)
                     offerToKeepInLibrary(current)
                 }
@@ -287,7 +307,7 @@ private struct BooksTabContent: View {
             titleVisibility: .visible
         ) {
             Button("Move Back to Proposals") {
-                if let current = sections.current {
+                if let current = displayedSections.current {
                     moveCurrentToProposals(current)
                 }
             }
@@ -446,13 +466,13 @@ private struct BooksTabContent: View {
     }
 
     private func offerToKeepInLibrary(_ submission: BookSubmission) {
-        guard !libraryBooks.contains(where: { $0.matchesSubmission(submission) }) else { return }
+        guard existingLibraryBook(matching: submission) == nil else { return }
         pendingLibrarySubmission = submission
         showingKeepInLibraryConfirmation = true
     }
 
     private func saveToPersonalLibrary(_ submission: BookSubmission) {
-        if let existing = libraryBooks.first(where: { $0.matchesSubmission(submission) }) {
+        if let existing = existingLibraryBook(matching: submission) {
             existing.didRead = true
             existing.updatedAt = .now
             savePersonalLibraryChanges()
@@ -463,6 +483,21 @@ private struct BooksTabContent: View {
         book.didRead = true
         context.insert(book)
         savePersonalLibraryChanges()
+    }
+
+    /// Targeted lookup for the Shelf copy of a submission instead of querying
+    /// the whole `LibraryBook` table just to run a `contains` scan. A match
+    /// requires the submission to carry external identifiers (see
+    /// `LibraryBook.matchesSubmission`), so bail early when it has none.
+    private func existingLibraryBook(matching submission: BookSubmission) -> LibraryBook? {
+        let provider = submission.externalProvider
+        let externalID = submission.externalID
+        guard !provider.isEmpty, !externalID.isEmpty else { return nil }
+
+        let descriptor = FetchDescriptor<LibraryBook>(
+            predicate: #Predicate { $0.externalProvider == provider && $0.externalID == externalID }
+        )
+        return try? context.fetch(descriptor).first
     }
 
     private func savePersonalLibraryChanges() {
@@ -657,35 +692,17 @@ private struct CompactBookStatusBadge: View {
     let status: BookSubmissionStatus
 
     var body: some View {
-        Image(systemName: systemImage)
+        Image(systemName: status.systemImage)
             .font(.caption.weight(.bold))
-            .foregroundStyle(tint)
+            .foregroundStyle(status.tint)
             .frame(width: 30, height: 30)
             .background(BookLoomStyle.paper.opacity(0.94), in: Circle())
             .overlay {
                 Circle()
-                    .stroke(tint.opacity(0.28), lineWidth: 1)
+                    .stroke(status.tint.opacity(0.28), lineWidth: 1)
             }
             .shadow(color: BookLoomStyle.ink.opacity(0.16), radius: 4, y: 2)
             .accessibilityLabel(status.displayName)
-    }
-
-    private var systemImage: String {
-        switch status {
-        case .proposed: "tray.full.fill"
-        case .current: "book.fill"
-        case .completed: "checkmark.seal.fill"
-        case .skipped: "forward.fill"
-        }
-    }
-
-    private var tint: Color {
-        switch status {
-        case .proposed: BookLoomStyle.plum
-        case .current: BookLoomStyle.sage
-        case .completed: BookLoomStyle.indigo
-        case .skipped: BookLoomStyle.coral
-        }
     }
 }
 
@@ -759,14 +776,14 @@ private struct CurrentSubmissionRow: View {
             .buttonStyle(.plain)
 
             actionLayout {
-                CurrentActionButton(
+                BookLoomActionButton(
                     title: "Mark Read",
                     systemImage: "checkmark.seal.fill",
                     tint: BookLoomStyle.sage,
                     prominent: true,
                     action: onMarkRead
                 )
-                CurrentActionButton(
+                BookLoomActionButton(
                     title: "Move Back",
                     systemImage: "tray.full.fill",
                     tint: BookLoomStyle.plum,
@@ -795,33 +812,6 @@ private struct CurrentSubmissionRow: View {
         dynamicTypeSize.prefersExpandedControlLayout
             ? AnyLayout(VStackLayout(spacing: 8))
             : AnyLayout(HStackLayout(spacing: 8))
-    }
-}
-
-private struct CurrentActionButton: View {
-    let title: String
-    let systemImage: String
-    let tint: Color
-    let prominent: Bool
-    let action: () -> Void
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(dynamicTypeSize.prefersExpandedControlLayout ? .body.weight(.bold) : .footnote.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 12)
-                .padding(.vertical, dynamicTypeSize.prefersExpandedControlLayout ? 12 : 8)
-                .bookLoomActionWidth(minWidth: 128)
-                .frame(minHeight: dynamicTypeSize.prefersExpandedControlLayout ? 52 : 40)
-                .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
-                .foregroundStyle(prominent ? Color.white : tint)
-                .accessibilityLabel(title)
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -1007,6 +997,7 @@ private struct SyncStatusBanner: View {
             Image(systemName: issue.systemImage)
                 .foregroundStyle(iconTint)
                 .font(.title3)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(issue.title)
                     .font(.subheadline.weight(.semibold))

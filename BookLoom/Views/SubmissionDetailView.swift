@@ -590,7 +590,6 @@ private struct SubmissionHeroActionsCard: View {
         .bookLoomCard(padding: 12)
     }
 
-    @ViewBuilder
     private func actionButton(
         _ title: String,
         accessibilityTitle: String? = nil,
@@ -600,21 +599,15 @@ private struct SubmissionHeroActionsCard: View {
         role: ButtonRole? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        Button(role: role, action: action) {
-            Label(title, systemImage: systemImage)
-                .font(dynamicTypeSize.prefersExpandedControlLayout ? .body.weight(.bold) : .footnote.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 12)
-                .padding(.vertical, dynamicTypeSize.prefersExpandedControlLayout ? 12 : 8)
-                .bookLoomActionWidth(minWidth: 128)
-                .frame(minHeight: dynamicTypeSize.prefersExpandedControlLayout ? 52 : 40)
-                .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
-                .foregroundStyle(prominent ? Color.white : tint)
-                .accessibilityLabel(accessibilityTitle ?? title)
-        }
-        .buttonStyle(.plain)
+        BookLoomActionButton(
+            title: title,
+            accessibilityTitle: accessibilityTitle,
+            systemImage: systemImage,
+            tint: tint,
+            prominent: prominent,
+            role: role,
+            action: action
+        )
     }
 
     private var contentLayout: AnyLayout {
