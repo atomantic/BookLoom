@@ -72,7 +72,7 @@ enum ShareAcceptance {
                 // `fetchMemberSnapshots` makes its query. Without this, the
                 // first refresh returns no results and the joined club stays
                 // empty until the user pulls to refresh.
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(for: .seconds(1))
                 await SharedClubSync.refreshIfNeeded(
                     joined,
                     context: context,

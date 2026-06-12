@@ -75,15 +75,7 @@ struct DiscussionPromptCard: View {
 
     private func saveDiscussionChanges() {
         do {
-            try context.save()
-            if let club = submission.bookClub {
-                SharedClubSync.publishIfNeeded(
-                    club,
-                    context: context,
-                    localMemberID: memberIdentity.memberID,
-                    localMemberName: memberIdentity.name
-                )
-            }
+            try context.saveAndPublishIfNeeded(club: submission.bookClub, memberIdentity: memberIdentity)
         } catch {
             assertionFailure("Failed to save discussion changes: \(error.localizedDescription)")
         }

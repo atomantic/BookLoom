@@ -78,6 +78,15 @@ enum BookMetadataError: LocalizedError {
 }
 
 struct BookMetadataService: Sendable {
+    /// How many of the top Open Library hits to inspect before deciding the
+    /// result set is description-poor enough to warrant a Google Books fallback.
+    private static let descriptionProbeCount = 3
+    /// How many top candidates to fan out detail lookups for. Bounds the
+    /// concurrent network requests in `enrichOpenLibraryCandidates`.
+    private static let enrichmentFanOut = 5
+    /// Maximum candidates surfaced to the UI after ranking.
+    private static let maxResults = 8
+
     var urlSession: URLSession = .shared
     var cache: BookMetadataCache? = .shared
     private let openLibraryUserAgent = "BookLoom iOS (https://github.com/atomantic/BookLoom; net.shadowpuppet.PlotLoom)"
@@ -99,7 +108,7 @@ struct BookMetadataService: Sendable {
         let openLibrary = try await searchOpenLibrary(title: trimmedTitle, author: trimmedAuthor)
         var candidates = await enrichOpenLibraryCandidates(openLibrary)
 
-        if candidates.prefix(3).allSatisfy({ ($0.description ?? "").isEmpty }) {
+        if candidates.prefix(Self.descriptionProbeCount).allSatisfy({ ($0.description ?? "").isEmpty }) {
             let google = (try? await searchGoogleBooks(title: trimmedTitle, author: trimmedAuthor)) ?? []
             candidates.append(contentsOf: google.filter { candidate in
                 !candidates.contains { existing in
@@ -211,7 +220,7 @@ struct BookMetadataService: Sendable {
     }
 
     private func enrichOpenLibraryCandidates(_ candidates: [BookMetadataCandidate]) async -> [BookMetadataCandidate] {
-        let head = Array(candidates.prefix(5))
+        let head = Array(candidates.prefix(Self.enrichmentFanOut))
         let details: [OpenLibraryWorkDetail?] = await withTaskGroup(of: (Int, OpenLibraryWorkDetail?).self) { group in
             for (index, candidate) in head.enumerated() {
                 group.addTask {
@@ -615,7 +624,7 @@ struct BookMetadataService: Sendable {
     private func ranked(_ candidates: [BookMetadataCandidate], title: String, author: String) -> [BookMetadataCandidate] {
         candidates
             .sorted { score($0, title: title, author: author) > score($1, title: title, author: author) }
-            .prefix(8)
+            .prefix(Self.maxResults)
             .map { $0 }
     }
 

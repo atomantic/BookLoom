@@ -26,7 +26,7 @@ private struct BooksTabContent: View {
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
     @Bindable var club: BookClub
     @Binding var path: NavigationPath
-    @ObservedObject private var syncStatus = SharedClubSyncStatus.shared
+    private let syncStatus = SharedClubSyncStatus.shared
 
     /// Scoped to the active club at the database level so the view never
     /// materializes other clubs' submissions/polls just to filter them out in
@@ -374,9 +374,9 @@ private struct BooksTabContent: View {
     /// so each screen captures the same view regardless of pending Shelf items.
     private var screenshotInitialLibraryTab: LibraryTab? {
         guard let route = AppLaunchOptions.screenshotRoute else { return nil }
-        switch route {
-        case "shelf", "import", "imports": return .imports
-        case "books", "clubs", "clubHome": return .proposed
+        switch ScreenshotRoute(rawValue: route) {
+        case .shelf, .import, .imports: return .imports
+        case .books, .clubs, .clubHome: return .proposed
         default: return nil
         }
     }

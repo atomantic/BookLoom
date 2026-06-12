@@ -328,15 +328,7 @@ struct SubmissionDetailView: View {
 
     private func saveSubmissionChanges() {
         do {
-            try context.save()
-            if let club = submission.bookClub {
-                SharedClubSync.publishIfNeeded(
-                    club,
-                    context: context,
-                    localMemberID: memberIdentity.memberID,
-                    localMemberName: memberIdentity.name
-                )
-            }
+            try context.saveAndPublishIfNeeded(club: submission.bookClub, memberIdentity: memberIdentity)
         } catch {
             assertionFailure("Failed to save submission changes: \(error.localizedDescription)")
         }

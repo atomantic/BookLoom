@@ -45,6 +45,9 @@ final class CloudKitSharingService {
     private static let snapshotUpdatedAtKey = "snapshotUpdatedAt"
     private static let memberIDKey = "memberID"
     private static let memberNameKey = "memberName"
+    /// Snapshot payload cap, held a comfortable margin below CloudKit's hard
+    /// 1 MB (1024 * 1024) per-record limit so the encoded record — which also
+    /// carries metadata fields and CloudKit's own overhead — stays under it.
     private static let maxSnapshotBytes = 900 * 1024
 
     /// Lazy so we never construct a CKContainer until a code path that has
@@ -445,7 +448,7 @@ final class CloudKitSharingService {
     /// 1s, ~1.75s total budget) before giving up. Returns nil on persistent
     /// failure so the caller can fall back to the metadata-only join path.
     private func acceptedRootRecord(zoneID: CKRecordZone.ID) async -> CKRecord? {
-        var delay: UInt64 = 250_000_000
+        var delay: Duration = .milliseconds(250)
         var lastError: Error?
         for attempt in 0..<4 {
             do {
@@ -453,7 +456,7 @@ final class CloudKitSharingService {
             } catch {
                 lastError = error
                 if attempt < 3 {
-                    try? await Task.sleep(nanoseconds: delay)
+                    try? await Task.sleep(for: delay)
                     delay *= 2
                 }
             }
