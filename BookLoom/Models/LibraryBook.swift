@@ -262,10 +262,23 @@ extension LibraryBook {
         return externalProvider == submission.externalProvider && externalID == submission.externalID
     }
 
+    // NumberFormatter creation is expensive and `ownershipBadges` runs inside
+    // SwiftUI `body` once per rendered row, so cache one formatter per currency
+    // code. The lock keeps the shared cache safe if accessed off the main thread.
+    private static let formatterCacheLock = NSLock()
+    nonisolated(unsafe) private static var formatterCache: [String: NumberFormatter] = [:]
+
     static func currencyFormatter(currencyCode: String) -> NumberFormatter {
+        let code = currencyCode.trimmedOrNil ?? "USD"
+        formatterCacheLock.lock()
+        defer { formatterCacheLock.unlock() }
+        if let cached = formatterCache[code] {
+            return cached
+        }
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
-        formatter.currencyCode = currencyCode.trimmedOrNil ?? "USD"
+        formatter.currencyCode = code
+        formatterCache[code] = formatter
         return formatter
     }
 }

@@ -398,10 +398,23 @@ struct BookMetadataService: Sendable {
         return description?.trimmedOrNil
     }
 
+    // Compiled-once regexes shared across all parses. NSRegularExpression is
+    // thread-safe for matching, so a single static instance is safe to reuse.
+    private static let goodreadsBookIDRegex = try? NSRegularExpression(pattern: "/book/show/(\\d+)")
+    private static let nextDataRegex = try? NSRegularExpression(
+        pattern: "<script[^>]*id=\"__NEXT_DATA__\"[^>]*>([\\s\\S]*?)</script>",
+        options: [.caseInsensitive]
+    )
+    private static let htmlTagRegex = try? NSRegularExpression(pattern: "<[^>]+>")
+    private static let jsonLDRegex = try? NSRegularExpression(
+        pattern: "<script[^>]*type=\"application/ld\\+json\"[^>]*>([\\s\\S]*?)</script>",
+        options: [.caseInsensitive]
+    )
+
     static func goodreadsBookID(from url: URL) -> String? {
         guard let host = url.host?.lowercased(), host.contains("goodreads.com") else { return nil }
         let path = url.path
-        guard let regex = try? NSRegularExpression(pattern: "/book/show/(\\d+)") else { return nil }
+        guard let regex = goodreadsBookIDRegex else { return nil }
         let range = NSRange(path.startIndex..., in: path)
         guard let match = regex.firstMatch(in: path, range: range),
               let idRange = Range(match.range(at: 1), in: path) else {
@@ -500,10 +513,7 @@ struct BookMetadataService: Sendable {
     }
 
     private static func nextDataBlob(in html: String) -> String? {
-        guard let regex = try? NSRegularExpression(
-            pattern: "<script[^>]*id=\"__NEXT_DATA__\"[^>]*>([\\s\\S]*?)</script>",
-            options: [.caseInsensitive]
-        ) else { return nil }
+        guard let regex = nextDataRegex else { return nil }
         let range = NSRange(html.startIndex..., in: html)
         guard let match = regex.firstMatch(in: html, range: range),
               let r = Range(match.range(at: 1), in: html) else {
@@ -533,16 +543,13 @@ struct BookMetadataService: Sendable {
     }
 
     private static func stripHTMLTags(_ value: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: "<[^>]+>") else { return value }
+        guard let regex = htmlTagRegex else { return value }
         let range = NSRange(value.startIndex..., in: value)
         return regex.stringByReplacingMatches(in: value, range: range, withTemplate: "")
     }
 
     private static func jsonLDBlobs(in html: String) -> [String] {
-        guard let regex = try? NSRegularExpression(
-            pattern: "<script[^>]*type=\"application/ld\\+json\"[^>]*>([\\s\\S]*?)</script>",
-            options: [.caseInsensitive]
-        ) else { return [] }
+        guard let regex = jsonLDRegex else { return [] }
         let range = NSRange(html.startIndex..., in: html)
         return regex.matches(in: html, range: range).compactMap { match in
             guard let r = Range(match.range(at: 1), in: html) else { return nil }
