@@ -91,7 +91,7 @@ struct LibraryTabView: View {
                         }
                         .bookLoomListRow()
                         .onAppear {
-                            pagination?.loadMoreIfNeeded(after: book, visibleBooks: visibleBooks)
+                            loadMoreIfNeeded(after: book)
                         }
                     }
 
@@ -244,6 +244,14 @@ struct LibraryTabView: View {
 
     private func resetAndLoad() {
         pagination?.reset()
+    }
+
+    /// Loads the next page when `book` is the last book in the filtered list.
+    /// The guard compares against `visibleBooks` (the searched/filtered subset),
+    /// which is view state the pagination store does not own.
+    private func loadMoreIfNeeded(after book: LibraryBook) {
+        guard visibleBooks.last?.persistentModelID == book.persistentModelID else { return }
+        pagination?.loadMore()
     }
 
     private func refreshShelf() {

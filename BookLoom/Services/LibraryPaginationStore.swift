@@ -65,12 +65,6 @@ final class LibraryPaginationStore {
         }
     }
 
-    /// Loads the next page when `book` is the last currently-visible book.
-    func loadMoreIfNeeded(after book: LibraryBook, visibleBooks: [LibraryBook]) {
-        guard visibleBooks.last?.persistentModelID == book.persistentModelID else { return }
-        loadMore()
-    }
-
     /// Removes a book from the loaded page set (used after a delete) and reports
     /// whether the caller should trigger another `loadMore` to backfill.
     @discardableResult
