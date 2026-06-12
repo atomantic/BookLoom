@@ -96,6 +96,9 @@ struct BookLoomApp: App {
                 .modifier(ScreenshotAppearanceOverride())
                 .modifier(ScreenshotDynamicTypeOverride())
                 #if os(macOS)
+                // Gives `.windowResizability(.contentMinSize)` a concrete floor;
+                // without a content minimum that modifier has nothing to derive.
+                .frame(minWidth: 800, minHeight: 600)
                 .modifier(ScreenshotWindowFrameOverride())
                 #endif
                 .onContinueUserActivity(ShareAcceptance.activityType) { activity in
@@ -138,14 +141,15 @@ struct BookLoomApp: App {
                         )
                     }
                 }
-                #if os(macOS)
-                .onChange(of: reopenMainWindowInbox.reopenRequestCount) { _, _ in
-                    openWindow(id: Self.mainWindowID)
-                }
-                #endif
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
+        // Observe at the Scene level, not in the window content: when the last
+        // window closes the content view is torn down, which is exactly the
+        // Dock-reopen case this bridge handles. A Scene-level onChange survives.
+        .onChange(of: reopenMainWindowInbox.reopenRequestCount) { _, _ in
+            openWindow(id: Self.mainWindowID)
+        }
         .defaultSize(width: 1100, height: 750)
         .windowResizability(.contentMinSize)
         .commands {
@@ -162,6 +166,10 @@ struct BookLoomApp: App {
         // Settings is its own Scene. A merged #if puts a Scene statement after
         // a modifier chain, which the @SceneBuilder #if handling rejects.
         #if os(macOS)
+        // Standard Settings scene (Cmd+,). RootView also exposes an in-app
+        // Settings tab; both surface the same SettingsView intentionally so the
+        // macOS-conventional menu item works without removing the tab that
+        // iOS relies on.
         Settings {
             SettingsView()
                 .environment(memberIdentity)
