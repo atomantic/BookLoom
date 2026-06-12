@@ -64,7 +64,27 @@ final class BookClub {
     @Relationship(deleteRule: .cascade, inverse: \SelectionPoll.bookClub)
     var selectionPolls: [SelectionPoll]? = nil
 
+    /// True when this device is the club's owner — i.e. we created it locally
+    /// and did not accept an incoming share from another Apple ID. Note this is
+    /// also true for a brand-new local club whose CKShare has never been created
+    /// (`shareIsActive == false`); both cases are "owned by this device," so
+    /// ownership checks are correct, but it does NOT imply a live shared zone
+    /// exists in CloudKit. For sync paths that require a created share, gate on
+    /// `isShareOwner` instead so a never-shared local club can't take an
+    /// owner-side CloudKit branch. See swift-gotchas catalogue #3.
     var isOwner: Bool { ownerUserRecordName == nil }
+
+    /// True only when this device owns the club AND a CKShare has been created
+    /// for it. Distinguishes "fully shared, I am owner" from "local only, share
+    /// never created" — the two states `isOwner` alone collapses together.
+    /// Use this before any owner-side CloudKit operation that assumes the
+    /// shared zone already exists.
+    var isShareOwner: Bool { isOwner && shareIsActive }
+
+    /// True for a club this device created that has not yet been shared (no
+    /// CKShare, so no shared zone in CloudKit). Owner-side sync must be skipped
+    /// for these until a share is created.
+    var isLocalOnly: Bool { isOwner && !shareIsActive }
 
     init(name: String = "", createdAt: Date = .now) {
         self.name = name
