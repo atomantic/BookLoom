@@ -28,34 +28,32 @@ private struct MainTabs: View {
     @Environment(ActiveClubStore.self) private var activeClubStore
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
     @Query(sort: \BookClub.createdAt, order: .reverse) private var clubs: [BookClub]
-    @State private var selectedTab = MainTab.defaultSelection
-    @State private var booksPath = NavigationPath()
-    @State private var schedulePath = NavigationPath()
-    @State private var discussionsPath = NavigationPath()
+    @State private var coordinator = NavigationCoordinator()
     // Passive background sync; real-time updates arrive via the CloudKit push path
     // (CloudKitChangeInbox), so this only needs to be an occasional safety net.
     private let sharedSyncTimer = Timer.publish(every: 90, on: .main, in: .common).autoconnect()
 
     var body: some View {
         @Bindable var goodreadsInbox = goodreadsInbox
+        @Bindable var coordinator = coordinator
         return Group {
             #if os(macOS)
             DesktopMainView(
-                selectedTab: $selectedTab,
-                booksPath: $booksPath,
-                discussionsPath: $discussionsPath,
-                schedulePath: $schedulePath
+                selectedTab: $coordinator.selectedTab,
+                booksPath: $coordinator.booksPath,
+                discussionsPath: $coordinator.discussionsPath,
+                schedulePath: $coordinator.schedulePath
             )
             #else
             if horizontalSizeClass == .regular {
                 RegularWidthMainView(
-                    selectedTab: $selectedTab,
-                    booksPath: $booksPath,
-                    discussionsPath: $discussionsPath,
-                    schedulePath: $schedulePath
+                    selectedTab: $coordinator.selectedTab,
+                    booksPath: $coordinator.booksPath,
+                    discussionsPath: $coordinator.discussionsPath,
+                    schedulePath: $coordinator.schedulePath
                 )
             } else {
-            TabView(selection: $selectedTab) {
+            TabView(selection: $coordinator.selectedTab) {
                 NavigationStack {
                     LibraryTabView()
                 }
@@ -64,15 +62,15 @@ private struct MainTabs: View {
                 }
                 .tag(MainTab.library)
 
-                NavigationStack(path: $booksPath) {
-                    BooksTabView(path: $booksPath)
+                NavigationStack(path: $coordinator.booksPath) {
+                    BooksTabView(path: $coordinator.booksPath)
                 }
                 .tabItem {
                     Label(MainTab.books.tabTitle(for: dynamicTypeSize), systemImage: "person.2.fill")
                 }
                 .tag(MainTab.books)
 
-                NavigationStack(path: $discussionsPath) {
+                NavigationStack(path: $coordinator.discussionsPath) {
                     DiscussionsTabView()
                 }
                 .tabItem {
@@ -80,7 +78,7 @@ private struct MainTabs: View {
                 }
                 .tag(MainTab.discussions)
 
-                NavigationStack(path: $schedulePath) {
+                NavigationStack(path: $coordinator.schedulePath) {
                     ScheduleTabView()
                 }
                 .tabItem {
@@ -167,11 +165,11 @@ private struct MainTabs: View {
         }
         SharedImportInbox.enqueue(canonical)
         #if os(macOS)
-        selectedTab = .library
+        coordinator.select(.library)
         goodreadsInbox.refresh()
         goodreadsInbox.prefetchAll()
         #else
-        selectedTab = .books
+        coordinator.select(.books)
         goodreadsInbox.refresh()
         goodreadsInbox.prefetchAll()
         goodreadsInbox.present(canonical)
@@ -206,59 +204,44 @@ private struct MainTabs: View {
         goodreadsInbox.dismiss(saved: completion.didSave)
         if let primaryClub = completion.primaryClub {
             activeClubStore.setActiveClub(primaryClub)
-            selectedTab = .books
+            coordinator.select(.books)
         } else if completion.didSave {
-            selectedTab = .library
+            coordinator.select(.library)
         }
     }
 
+    /// Resolves the club-derived navigation targets for `route` and hands them to
+    /// the coordinator, which owns the actual tab/path mutations. Setting the
+    /// active club (a side effect on `ActiveClubStore`) stays here in the view.
     private func navigateToScreenshotRoute(_ route: String) {
-        booksPath = NavigationPath()
-        schedulePath = NavigationPath()
-        discussionsPath = NavigationPath()
-
-        guard let club = visibleClubs.first else {
-            selectedTab = .books
-            return
+        let club = visibleClubs.first
+        if let club {
+            activeClubStore.setActiveClub(club)
         }
-        activeClubStore.setActiveClub(club)
-
-        switch route {
-        case "library":
-            selectedTab = .library
-        case "books", "clubs", "clubHome", "shelf":
-            selectedTab = .books
-        case "import":
-            selectedTab = .books
-            if let firstPending = goodreadsInbox.pending.first {
-                goodreadsInbox.present(firstPending.url)
+        coordinator.applyScreenshotRoute(
+            route,
+            hasClub: club != nil,
+            presentFirstPendingImport: {
+                if let firstPending = goodreadsInbox.pending.first {
+                    goodreadsInbox.present(firstPending.url)
+                }
+            },
+            pushCurrentRead: {
+                if let current = club?.sections.current {
+                    coordinator.pushBooks(current)
+                }
+            },
+            pushFirstSelectionPoll: {
+                if let poll = club?.recentSelectionPolls.first {
+                    coordinator.pushBooks(poll)
+                }
+            },
+            pushFirstMeeting: {
+                if let meeting = club?.upcomingMeetings.first ?? club?.pastMeetings.first {
+                    coordinator.pushSchedule(meeting)
+                }
             }
-        case "currentRead":
-            selectedTab = .books
-            if let current = club.sections.current {
-                booksPath.append(current)
-            }
-        case "polls":
-            selectedTab = .books
-        case "poll", "vote":
-            selectedTab = .books
-            if let poll = club.recentSelectionPolls.first {
-                booksPath.append(poll)
-            }
-        case "schedule":
-            selectedTab = .schedule
-        case "meeting", "meetings":
-            selectedTab = .schedule
-            if let meeting = club.upcomingMeetings.first ?? club.pastMeetings.first {
-                schedulePath.append(meeting)
-            }
-        case "discussion", "discussions":
-            selectedTab = .discussions
-        case "settings":
-            selectedTab = .settings
-        default:
-            selectedTab = .books
-        }
+        )
     }
 }
 
