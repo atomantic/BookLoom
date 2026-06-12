@@ -76,7 +76,7 @@ struct BookMetadataSearchView: View {
             .task { await search() }
         }
         #if os(macOS)
-        .frame(minWidth: 620, minHeight: 520)
+        .frame(minWidth: 480, minHeight: 520)
         #endif
     }
 
