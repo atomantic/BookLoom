@@ -5,6 +5,27 @@ import XCTest
 
 @MainActor
 final class SharedClubSnapshotTests: XCTestCase {
+    /// `MemberShareSnapshotStore.merge` prunes acknowledged overrides into the
+    /// per-zone UserDefaults-backed stores (Status/SubmissionDetails/Submission
+    /// Deletion), keyed by `cloudZoneName`. Clearing every key under those store
+    /// prefixes after each test prevents global-state leakage across runs and
+    /// across test targets that share the standard defaults domain. Scanning by
+    /// prefix (rather than a hardcoded zone list) keeps this correct when new
+    /// tests introduce new zones.
+    override func tearDown() {
+        let prefixes = [
+            StatusOverrideStore.prefix,
+            SubmissionDetailsOverrideStore.prefix,
+            SubmissionDeletionStore.prefix
+        ]
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys
+        where prefixes.contains(where: key.hasPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+        super.tearDown()
+    }
+
     func test_perAuthorSnapshotCapturesOnlyOwnContributions() throws {
         let context = try makeContext()
         let owner = BookClub(name: "Sunday Pages", createdAt: Date(timeIntervalSince1970: 1_000))

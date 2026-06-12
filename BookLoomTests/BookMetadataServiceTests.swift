@@ -83,6 +83,7 @@ final class BookMetadataServiceTests: XCTestCase {
         let candidate = try XCTUnwrap(results.first)
 
         let submission = BookSubmission(submittedBy: "Alex")
+        submission.coverData = Data([1, 2, 3]) // stale bytes applyMetadata must clear
         submission.applyMetadata(candidate)
 
         XCTAssertEqual(submission.title, "Piranesi")
