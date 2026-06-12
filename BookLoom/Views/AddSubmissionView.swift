@@ -77,6 +77,11 @@ struct AddSubmissionView: View {
 
 /// Shared target for the three metadata import controls. Bundles the four
 /// fields a candidate writes back into so the apply logic lives in one place.
+/// Each control keeps its own `@Binding` properties (their memberwise inits are
+/// part of the public API used by callers) and exposes a `selection` accessor
+/// that wires those bindings into this type — the bindings can't be projected
+/// through a protocol, so that thin accessor is repeated per view by necessity.
+@MainActor
 struct BookMetadataSelection {
     @Binding var title: String
     @Binding var author: String
