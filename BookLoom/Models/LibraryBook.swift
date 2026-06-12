@@ -268,6 +268,9 @@ extension LibraryBook {
     private static let formatterCacheLock = NSLock()
     nonisolated(unsafe) private static var formatterCache: [String: NumberFormatter] = [:]
 
+    // Returns a shared, cached formatter — callers must only read from it
+    // (e.g. `string(from:)`) and must not mutate its properties, since the
+    // instance is reused across every row using the same currency code.
     static func currencyFormatter(currencyCode: String) -> NumberFormatter {
         let code = currencyCode.trimmedOrNil ?? "USD"
         formatterCacheLock.lock()
