@@ -2,6 +2,7 @@
 import SwiftUI
 import CloudKit
 import UIKit
+import os
 
 /// SwiftUI wrapper around `UICloudSharingController` for managing CKShare
 /// invites and participant permissions on iOS.
@@ -21,8 +22,10 @@ struct CloudSharingControllerView: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator: NSObject, UICloudSharingControllerDelegate {
+        private let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "CloudSharing")
+
         func cloudSharingController(_ controller: UICloudSharingController, failedToSaveShareWithError error: Error) {
-            print("⚠️ CKShare save failed: \(error.localizedDescription)")
+            logger.error("CKShare save failed: \(error.localizedDescription, privacy: .public)")
         }
 
         func itemTitle(for controller: UICloudSharingController) -> String? {

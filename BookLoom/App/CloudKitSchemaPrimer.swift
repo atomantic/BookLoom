@@ -94,7 +94,6 @@ enum CloudKitSchemaPrimer {
     }
 
     private static func log(_ message: String, isError: Bool = false) {
-        print("[CloudKitSchemaPrimer] \(message)")
         if isError {
             logger.error("\(message, privacy: .public)")
         } else {
