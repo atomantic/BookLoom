@@ -123,7 +123,10 @@ extension BookClub {
     }
 
     var displayedMemberCount: Int {
-        max(shareParticipantCount, metrics.memberCount, ClubMemberCollector.collect(from: self).count)
+        // `memberDigests` already aggregates every member source (submissions,
+        // ratings, notes, meetings, polls, roster) — a strict superset of the
+        // name-keyed `metrics.memberCount` — so a single traversal suffices.
+        max(shareParticipantCount, memberDigests.count)
     }
 
     var memberDigests: [ClubMemberDigest] {
