@@ -145,6 +145,29 @@ struct SyncIssue: Equatable {
 }
 
 @MainActor
+extension ModelContext {
+    /// Persist pending changes and, if the mutation belongs to an active shared
+    /// club, publish the updated member snapshot to CloudKit. Collapses the
+    /// `try save(); if let club { SharedClubSync.publishIfNeeded(...) }` pattern
+    /// that recurred across the submission/poll/discussion editors.
+    ///
+    /// Throws if `save()` fails so the caller can surface the error rather than
+    /// silently diverging from disk; the publish step is fire-and-forget and
+    /// reports its own failures through `SharedClubSyncStatus`.
+    func saveAndPublishIfNeeded(club: BookClub?, memberIdentity: MemberIdentity) throws {
+        try save()
+        if let club {
+            SharedClubSync.publishIfNeeded(
+                club,
+                context: self,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
+        }
+    }
+}
+
+@MainActor
 enum SharedClubSync {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "SharedClubSync")
 

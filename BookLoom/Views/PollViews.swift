@@ -272,15 +272,7 @@ struct SelectionPollDetailView: View {
 
     private func savePollChanges() {
         do {
-            try context.save()
-            if let club = poll.bookClub {
-                SharedClubSync.publishIfNeeded(
-                    club,
-                    context: context,
-                    localMemberID: memberIdentity.memberID,
-                    localMemberName: memberIdentity.name
-                )
-            }
+            try context.saveAndPublishIfNeeded(club: poll.bookClub, memberIdentity: memberIdentity)
         } catch {
             assertionFailure("Failed to save poll changes: \(error.localizedDescription)")
         }
