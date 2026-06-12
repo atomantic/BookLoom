@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SwiftUI
 import CloudKit
 import SwiftData
@@ -78,12 +79,13 @@ final class BookLoomAppDelegate: NSObject, NSApplicationDelegate {
 /// Bridges AppKit Dock-reopen and "Show Main Window" menu requests to SwiftUI,
 /// which owns the scene and can reopen it via `openWindow(id:)`.
 @MainActor
-final class ReopenMainWindowInbox: ObservableObject {
+@Observable
+final class ReopenMainWindowInbox {
     static let shared = ReopenMainWindowInbox()
 
     /// Incremented on each reopen request so SwiftUI's `onChange` fires even for
     /// back-to-back requests.
-    @Published private(set) var reopenRequestCount = 0
+    private(set) var reopenRequestCount = 0
 
     private init() {}
 
@@ -96,10 +98,11 @@ final class ReopenMainWindowInbox: ObservableObject {
 /// Buffers CKShare metadata that arrived before the SwiftUI scene was ready
 /// to accept it. The root view drains the inbox once per appearance.
 @MainActor
-final class AcceptedShareInbox: ObservableObject {
+@Observable
+final class AcceptedShareInbox {
     static let shared = AcceptedShareInbox()
 
-    @Published private(set) var pending: [CKShare.Metadata] = []
+    private(set) var pending: [CKShare.Metadata] = []
 
     private init() {}
 

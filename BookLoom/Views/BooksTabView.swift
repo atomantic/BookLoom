@@ -26,7 +26,7 @@ private struct BooksTabContent: View {
     @Environment(GoodreadsImportInbox.self) private var goodreadsInbox
     @Bindable var club: BookClub
     @Binding var path: NavigationPath
-    @ObservedObject private var syncStatus = SharedClubSyncStatus.shared
+    private let syncStatus = SharedClubSyncStatus.shared
 
     /// Scoped to the active club at the database level so the view never
     /// materializes other clubs' submissions/polls just to filter them out in

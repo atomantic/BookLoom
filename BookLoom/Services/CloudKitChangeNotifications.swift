@@ -1,5 +1,6 @@
 import CloudKit
 import Foundation
+import Observation
 import os
 import SwiftData
 
@@ -10,10 +11,11 @@ import AppKit
 #endif
 
 @MainActor
-final class CloudKitChangeInbox: ObservableObject {
+@Observable
+final class CloudKitChangeInbox {
     static let shared = CloudKitChangeInbox()
 
-    @Published private(set) var pendingChangeCount = 0
+    private(set) var pendingChangeCount = 0
 
     private init() {}
 

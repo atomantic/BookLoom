@@ -18,10 +18,10 @@ struct BookLoomApp: App {
     @State private var memberIdentity = MemberIdentity()
     @State private var activeClubStore = ActiveClubStore()
     @State private var goodreadsInbox: GoodreadsImportInbox
-    @StateObject private var acceptedShareInbox = AcceptedShareInbox.shared
-    @StateObject private var cloudKitChangeInbox = CloudKitChangeInbox.shared
+    private let acceptedShareInbox = AcceptedShareInbox.shared
+    private let cloudKitChangeInbox = CloudKitChangeInbox.shared
     #if os(macOS)
-    @StateObject private var reopenMainWindowInbox = ReopenMainWindowInbox.shared
+    private let reopenMainWindowInbox = ReopenMainWindowInbox.shared
     @Environment(\.openWindow) private var openWindow
     #endif
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue

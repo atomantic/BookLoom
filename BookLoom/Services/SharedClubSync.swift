@@ -1,5 +1,6 @@
 import CloudKit
 import Foundation
+import Observation
 import os
 import SwiftData
 
@@ -7,12 +8,14 @@ import SwiftData
 /// surface it to the user. CloudKit publish/fetch failures used to vanish into
 /// `os_log` only.
 @MainActor
-final class SharedClubSyncStatus: ObservableObject {
+@Observable
+final class SharedClubSyncStatus {
     static let shared = SharedClubSyncStatus()
 
-    // Private storage so callers go through `issue(for:)`. `@Published` still
-    // drives view updates via ObservableObject conformance.
-    @Published private var issuesByZone: [String: SyncIssue] = [:]
+    // Private storage so callers go through `issue(for:)`. The `@Observable`
+    // macro still tracks reads of this property made inside a view's `body`
+    // (via `issue(for:)`), so updates drive view refreshes.
+    private var issuesByZone: [String: SyncIssue] = [:]
 
     private init() {}
 
@@ -24,9 +27,9 @@ final class SharedClubSyncStatus: ObservableObject {
         issuesByZone[zoneName] = next
     }
 
-    // Guarded so a steady "no errors" state doesn't fire @Published on every
-    // successful sync tick — clearFailure is called from each publish/refresh
-    // success path.
+    // Guarded so a steady "no errors" state doesn't mutate observed storage on
+    // every successful sync tick — clearFailure is called from each
+    // publish/refresh success path.
     func clearFailure(zoneName: String) {
         guard issuesByZone[zoneName] != nil else { return }
         issuesByZone.removeValue(forKey: zoneName)
