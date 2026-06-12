@@ -50,6 +50,23 @@ final class BookCoverCacheManualTests: XCTestCase {
         XCTAssertEqual(retrieved, bytes)
     }
 
+    func test_storeManual_replacementYieldsDistinctURLButResolvesToNewBytes() async {
+        let first = Data(repeating: 0x11, count: 1024)
+        let firstURL = await cache.storeManual(data: first, identifier: "submission-replace")
+        XCTAssertNotNil(firstURL)
+
+        let second = Data(repeating: 0x22, count: 2048)
+        let secondURL = await cache.storeManual(data: second, identifier: "submission-replace")
+        XCTAssertNotNil(secondURL)
+
+        // Distinct URL strings force BookCoverTile's .task(id:) to reload.
+        XCTAssertNotEqual(firstURL!.absoluteString, secondURL!.absoluteString)
+        // Both resolve to the same on-disk file, now holding the replacement bytes.
+        XCTAssertEqual(firstURL!.lastPathComponent, secondURL!.lastPathComponent)
+        let retrieved = await cache.cachedData(for: secondURL!)
+        XCTAssertEqual(retrieved, second)
+    }
+
     func test_storeManual_rejectsTooLargeData() async {
         let oversized = Data(repeating: 0x00, count: 800 * 1024)
         let returned = await cache.storeManual(data: oversized, identifier: "submission-2")

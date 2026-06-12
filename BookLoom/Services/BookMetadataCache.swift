@@ -104,6 +104,11 @@ actor BookCoverCache {
     private let manualRootURL: URL
     private let maxCoverBytes = 700 * 1024
 
+    /// Monotonic cache-busting token for manual cover URLs. Seeded from wall-clock
+    /// ms (unique across launches) and strictly incremented per store so even
+    /// back-to-back replacements within the same millisecond get distinct URLs.
+    private var manualCoverVersion: UInt64 = UInt64(Date().timeIntervalSince1970 * 1000)
+
     init(rootURL: URL? = nil, manualRootURL: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         self.rootURL = Self.defaultRootURL(rootURL: rootURL, fileManager: fileManager)
@@ -147,6 +152,14 @@ actor BookCoverCache {
     /// Persist a user-uploaded cover under a stable identifier. Returns the
     /// synthetic URL to store on the model, or nil if the bytes exceed
     /// `maxCoverBytes` or disk write fails.
+    ///
+    /// The returned URL carries a `v` cache-busting query whose value changes on
+    /// every store. The bytes always live at a path keyed only on the stable
+    /// identifier (the `v` query is ignored by `cachedData`/`data`, which resolve
+    /// via `lastPathComponent`), so a *replacement* upload overwrites the same
+    /// file yet yields a different URL string — forcing `BookCoverTile`'s
+    /// `.task(id: coverURL.absoluteString)` to reload instead of showing stale
+    /// cached bytes.
     @discardableResult
     func storeManual(data: Data, identifier: String) -> URL? {
         guard data.count > 0, data.count <= maxCoverBytes else { return nil }
@@ -155,7 +168,8 @@ actor BookCoverCache {
         try? fileManager.createDirectory(at: manualRootURL, withIntermediateDirectories: true)
         let fileURL = Self.manualFileURL(identifier: trimmedID, in: manualRootURL)
         guard (try? data.write(to: fileURL, options: [.atomic])) != nil else { return nil }
-        return Self.manualCoverURL(identifier: trimmedID)
+        manualCoverVersion &+= 1
+        return Self.manualCoverURL(identifier: trimmedID, version: manualCoverVersion)
     }
 
     func removeManual(identifier: String) {
@@ -185,9 +199,13 @@ actor BookCoverCache {
         }
     }
 
-    nonisolated static func manualCoverURL(identifier: String) -> URL {
+    /// Build the synthetic URL for a manual cover. The optional `version` adds a
+    /// cache-busting `v` query so a replaced upload yields a distinct URL string
+    /// while still resolving to the same on-disk file via `lastPathComponent`.
+    nonisolated static func manualCoverURL(identifier: String, version: UInt64? = nil) -> URL {
         let trimmed = sanitizedIdentifier(identifier)
-        return URL(string: "\(manualCoverScheme)://\(manualCoverHost)/\(trimmed)")
+        let query = version.map { "?v=\($0)" } ?? ""
+        return URL(string: "\(manualCoverScheme)://\(manualCoverHost)/\(trimmed)\(query)")
             ?? URL(string: "\(manualCoverScheme)://\(manualCoverHost)/unknown")!
     }
 
