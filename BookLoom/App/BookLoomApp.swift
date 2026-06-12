@@ -20,6 +20,10 @@ struct BookLoomApp: App {
     @State private var goodreadsInbox: GoodreadsImportInbox
     @StateObject private var acceptedShareInbox = AcceptedShareInbox.shared
     @StateObject private var cloudKitChangeInbox = CloudKitChangeInbox.shared
+    #if os(macOS)
+    @StateObject private var reopenMainWindowInbox = ReopenMainWindowInbox.shared
+    @Environment(\.openWindow) private var openWindow
+    #endif
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
 
     init() {
@@ -35,6 +39,10 @@ struct BookLoomApp: App {
         }
         #endif
     }
+
+    /// Stable identifier for the primary scene so it can be reopened via
+    /// `openWindow(id:)` (Dock click, Show Main Window) and restored reliably.
+    private static let mainWindowID = "main"
 
     private static let appSchema = Schema([
         BookClub.self,
@@ -79,7 +87,7 @@ struct BookLoomApp: App {
     }()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("BookLoom", id: Self.mainWindowID) {
             RootView()
                 .environment(memberIdentity)
                 .environment(activeClubStore)
@@ -130,10 +138,33 @@ struct BookLoomApp: App {
                         )
                     }
                 }
+                #if os(macOS)
+                .onChange(of: reopenMainWindowInbox.reopenRequestCount) { _, _ in
+                    openWindow(id: Self.mainWindowID)
+                }
+                #endif
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
         .defaultSize(width: 1100, height: 750)
+        .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .windowArrangement) {
+                Button("Show Main Window") {
+                    openWindow(id: Self.mainWindowID)
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
+        }
+        #endif
+
+        #if os(macOS)
+        Settings {
+            SettingsView()
+                .environment(memberIdentity)
+                .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
+                .modelContainer(sharedModelContainer)
+        }
         #endif
     }
 
