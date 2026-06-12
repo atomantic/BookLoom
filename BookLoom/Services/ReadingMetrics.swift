@@ -124,8 +124,12 @@ extension BookClub {
 
     var displayedMemberCount: Int {
         // `memberDigests` already aggregates every member source (submissions,
-        // ratings, notes, meetings, polls, roster) — a strict superset of the
-        // name-keyed `metrics.memberCount` — so a single traversal suffices.
+        // ratings, notes, meetings, polls, roster) — a superset of the sources
+        // `metrics.memberCount` walks — so a single traversal suffices. The
+        // collector folds name-only contributors case-insensitively, so it may
+        // dedupe two casing variants of the same name that the case-sensitive
+        // `metrics` count keeps apart; collapsing those is the more correct
+        // member tally, so we intentionally drop the separate `metrics` term.
         max(shareParticipantCount, memberDigests.count)
     }
 

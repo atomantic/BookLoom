@@ -138,12 +138,12 @@ extension View {
     /// No-op on iOS where pointer affordances aren't applicable.
     func bookLoomPointerCursor() -> some View {
         #if os(macOS)
+        // Set the cursor directly rather than push/pop: a hovered view can be
+        // removed (e.g. an import row's swipe-to-remove) before the exit event
+        // fires, which would strand a pushed cursor on the stack with no
+        // matching pop. `set()` carries no such balance requirement.
         onHover { hovering in
-            if hovering {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
-            }
+            (hovering ? NSCursor.pointingHand : NSCursor.arrow).set()
         }
         #else
         self
