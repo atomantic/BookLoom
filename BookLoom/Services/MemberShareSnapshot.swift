@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 
 /// Per-author CKShare payload. Each participant publishes one of these into
 /// the shared zone (a separate CKRecord named `MemberSnapshot-<memberID>`),
