@@ -42,6 +42,7 @@ struct LibraryTabView: View {
     @State private var filter: MobileLibraryFilter = .all
     @State private var isLoading = false
     @State private var canLoadMore = true
+    @State private var hasLoadedOnce = false
     @State private var showingNewBook = false
     @State private var selectedBook: LibraryBook?
     @State private var pendingDeleteBook: LibraryBook?
@@ -94,7 +95,7 @@ struct LibraryTabView: View {
             }
 
             Section {
-                if visibleBooks.isEmpty {
+                if hasLoadedOnce && visibleBooks.isEmpty {
                     InlineEmptyState(
                         systemImage: emptyStateSystemImage,
                         title: emptyStateTitle,
@@ -289,6 +290,7 @@ struct LibraryTabView: View {
         descriptor.fetchLimit = pageSize
         descriptor.fetchOffset = books.count
 
+        hasLoadedOnce = true
         do {
             let nextPage = try context.fetch(descriptor)
             books.append(contentsOf: nextPage)
