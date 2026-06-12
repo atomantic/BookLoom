@@ -18,6 +18,9 @@ enum CloudKitSchemaPrimer {
     }
 
     static func runIfRequested() async {
+        // Never construct a CKContainer under XCTest: CI strips entitlements
+        // (CODE_SIGNING_ALLOWED=NO), where CKContainer construction traps.
+        guard !Features.isRunningTests else { return }
         guard shouldRun, !hasRun else { return }
         hasRun = true
 
