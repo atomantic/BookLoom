@@ -37,7 +37,8 @@ struct SubmissionDetailView: View {
                     onMarkRead: { showingMarkReadConfirmation = true },
                     onMoveToProposals: { showingMoveToProposalsConfirmation = true },
                     onMoveToShelf: { showingMoveToShelfConfirmation = true },
-                    onDelete: { showingDeleteConfirmation = true }
+                    onDelete: { showingDeleteConfirmation = true },
+                    onCoverChange: applyCoverChange
                 )
                 .bookLoomListRow(top: 6, bottom: 10)
             }
@@ -251,6 +252,17 @@ struct SubmissionDetailView: View {
     private func apply(_ candidate: BookMetadataCandidate) {
         submission.applyMetadata(candidate)
         saveBookDetails()
+    }
+
+    private func applyCoverChange(_ newCoverURL: String) {
+        guard let club = submission.bookClub else { return }
+        submission.coverURL = newCoverURL
+        BookSubmissionDetailsEditor.recordDetailsOverride(
+            submission,
+            in: club,
+            actorMemberID: memberIdentity.memberID
+        )
+        saveSubmissionChanges()
     }
 
     private func deleteSubmission() {
@@ -507,13 +519,14 @@ private struct NotesCard: View {
 }
 
 private struct SubmissionHeroActionsCard: View {
-    let submission: BookSubmission
+    @Bindable var submission: BookSubmission
     let canMoveToShelf: Bool
     let onSetCurrent: () -> Void
     let onMarkRead: () -> Void
     let onMoveToProposals: () -> Void
     let onMoveToShelf: () -> Void
     let onDelete: () -> Void
+    let onCoverChange: (String) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -559,6 +572,12 @@ private struct SubmissionHeroActionsCard: View {
                     Spacer(minLength: 0)
                 }
             }
+
+            ManualCoverPicker(
+                identifier: submission.selectionID,
+                currentCoverURL: submission.coverURL,
+                onCoverChange: onCoverChange
+            )
 
             LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
                 switch submission.status {

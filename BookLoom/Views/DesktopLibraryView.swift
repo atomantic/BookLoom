@@ -516,7 +516,8 @@ private struct LibraryBookDetailView: View {
                 LibraryBookHero(
                     book: book,
                     onFindMetadata: { showingMetadataSearch = true },
-                    onDelete: onDelete
+                    onDelete: onDelete,
+                    onCoverChange: applyCoverChange
                 )
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], alignment: .leading, spacing: 14) {
@@ -757,6 +758,11 @@ private struct LibraryBookDetailView: View {
         saveChanges()
     }
 
+    private func applyCoverChange(_ newCoverURL: String) {
+        book.coverURL = newCoverURL
+        saveChanges()
+    }
+
     private func saveChanges() {
         applyPrice()
         book.updatedAt = .now
@@ -811,6 +817,7 @@ private struct LibraryBookHero: View {
     @Bindable var book: LibraryBook
     let onFindMetadata: () -> Void
     let onDelete: () -> Void
+    let onCoverChange: (String) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
@@ -861,6 +868,12 @@ private struct LibraryBookHero: View {
                         Label("Search for Cover and Details", systemImage: "magnifyingglass")
                     }
                     .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
+
+                    ManualCoverPicker(
+                        identifier: book.libraryID,
+                        currentCoverURL: book.coverURL,
+                        onCoverChange: onCoverChange
+                    )
 
                     Button(role: .destructive, action: onDelete) {
                         Label("Delete from Shelf", systemImage: "trash")

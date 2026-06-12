@@ -686,40 +686,54 @@ private struct MobileLibraryBookDetailView: View {
     }
 
     private var heroCard: some View {
-        heroLayout {
-            BookCoverTile(
-                title: book.displayTitle,
-                author: book.displayAuthor,
-                coverURL: book.coverImageURL,
-                width: 92,
-                height: 132
-            )
+        VStack(alignment: .leading, spacing: 12) {
+            heroLayout {
+                BookCoverTile(
+                    title: book.displayTitle,
+                    author: book.displayAuthor,
+                    coverURL: book.coverImageURL,
+                    width: 92,
+                    height: 132
+                )
 
-            VStack(alignment: .leading, spacing: 7) {
-                Text(book.displayTitle)
-                    .font(.title3.bold())
-                    .foregroundStyle(BookLoomStyle.ink)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(book.displayTitle)
+                        .font(.title3.bold())
+                        .foregroundStyle(BookLoomStyle.ink)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                if !book.displayAuthor.isEmpty {
-                    Text(book.displayAuthor)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                    if !book.displayAuthor.isEmpty {
+                        Text(book.displayAuthor)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
 
-                HStack(spacing: 6) {
-                    TintedCapsuleLabel(text: book.format.cardLabel, tint: BookLoomStyle.indigo, systemImage: book.format.cardSystemImage)
-                    if book.personalRatingStars > 0 {
-                        TintedCapsuleLabel(text: "\(min(book.personalRatingStars, 5))/5", tint: BookLoomStyle.gold, systemImage: "star.fill")
+                    HStack(spacing: 6) {
+                        TintedCapsuleLabel(text: book.format.cardLabel, tint: BookLoomStyle.indigo, systemImage: book.format.cardSystemImage)
+                        if book.personalRatingStars > 0 {
+                            TintedCapsuleLabel(text: "\(min(book.personalRatingStars, 5))/5", tint: BookLoomStyle.gold, systemImage: "star.fill")
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            ManualCoverPicker(
+                identifier: book.libraryID,
+                currentCoverURL: book.coverURL,
+                onCoverChange: applyCoverChange
+            )
         }
         .bookLoomCard(padding: 14)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func applyCoverChange(_ newCoverURL: String) {
+        book.coverURL = newCoverURL
+        book.updatedAt = .now
+        onSave()
     }
 
     private var descriptionCard: some View {
