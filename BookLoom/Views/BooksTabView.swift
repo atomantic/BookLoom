@@ -27,9 +27,29 @@ private struct BooksTabContent: View {
     @Bindable var club: BookClub
     @Binding var path: NavigationPath
     @ObservedObject private var syncStatus = SharedClubSyncStatus.shared
-    @Query(sort: \BookSubmission.submittedAt) private var submissions: [BookSubmission]
-    @Query(sort: \SelectionPoll.createdAt, order: .reverse) private var polls: [SelectionPoll]
-    @Query(sort: \LibraryBook.updatedAt, order: .reverse) private var libraryBooks: [LibraryBook]
+
+    /// Scoped to the active club at the database level so the view never
+    /// materializes other clubs' submissions/polls just to filter them out in
+    /// memory. The downstream `clubSubmissions`/`clubPolls` filters remain as a
+    /// belt-and-suspenders identity check.
+    @Query private var submissions: [BookSubmission]
+    @Query private var polls: [SelectionPoll]
+
+    init(club: BookClub, path: Binding<NavigationPath>) {
+        self.club = club
+        _path = path
+
+        let zone = club.cloudZoneName
+        _submissions = Query(
+            filter: #Predicate<BookSubmission> { $0.bookClub?.cloudZoneName == zone },
+            sort: \.submittedAt
+        )
+        _polls = Query(
+            filter: #Predicate<SelectionPoll> { $0.bookClub?.cloudZoneName == zone },
+            sort: \.createdAt,
+            order: .reverse
+        )
+    }
 
     @State private var showingPickConfirmation: Bool = false
     @State private var showingCompleteConfirmation: Bool = false
@@ -272,7 +292,7 @@ private struct BooksTabContent: View {
             titleVisibility: .visible
         ) {
             Button("Mark Read") {
-                if let current = sections.current {
+                if let current = displayedSections.current {
                     markComplete(current)
                     offerToKeepInLibrary(current)
                 }
@@ -287,7 +307,7 @@ private struct BooksTabContent: View {
             titleVisibility: .visible
         ) {
             Button("Move Back to Proposals") {
-                if let current = sections.current {
+                if let current = displayedSections.current {
                     moveCurrentToProposals(current)
                 }
             }
@@ -446,13 +466,13 @@ private struct BooksTabContent: View {
     }
 
     private func offerToKeepInLibrary(_ submission: BookSubmission) {
-        guard !libraryBooks.contains(where: { $0.matchesSubmission(submission) }) else { return }
+        guard existingLibraryBook(matching: submission) == nil else { return }
         pendingLibrarySubmission = submission
         showingKeepInLibraryConfirmation = true
     }
 
     private func saveToPersonalLibrary(_ submission: BookSubmission) {
-        if let existing = libraryBooks.first(where: { $0.matchesSubmission(submission) }) {
+        if let existing = existingLibraryBook(matching: submission) {
             existing.didRead = true
             existing.updatedAt = .now
             savePersonalLibraryChanges()
@@ -463,6 +483,21 @@ private struct BooksTabContent: View {
         book.didRead = true
         context.insert(book)
         savePersonalLibraryChanges()
+    }
+
+    /// Targeted lookup for the Shelf copy of a submission instead of querying
+    /// the whole `LibraryBook` table just to run a `contains` scan. A match
+    /// requires the submission to carry external identifiers (see
+    /// `LibraryBook.matchesSubmission`), so bail early when it has none.
+    private func existingLibraryBook(matching submission: BookSubmission) -> LibraryBook? {
+        let provider = submission.externalProvider
+        let externalID = submission.externalID
+        guard !provider.isEmpty, !externalID.isEmpty else { return nil }
+
+        let descriptor = FetchDescriptor<LibraryBook>(
+            predicate: #Predicate { $0.externalProvider == provider && $0.externalID == externalID }
+        )
+        return try? context.fetch(descriptor).first
     }
 
     private func savePersonalLibraryChanges() {
@@ -561,7 +596,7 @@ private struct BooksHeader: View {
     /// Stack metric tiles vertically when accessibility text sizes would
     /// otherwise compress each label to a single character.
     private var metricsLayout: AnyLayout {
-        dynamicTypeSize.isAccessibilitySize
+        dynamicTypeSize.prefersExpandedControlLayout
             ? AnyLayout(VStackLayout(spacing: 8))
             : AnyLayout(HStackLayout(spacing: 10))
     }
@@ -619,7 +654,7 @@ private struct BooksTabRow: View {
 
                     PersonalRatingLine(stars: ownRating?.stars)
 
-                    HStack(spacing: 12) {
+                    metadataLayout {
                         Label(submission.displaySubmitter, systemImage: "person.fill")
                         if !(submission.notes ?? []).isEmpty {
                             Label("\((submission.notes ?? []).count)", systemImage: "note.text")
@@ -630,7 +665,8 @@ private struct BooksTabRow: View {
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? 2 : 1)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -644,41 +680,29 @@ private struct BooksTabRow: View {
         (submission.ratings ?? [])
             .first { $0.matches(memberID: memberIdentity.memberID, memberName: memberIdentity.name) }
     }
+
+    private var metadataLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 12))
+    }
 }
 
 private struct CompactBookStatusBadge: View {
     let status: BookSubmissionStatus
 
     var body: some View {
-        Image(systemName: systemImage)
+        Image(systemName: status.systemImage)
             .font(.caption.weight(.bold))
-            .foregroundStyle(tint)
+            .foregroundStyle(status.tint)
             .frame(width: 30, height: 30)
             .background(BookLoomStyle.paper.opacity(0.94), in: Circle())
             .overlay {
                 Circle()
-                    .stroke(tint.opacity(0.28), lineWidth: 1)
+                    .stroke(status.tint.opacity(0.28), lineWidth: 1)
             }
             .shadow(color: BookLoomStyle.ink.opacity(0.16), radius: 4, y: 2)
             .accessibilityLabel(status.displayName)
-    }
-
-    private var systemImage: String {
-        switch status {
-        case .proposed: "tray.full.fill"
-        case .current: "book.fill"
-        case .completed: "checkmark.seal.fill"
-        case .skipped: "forward.fill"
-        }
-    }
-
-    private var tint: Color {
-        switch status {
-        case .proposed: BookLoomStyle.plum
-        case .current: BookLoomStyle.sage
-        case .completed: BookLoomStyle.indigo
-        case .skipped: BookLoomStyle.coral
-        }
     }
 }
 
@@ -707,11 +731,12 @@ private struct CurrentSubmissionRow: View {
     @Bindable var submission: BookSubmission
     let onMarkRead: () -> Void
     let onMoveBack: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             NavigationLink(value: submission) {
-                HStack(spacing: 14) {
+                contentLayout {
                     BookCoverTile(
                         title: submission.displayTitle,
                         author: submission.displayAuthor,
@@ -725,34 +750,40 @@ private struct CurrentSubmissionRow: View {
                         Text(submission.displayTitle)
                             .font(.headline.bold())
                             .foregroundStyle(BookLoomStyle.ink)
-                            .lineLimit(2)
+                            .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? nil : 2)
+                            .fixedSize(horizontal: false, vertical: true)
                         if !submission.displayAuthor.isEmpty {
                             Text(submission.displayAuthor)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                                .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? nil : 1)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        HStack(spacing: 12) {
+                        metadataLayout {
                             Label(submission.ratingSummary.displayValue, systemImage: "star.fill")
                             Label("\((submission.notes ?? []).count) notes", systemImage: "note.text")
                         }
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
+                        .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? 2 : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: 0)
+                    if !dynamicTypeSize.prefersExpandedControlLayout {
+                        Spacer(minLength: 0)
+                    }
                 }
             }
             .buttonStyle(.plain)
 
-            HStack(spacing: 8) {
-                CurrentActionButton(
+            actionLayout {
+                BookLoomActionButton(
                     title: "Mark Read",
                     systemImage: "checkmark.seal.fill",
                     tint: BookLoomStyle.sage,
                     prominent: true,
                     action: onMarkRead
                 )
-                CurrentActionButton(
+                BookLoomActionButton(
                     title: "Move Back",
                     systemImage: "tray.full.fill",
                     tint: BookLoomStyle.plum,
@@ -764,30 +795,23 @@ private struct CurrentSubmissionRow: View {
         }
         .bookLoomCard(padding: 12)
     }
-}
 
-private struct CurrentActionButton: View {
-    let title: String
-    let systemImage: String
-    let tint: Color
-    let prominent: Bool
-    let action: () -> Void
+    private var contentLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 14))
+    }
 
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.footnote.weight(.semibold))
-                .lineLimit(2)
-                .minimumScaleFactor(0.85)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .bookLoomActionWidth(minWidth: 128)
-                .frame(minHeight: 40)
-                .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
-                .foregroundStyle(prominent ? Color.white : tint)
-        }
-        .buttonStyle(.plain)
+    private var metadataLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 12))
+    }
+
+    private var actionLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
     }
 }
 
@@ -844,11 +868,7 @@ private struct LibraryActionBar: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        let layout: AnyLayout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 8))
-
-        layout {
+        actionLayout {
             Button(action: onAddBook) {
                 actionLabel(
                     title: "Add",
@@ -887,22 +907,37 @@ private struct LibraryActionBar: View {
 
     private func actionLabel(title: String, systemImage: String, background: Color, foreground: Color) -> some View {
         Label(title, systemImage: systemImage)
-            .font(.footnote.weight(.semibold))
-            .lineLimit(2)
-            .minimumScaleFactor(0.85)
+            .font(actionFont)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, dynamicTypeSize.prefersExpandedControlLayout ? 12 : 8)
+            .frame(maxWidth: dynamicTypeSize.prefersExpandedControlLayout ? .infinity : nil)
             .bookLoomActionWidth(minWidth: 132)
-            .frame(minHeight: 40)
+            .frame(minHeight: dynamicTypeSize.prefersExpandedControlLayout ? 52 : 40)
             .background(background, in: Capsule())
             .foregroundStyle(foreground)
+            .accessibilityLabel(title)
+    }
+
+    private var actionLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+    }
+
+    private var actionFont: Font {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? .body.weight(.bold)
+            : .footnote.weight(.semibold)
     }
 }
 
 private struct ActivePollCard: View {
     @Bindable var poll: SelectionPoll
     let candidates: [BookSubmission]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let tally = SelectionPollScorer.tally(votes: poll.votes ?? [], candidateIDs: poll.candidateIDs)
@@ -912,11 +947,13 @@ private struct ActivePollCard: View {
 
         NavigationLink(value: poll) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
+                headerLayout {
                     Label("Voting Open", systemImage: "checklist")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(BookLoomStyle.ink)
-                    Spacer()
+                    if !dynamicTypeSize.prefersExpandedControlLayout {
+                        Spacer()
+                    }
                     TintedCapsuleLabel(
                         text: "\(poll.candidateIDs.count) books",
                         tint: BookLoomStyle.sage,
@@ -944,6 +981,12 @@ private struct ActivePollCard: View {
         }
         .buttonStyle(.plain)
     }
+
+    private var headerLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+    }
 }
 
 private struct SyncStatusBanner: View {
@@ -954,6 +997,7 @@ private struct SyncStatusBanner: View {
             Image(systemName: issue.systemImage)
                 .foregroundStyle(iconTint)
                 .font(.title3)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(issue.title)
                     .font(.subheadline.weight(.semibold))
@@ -997,15 +1041,24 @@ private struct LibraryTabPicker: View {
     let importCount: Int
 
     var body: some View {
-        Picker("Club book view", selection: $selection) {
-            Text(label(for: .proposed, count: proposedCount)).tag(LibraryTab.proposed)
-            Text(label(for: .read, count: readCount)).tag(LibraryTab.read)
-            Text(label(for: .imports, count: importCount)).tag(LibraryTab.imports)
+        AdaptiveSegmentedControl(
+            "Club book view",
+            selection: $selection,
+            options: LibraryTab.allCases
+        ) { tab in
+            Text(label(for: tab, count: count(for: tab)))
         }
-        .pickerStyle(.segmented)
     }
 
     private func label(for tab: LibraryTab, count: Int) -> String {
         count > 0 ? "\(tab.title) (\(count))" : tab.title
+    }
+
+    private func count(for tab: LibraryTab) -> Int {
+        switch tab {
+        case .proposed: proposedCount
+        case .read: readCount
+        case .imports: importCount
+        }
     }
 }

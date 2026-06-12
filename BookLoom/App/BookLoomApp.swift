@@ -20,6 +20,10 @@ struct BookLoomApp: App {
     @State private var goodreadsInbox: GoodreadsImportInbox
     @StateObject private var acceptedShareInbox = AcceptedShareInbox.shared
     @StateObject private var cloudKitChangeInbox = CloudKitChangeInbox.shared
+    #if os(macOS)
+    @StateObject private var reopenMainWindowInbox = ReopenMainWindowInbox.shared
+    @Environment(\.openWindow) private var openWindow
+    #endif
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
 
     init() {
@@ -35,6 +39,10 @@ struct BookLoomApp: App {
         }
         #endif
     }
+
+    /// Stable identifier for the primary scene so it can be reopened via
+    /// `openWindow(id:)` (Dock click, Show Main Window) and restored reliably.
+    private static let mainWindowID = "main"
 
     private static let appSchema = Schema([
         BookClub.self,
@@ -70,19 +78,27 @@ struct BookLoomApp: App {
         } catch {
             appLogger.error("⚠️ ModelContainer init failed: \(error.localizedDescription, privacy: .public) — falling back to in-memory")
             let memoryConfig = ModelConfiguration(schema: Self.appSchema, isStoredInMemoryOnly: true)
-            return try! ModelContainer(for: Self.appSchema, configurations: [memoryConfig])
+            do {
+                return try ModelContainer(for: Self.appSchema, configurations: [memoryConfig])
+            } catch let fallbackError {
+                fatalError("Failed to create ModelContainer: \(fallbackError) (original error: \(error))")
+            }
         }
     }()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("BookLoom", id: Self.mainWindowID) {
             RootView()
                 .environment(memberIdentity)
                 .environment(activeClubStore)
                 .environment(goodreadsInbox)
                 .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
+                .modifier(ScreenshotAppearanceOverride())
                 .modifier(ScreenshotDynamicTypeOverride())
                 #if os(macOS)
+                // Gives `.windowResizability(.contentMinSize)` a concrete floor;
+                // without a content minimum that modifier has nothing to derive.
+                .frame(minWidth: 800, minHeight: 600)
                 .modifier(ScreenshotWindowFrameOverride())
                 #endif
                 .onContinueUserActivity(ShareAcceptance.activityType) { activity in
@@ -128,7 +144,38 @@ struct BookLoomApp: App {
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
+        // Observe at the Scene level, not in the window content: when the last
+        // window closes the content view is torn down, which is exactly the
+        // Dock-reopen case this bridge handles. A Scene-level onChange survives.
+        .onChange(of: reopenMainWindowInbox.reopenRequestCount) { _, _ in
+            openWindow(id: Self.mainWindowID)
+        }
         .defaultSize(width: 1100, height: 750)
+        .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .windowArrangement) {
+                Button("Show Main Window") {
+                    openWindow(id: Self.mainWindowID)
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
+        }
+        #endif
+
+        // Separate #if: the modifiers above attach to WindowGroup, while
+        // Settings is its own Scene. A merged #if puts a Scene statement after
+        // a modifier chain, which the @SceneBuilder #if handling rejects.
+        #if os(macOS)
+        // Standard Settings scene (Cmd+,). RootView also exposes an in-app
+        // Settings tab; both surface the same SettingsView intentionally so the
+        // macOS-conventional menu item works without removing the tab that
+        // iOS relies on.
+        Settings {
+            SettingsView()
+                .environment(memberIdentity)
+                .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
+                .modelContainer(sharedModelContainer)
+        }
         #endif
     }
 
@@ -174,6 +221,18 @@ private struct ScreenshotWindowFrameOverride: ViewModifier {
     }
 }
 #endif
+
+/// Keeps App Store screenshot captures independent from the simulator or
+/// developer device appearance setting.
+private struct ScreenshotAppearanceOverride: ViewModifier {
+    func body(content: Content) -> some View {
+        if AppLaunchOptions.screenshotRoute != nil {
+            content.preferredColorScheme(.light)
+        } else {
+            content
+        }
+    }
+}
 
 /// Applies the `-screenshotDynamicType <size>` launch arg as a `dynamicTypeSize`
 /// override. No-op when the arg is absent or unrecognized so the user's system

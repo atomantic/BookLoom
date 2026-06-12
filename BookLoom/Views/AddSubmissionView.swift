@@ -75,9 +75,27 @@ struct AddSubmissionView: View {
     }
 }
 
-enum MetadataLookupButtonStyle {
-    case bordered
-    case secondaryIndigo
+/// Shared target for the three metadata import controls. Bundles the four
+/// fields a candidate writes back into so the apply logic lives in one place.
+/// Each control keeps its own `@Binding` properties (their memberwise inits are
+/// part of the public API used by callers) and exposes a `selection` accessor
+/// that wires those bindings into this type — the bindings can't be projected
+/// through a protocol, so that thin accessor is repeated per view by necessity.
+@MainActor
+struct BookMetadataSelection {
+    @Binding var title: String
+    @Binding var author: String
+    @Binding var isbn: String
+    @Binding var selectedMetadata: BookMetadataCandidate?
+
+    func apply(_ candidate: BookMetadataCandidate) {
+        title = candidate.title
+        author = candidate.authorLine
+        if let candidateISBN = candidate.isbn {
+            isbn = candidateISBN
+        }
+        selectedMetadata = candidate
+    }
 }
 
 struct GoodreadsMetadataImportControls: View {
@@ -88,7 +106,7 @@ struct GoodreadsMetadataImportControls: View {
 
     let importButtonTitle: String
     let importButtonSystemImage: String
-    let buttonStyle: MetadataLookupButtonStyle
+    var tint = BookLoomStyle.plum
     var fillsAvailableWidth = false
 
     @State private var isImporting = false
@@ -110,23 +128,18 @@ struct GoodreadsMetadataImportControls: View {
 
     @ViewBuilder
     private var pasteButton: some View {
-        let button = Button {
+        Button {
             pasteAndImport()
         } label: {
             Label(isImporting ? "Importing..." : importButtonTitle, systemImage: importButtonSystemImage)
+                .symbolRenderingMode(.monochrome)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
                 .frame(maxWidth: fillsAvailableWidth ? .infinity : nil)
         }
         .disabled(isImporting)
         .accessibilityLabel("Paste Goodreads link from clipboard and import")
-
-        switch buttonStyle {
-        case .bordered:
-            button.buttonStyle(.bordered)
-        case .secondaryIndigo:
-            button.buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
-        }
+        .buttonStyle(BookLoomSecondaryButtonStyle(tint: tint))
     }
 
     private func pasteAndImport() {
@@ -148,19 +161,14 @@ struct GoodreadsMetadataImportControls: View {
 
         do {
             let candidate = try await metadataService.importFromGoodreads(url: url)
-            apply(candidate)
+            selection.apply(candidate)
         } catch {
             importError = error.localizedDescription
         }
     }
 
-    private func apply(_ candidate: BookMetadataCandidate) {
-        title = candidate.title
-        author = candidate.authorLine
-        if let candidateISBN = candidate.isbn {
-            isbn = candidateISBN
-        }
-        selectedMetadata = candidate
+    private var selection: BookMetadataSelection {
+        BookMetadataSelection(title: $title, author: $author, isbn: $isbn, selectedMetadata: $selectedMetadata)
     }
 
     private static func clipboardString() -> String? {
@@ -232,9 +240,18 @@ struct ISBNMetadataLookupControls: View {
 
     private func isbnField(placeholder: String) -> some View {
         TextField(placeholder, text: $isbn)
+            .font(.body)
+            .foregroundStyle(BookLoomStyle.ink)
             .textInputAutocapitalization(.characters)
             .keyboardType(.numbersAndPunctuation)
             .autocorrectionDisabled()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+            }
     }
 
     private func scanButton(title: String) -> some View {
@@ -242,11 +259,12 @@ struct ISBNMetadataLookupControls: View {
             showingScanner = true
         } label: {
             Label(title, systemImage: "barcode.viewfinder")
+                .symbolRenderingMode(.monochrome)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
                 .frame(maxWidth: fillsAvailableWidth ? .infinity : nil)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.plum))
         .disabled(isLookingUp)
     }
 
@@ -259,19 +277,14 @@ struct ISBNMetadataLookupControls: View {
 
         do {
             let candidate = try await metadataService.lookupISBN(scannedISBN)
-            apply(candidate)
+            selection.apply(candidate)
         } catch {
             lookupError = error.localizedDescription
         }
     }
 
-    private func apply(_ candidate: BookMetadataCandidate) {
-        title = candidate.title
-        author = candidate.authorLine
-        if let candidateISBN = candidate.isbn {
-            isbn = candidateISBN
-        }
-        selectedMetadata = candidate
+    private var selection: BookMetadataSelection {
+        BookMetadataSelection(title: $title, author: $author, isbn: $isbn, selectedMetadata: $selectedMetadata)
     }
 }
 #endif
@@ -282,7 +295,7 @@ struct BookMetadataSearchControls: View {
     @Binding var isbn: String
     @Binding var selectedMetadata: BookMetadataCandidate?
 
-    let buttonStyle: MetadataLookupButtonStyle
+    var tint = BookLoomStyle.indigo
     var showsSummary = true
     var findButtonTitle = "Search for Cover and Details"
     var changeButtonTitle = "Search for Cover and Details"
@@ -300,38 +313,28 @@ struct BookMetadataSearchControls: View {
         }
         .sheet(isPresented: $showingMetadataSearch) {
             BookMetadataSearchView(title: title, author: author, isbn: isbn) { candidate in
-                apply(candidate)
+                selection.apply(candidate)
             }
         }
     }
 
     @ViewBuilder
     private var searchButton: some View {
-        let button = Button {
+        Button {
             showingMetadataSearch = true
         } label: {
             Label(selectedMetadata == nil ? findButtonTitle : changeButtonTitle, systemImage: "magnifyingglass")
+                .symbolRenderingMode(.monochrome)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
                 .frame(maxWidth: fillsAvailableWidth ? .infinity : nil)
         }
         .disabled(title.trimmed.isEmpty)
-
-        switch buttonStyle {
-        case .bordered:
-            button.buttonStyle(.bordered)
-        case .secondaryIndigo:
-            button.buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
-        }
+        .buttonStyle(BookLoomSecondaryButtonStyle(tint: tint))
     }
 
-    private func apply(_ candidate: BookMetadataCandidate) {
-        title = candidate.title
-        author = candidate.authorLine
-        if let candidateISBN = candidate.isbn {
-            isbn = candidateISBN
-        }
-        selectedMetadata = candidate
+    private var selection: BookMetadataSelection {
+        BookMetadataSelection(title: $title, author: $author, isbn: $isbn, selectedMetadata: $selectedMetadata)
     }
 }
 

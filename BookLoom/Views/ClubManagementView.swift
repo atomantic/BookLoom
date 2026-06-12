@@ -18,6 +18,7 @@ struct ClubManagementView: View {
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
     @State private var memberPendingRemoval: ClubMemberDigest? = nil
+    @State private var adminErrorMessage: String? = nil
 
     var body: some View {
         let members = club.memberDigests
@@ -153,11 +154,20 @@ struct ClubManagementView: View {
                 Text("Their books, ratings, notes, votes, and RSVPs will be cleared from the club for everyone, and their iCloud sharing access will be revoked.")
             }
         )
+        .alert(
+            "Something went wrong",
+            isPresented: .presence(of: $adminErrorMessage),
+            presenting: adminErrorMessage
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
+        }
         .onAppear {
             draftName = club.name
         }
         .task {
-            backfillCreatorIfNeeded()
+            ClubAdminService.backfillCreatorIfNeeded(club, context: context, localMemberID: memberIdentity.memberID)
         }
     }
 
@@ -183,99 +193,74 @@ struct ClubManagementView: View {
     }
 
     private func removeMember(_ member: ClubMemberDigest) {
-        let removedID = member.id
-        guard !removedID.isEmpty, removedID != club.creatorMemberID else { return }
-        club.removeMember(memberID: removedID)
         do {
-            try SharedClubSync.saveAndPublish(
+            try ClubAdminService.removeMember(
+                member.id,
+                from: club,
                 context: context,
-                club: club,
                 localMemberID: memberIdentity.memberID,
                 localMemberName: memberIdentity.name
             )
         } catch {
-            assertionFailure("Failed to publish member removal: \(error.localizedDescription)")
-        }
-        if Features.cloudKitSharing, club.shareIsActive {
-            // The refresh waits for the CloudKit deletion so the next merge
-            // doesn't re-import the just-removed snapshot.
-            Task { @MainActor in
-                try? await CloudKitSharingService.shared.removeMemberSnapshot(for: club, memberID: removedID)
-                await SharedClubSync.refreshIfNeeded(
-                    club,
-                    context: context,
-                    localMemberID: memberIdentity.memberID,
-                    localMemberName: memberIdentity.name
-                )
-            }
+            adminErrorMessage = "Couldn't remove this member. Your changes weren't saved — please try again."
         }
     }
 
     private func toggleAdmin(memberID: String, isAdmin: Bool) {
-        club.setAdmin(isAdmin, memberID: memberID)
         do {
-            try SharedClubSync.saveAndPublish(
+            try ClubAdminService.setAdmin(
+                isAdmin,
+                memberID: memberID,
+                in: club,
                 context: context,
-                club: club,
                 localMemberID: memberIdentity.memberID,
                 localMemberName: memberIdentity.name
             )
         } catch {
-            assertionFailure("Failed to update admin set: \(error.localizedDescription)")
+            adminErrorMessage = "Couldn't update admin status. Your changes weren't saved — please try again."
         }
     }
 
     private func saveName() {
-        let localID = memberIdentity.memberID
-        guard club.isAdmin(memberID: localID),
-              let trimmed = draftName.trimmedOrNil,
-              trimmed != club.name else { return }
-        club.name = trimmed
-        club.nameUpdatedAt = .now
         do {
-            try SharedClubSync.saveAndPublish(
+            guard try ClubAdminService.rename(
+                club,
+                to: draftName,
                 context: context,
-                club: club,
-                localMemberID: localID,
+                localMemberID: memberIdentity.memberID,
                 localMemberName: memberIdentity.name
-            )
+            ) else { return }
             nameSaved = true
             Task {
                 try? await Task.sleep(for: .seconds(2))
                 await MainActor.run { nameSaved = false }
             }
         } catch {
-            assertionFailure("Failed to rename club: \(error.localizedDescription)")
+            adminErrorMessage = "Couldn't rename the club. Your changes weren't saved — please try again."
         }
     }
 
     private func deleteClub() {
         guard !isDeleting else { return }
         isDeleting = true
-        let memberID = memberIdentity.memberID
-        let zoneName = club.cloudZoneName
-        let isActive = zoneName == activeClubStore.activeClubZoneName
         Task { @MainActor in
-            await SharedClubSync.cleanupBeforeDelete(club, localMemberID: memberID)
-            context.delete(club)
-            try? context.save()
-            if isActive {
-                activeClubStore.clearActiveClub()
+            do {
+                try await ClubAdminService.deleteClub(
+                    club,
+                    context: context,
+                    localMemberID: memberIdentity.memberID,
+                    activeClubStore: activeClubStore
+                )
+                isDeleting = false
+                dismiss()
+            } catch {
+                // The local delete didn't persist — keep the view in place and
+                // tell the user rather than dismissing over a club that's
+                // still in the store.
+                isDeleting = false
+                adminErrorMessage = "Couldn't finish deleting this club. It may still appear — please try again."
             }
-            isDeleting = false
-            dismiss()
         }
-    }
-
-    /// Backfill the creator on legacy clubs where the field was never set.
-    /// Safe because only the local CKShare owner can have created the club.
-    private func backfillCreatorIfNeeded() {
-        guard club.creatorMemberID.isEmpty,
-              club.isOwner,
-              !memberIdentity.memberID.isEmpty
-        else { return }
-        club.creatorMemberID = memberIdentity.memberID
-        try? context.save()
     }
 }
 

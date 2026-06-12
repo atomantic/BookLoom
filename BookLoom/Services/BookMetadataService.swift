@@ -53,6 +53,7 @@ enum BookMetadataError: LocalizedError {
     case invalidISBN
     case isbnNotFound
     case requestFailed
+    case invalidURL
     case invalidGoodreadsURL
     case goodreadsParseFailed
 
@@ -66,6 +67,8 @@ enum BookMetadataError: LocalizedError {
             return "Couldn't find book details for that ISBN. You can still enter the book manually."
         case .requestFailed:
             return "Book details are temporarily unavailable. The ISBN was scanned, so you can save it now or try details again later."
+        case .invalidURL:
+            return "Couldn't build a valid request for that search. Try adjusting the title or author."
         case .invalidGoodreadsURL:
             return "That doesn't look like a Goodreads book link. Paste a URL like https://www.goodreads.com/book/show/60233239."
         case .goodreadsParseFailed:
@@ -158,7 +161,9 @@ struct BookMetadataService: Sendable {
     }
 
     private func searchOpenLibrary(title: String, author: String) async throws -> [BookMetadataCandidate] {
-        var components = URLComponents(string: "https://openlibrary.org/search.json")!
+        guard var components = URLComponents(string: "https://openlibrary.org/search.json") else {
+            throw BookMetadataError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "title", value: title),
             URLQueryItem(name: "author", value: author.isEmpty ? nil : author),
@@ -166,19 +171,23 @@ struct BookMetadataService: Sendable {
             URLQueryItem(name: "limit", value: "8")
         ].filter { $0.value != nil }
 
-        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: components.url!))
+        guard let url = components.url else { throw BookMetadataError.invalidURL }
+        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: url))
         return response.docs.compactMap(Self.openLibraryCandidate(from:))
     }
 
     private func searchOpenLibraryByISBN(_ isbn: String) async throws -> [BookMetadataCandidate] {
-        var components = URLComponents(string: "https://openlibrary.org/search.json")!
+        guard var components = URLComponents(string: "https://openlibrary.org/search.json") else {
+            throw BookMetadataError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "isbn", value: isbn),
             URLQueryItem(name: "fields", value: "key,title,author_name,first_publish_year,cover_i,isbn"),
             URLQueryItem(name: "limit", value: "3")
         ]
 
-        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: components.url!))
+        guard let url = components.url else { throw BookMetadataError.invalidURL }
+        let response: OpenLibrarySearchResponse = try await fetch(openLibraryRequest(url: url))
         return response.docs.compactMap(Self.openLibraryCandidate(from:))
     }
 
@@ -226,7 +235,10 @@ struct BookMetadataService: Sendable {
     }
 
     private func openLibraryWorkDetail(workID: String) async throws -> OpenLibraryWorkDetail {
-        try await fetch(openLibraryRequest(url: URL(string: "https://openlibrary.org/works/\(workID).json")!))
+        guard let url = URL(string: "https://openlibrary.org/works/\(workID).json") else {
+            throw BookMetadataError.invalidURL
+        }
+        return try await fetch(openLibraryRequest(url: url))
     }
 
     private func searchGoogleBooks(title: String, author: String) async throws -> [BookMetadataCandidate] {
@@ -242,14 +254,17 @@ struct BookMetadataService: Sendable {
     }
 
     private func searchGoogleBooks(query: String, maxResults: Int) async throws -> [BookMetadataCandidate] {
-        var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes")!
+        guard var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes") else {
+            throw BookMetadataError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "maxResults", value: "\(maxResults)"),
             URLQueryItem(name: "printType", value: "books")
         ]
 
-        let response: GoogleBooksResponse = try await fetch(components.url!)
+        guard let url = components.url else { throw BookMetadataError.invalidURL }
+        let response: GoogleBooksResponse = try await fetch(url)
         return response.items?.compactMap { item in
             let info = item.volumeInfo
             guard let title = info.title?.trimmedOrNil else { return nil }
@@ -312,7 +327,9 @@ struct BookMetadataService: Sendable {
             throw BookMetadataError.invalidGoodreadsURL
         }
 
-        let canonicalURL = URL(string: "https://www.goodreads.com/book/show/\(bookID)")!
+        guard let canonicalURL = URL(string: "https://www.goodreads.com/book/show/\(bookID)") else {
+            throw BookMetadataError.invalidGoodreadsURL
+        }
         var request = URLRequest(url: canonicalURL)
         // Goodreads serves a stripped/blocked response without a real browser UA.
         request.setValue(
@@ -367,21 +384,37 @@ struct BookMetadataService: Sendable {
         let cleanISBN = isbn.replacingOccurrences(of: "-", with: "").trimmed
         guard !cleanISBN.isEmpty else { return nil }
 
-        var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes")!
+        guard var components = URLComponents(string: "https://www.googleapis.com/books/v1/volumes") else {
+            throw BookMetadataError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "q", value: "isbn:\(cleanISBN)"),
             URLQueryItem(name: "maxResults", value: "1")
         ]
 
-        let response: GoogleBooksResponse = try await fetch(components.url!)
+        guard let url = components.url else { throw BookMetadataError.invalidURL }
+        let response: GoogleBooksResponse = try await fetch(url)
         let description = response.items?.first?.volumeInfo.description?.cleanedBookDescription
         return description?.trimmedOrNil
     }
 
+    // Compiled-once regexes shared across all parses. NSRegularExpression is
+    // thread-safe for matching, so a single static instance is safe to reuse.
+    private static let goodreadsBookIDRegex = try? NSRegularExpression(pattern: "/book/show/(\\d+)")
+    private static let nextDataRegex = try? NSRegularExpression(
+        pattern: "<script[^>]*id=\"__NEXT_DATA__\"[^>]*>([\\s\\S]*?)</script>",
+        options: [.caseInsensitive]
+    )
+    private static let htmlTagRegex = try? NSRegularExpression(pattern: "<[^>]+>")
+    private static let jsonLDRegex = try? NSRegularExpression(
+        pattern: "<script[^>]*type=\"application/ld\\+json\"[^>]*>([\\s\\S]*?)</script>",
+        options: [.caseInsensitive]
+    )
+
     static func goodreadsBookID(from url: URL) -> String? {
         guard let host = url.host?.lowercased(), host.contains("goodreads.com") else { return nil }
         let path = url.path
-        guard let regex = try? NSRegularExpression(pattern: "/book/show/(\\d+)") else { return nil }
+        guard let regex = goodreadsBookIDRegex else { return nil }
         let range = NSRange(path.startIndex..., in: path)
         guard let match = regex.firstMatch(in: path, range: range),
               let idRange = Range(match.range(at: 1), in: path) else {
@@ -480,10 +513,7 @@ struct BookMetadataService: Sendable {
     }
 
     private static func nextDataBlob(in html: String) -> String? {
-        guard let regex = try? NSRegularExpression(
-            pattern: "<script[^>]*id=\"__NEXT_DATA__\"[^>]*>([\\s\\S]*?)</script>",
-            options: [.caseInsensitive]
-        ) else { return nil }
+        guard let regex = nextDataRegex else { return nil }
         let range = NSRange(html.startIndex..., in: html)
         guard let match = regex.firstMatch(in: html, range: range),
               let r = Range(match.range(at: 1), in: html) else {
@@ -513,16 +543,13 @@ struct BookMetadataService: Sendable {
     }
 
     private static func stripHTMLTags(_ value: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: "<[^>]+>") else { return value }
+        guard let regex = htmlTagRegex else { return value }
         let range = NSRange(value.startIndex..., in: value)
         return regex.stringByReplacingMatches(in: value, range: range, withTemplate: "")
     }
 
     private static func jsonLDBlobs(in html: String) -> [String] {
-        guard let regex = try? NSRegularExpression(
-            pattern: "<script[^>]*type=\"application/ld\\+json\"[^>]*>([\\s\\S]*?)</script>",
-            options: [.caseInsensitive]
-        ) else { return [] }
+        guard let regex = jsonLDRegex else { return [] }
         let range = NSRange(html.startIndex..., in: html)
         return regex.matches(in: html, range: range).compactMap { match in
             guard let r = Range(match.range(at: 1), in: html) else { return nil }

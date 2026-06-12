@@ -42,6 +42,7 @@ struct LibraryTabView: View {
     @State private var filter: MobileLibraryFilter = .all
     @State private var isLoading = false
     @State private var canLoadMore = true
+    @State private var hasLoadedOnce = false
     @State private var showingNewBook = false
     @State private var selectedBook: LibraryBook?
     @State private var pendingDeleteBook: LibraryBook?
@@ -67,12 +68,13 @@ struct LibraryTabView: View {
                 )
                     .bookLoomListRow(top: 4, bottom: 6)
 
-                Picker("Shelf filter", selection: $filter) {
-                    ForEach(MobileLibraryFilter.allCases) { filter in
-                        Text(filter.title).tag(filter)
-                    }
+                AdaptiveSegmentedControl(
+                    "Shelf filter",
+                    selection: $filter,
+                    options: MobileLibraryFilter.allCases
+                ) { filter in
+                    Text(filter.title)
                 }
-                .pickerStyle(.segmented)
                 .bookLoomListRow(top: 4, bottom: 8)
             }
 
@@ -93,7 +95,7 @@ struct LibraryTabView: View {
             }
 
             Section {
-                if visibleBooks.isEmpty {
+                if hasLoadedOnce && visibleBooks.isEmpty {
                     InlineEmptyState(
                         systemImage: emptyStateSystemImage,
                         title: emptyStateTitle,
@@ -288,6 +290,7 @@ struct LibraryTabView: View {
         descriptor.fetchLimit = pageSize
         descriptor.fetchOffset = books.count
 
+        hasLoadedOnce = true
         do {
             let nextPage = try context.fetch(descriptor)
             books.append(contentsOf: nextPage)
@@ -555,6 +558,7 @@ private struct MobileShelfImportRow: View {
     let onSaveToShelf: () -> Void
     let onAddToClub: () -> Void
     let onRemove: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -581,30 +585,40 @@ private struct MobileShelfImportRow: View {
                 Spacer(minLength: 0)
             }
 
-            HStack(spacing: 8) {
+            actionLayout {
                 Button(action: onSaveToShelf) {
                     Label("Save to Shelf", systemImage: "books.vertical.fill")
+                        .symbolRenderingMode(.monochrome)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(BookLoomStyle.plum)
+                .buttonStyle(BookLoomProminentButtonStyle())
+                .controlSize(.regular)
 
                 Button(action: onAddToClub) {
                     Label("Add to Club", systemImage: "person.2.fill")
+                        .symbolRenderingMode(.monochrome)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .tint(BookLoomStyle.plum)
+                .buttonStyle(BookLoomSecondaryButtonStyle())
+                .controlSize(.regular)
 
                 Button(role: .destructive, action: onRemove) {
                     Image(systemName: "trash")
+                        .symbolRenderingMode(.monochrome)
                         .frame(minWidth: 32)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.coral))
+                .controlSize(.regular)
                 .accessibilityLabel("Discard import")
             }
-            .font(.caption.weight(.semibold))
-            .controlSize(.small)
         }
         .bookLoomCard(padding: 10)
+    }
+
+    private var actionLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
     }
 }
 
@@ -618,6 +632,7 @@ private struct MobileLibraryBookDetailView: View {
     @State private var priceText: String
     @State private var showingMetadataSearch = false
     @State private var clubAddOutcome: ShelfClubAddOutcome?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(
         book: LibraryBook,
@@ -672,7 +687,7 @@ private struct MobileLibraryBookDetailView: View {
 
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 16) {
+            heroLayout {
                 BookCoverTile(
                     title: book.displayTitle,
                     author: book.displayAuthor,
@@ -733,9 +748,11 @@ private struct MobileLibraryBookDetailView: View {
 
     private var bookCard: some View {
         MobileBookEditCard(title: "Book", systemImage: "book.closed.fill") {
-            MobileBookTextField("Title", text: $book.title)
-            MobileBookTextField("Author", text: $book.author)
-            MobileBookTextField("ISBN", text: $book.isbn, keyboardType: .numbersAndPunctuation)
+            BookLoomCompactTextField("Title", text: $book.title)
+            BookLoomCompactDivider()
+            BookLoomCompactTextField("Author", text: $book.author)
+            BookLoomCompactDivider()
+            BookLoomCompactTextField("ISBN", text: $book.isbn, keyboard: .numbersAndPunctuation)
             MobileBookMenuRow(
                 title: "Format",
                 value: book.format.displayName,
@@ -758,7 +775,7 @@ private struct MobileLibraryBookDetailView: View {
                     }
                 }
             }
-            MobileBookTextField("Shelf or room", text: $book.shelfLocation)
+            BookLoomCompactTextField("Shelf or room", text: $book.shelfLocation)
             Button {
                 showingMetadataSearch = true
             } label: {
@@ -778,9 +795,11 @@ private struct MobileLibraryBookDetailView: View {
 
     private var trackingCard: some View {
         MobileBookEditCard(title: "Personal Tracking", systemImage: "checkmark.seal.fill") {
-            HStack(alignment: .center) {
+            ratingLayout {
                 MobileBookRowLabel(title: "Rating", systemImage: "star.fill")
-                Spacer(minLength: 12)
+                if !dynamicTypeSize.prefersExpandedControlLayout {
+                    Spacer(minLength: 12)
+                }
                 StarRatingPicker(stars: ratingBinding)
             }
             .padding(.vertical, 3)
@@ -788,7 +807,7 @@ private struct MobileLibraryBookDetailView: View {
             propertyButtonGrid
 
             if book.isOnLoan && book.countsAsOwned {
-                MobileBookTextField("Loaned to", text: $book.loanedTo)
+                BookLoomCompactTextField("Loaned to", text: $book.loanedTo)
                 Button {
                     markReturned()
                 } label: {
@@ -843,14 +862,14 @@ private struct MobileLibraryBookDetailView: View {
 
     private var propertyButtonColumns: [GridItem] {
         [
-            GridItem(.adaptive(minimum: 116), spacing: 8, alignment: .leading)
+            GridItem(.adaptive(minimum: dynamicTypeSize.prefersExpandedControlLayout ? 180 : 116), spacing: 8, alignment: .leading)
         ]
     }
 
     private var purchaseCard: some View {
         MobileBookEditCard(title: "Purchase", systemImage: "creditcard.fill") {
-            MobileBookTextField("Paid", text: $priceText, placeholder: "$0.00", keyboardType: .decimalPad)
-            MobileBookTextField("Purchased from", text: $book.purchaseSource)
+            BookLoomCompactTextField("Paid", text: $priceText, placeholder: "$0.00", keyboard: .decimalPad)
+            BookLoomCompactTextField("Purchased from", text: $book.purchaseSource)
 
             if hasPurchaseDetails {
                 Button {
@@ -865,8 +884,8 @@ private struct MobileLibraryBookDetailView: View {
 
     private var giftCard: some View {
         MobileBookEditCard(title: "Gift Plan", systemImage: "gift.fill") {
-            MobileBookTextField("Give to", text: $book.intendedRecipient)
-            MobileBookTextField("Occasion", text: $book.giftOccasion)
+            BookLoomCompactTextField("Give to", text: $book.intendedRecipient)
+            BookLoomCompactTextField("Occasion", text: $book.giftOccasion)
 
             if hasGiftDetails {
                 Button {
@@ -881,7 +900,7 @@ private struct MobileLibraryBookDetailView: View {
 
     private var notesCard: some View {
         MobileBookEditCard(title: "Private Notes", systemImage: "note.text") {
-            MobileBookTextField(
+            BookLoomCompactTextField(
                 "Notes",
                 text: $book.privateNotes,
                 placeholder: "Edition notes, provenance, repairs, reminders...",
@@ -953,6 +972,18 @@ private struct MobileLibraryBookDetailView: View {
                 }
             }
         )
+    }
+
+    private var heroLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14))
+            : AnyLayout(HStackLayout(spacing: 16))
+    }
+
+    private var ratingLayout: AnyLayout {
+        dynamicTypeSize.prefersExpandedControlLayout
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .center))
     }
 
     private var formatBinding: Binding<LibraryBookFormat> {
@@ -1109,51 +1140,6 @@ private struct MobileBookRowLabel: View {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(BookLoomStyle.ink)
             .labelStyle(.titleAndIcon)
-    }
-}
-
-private struct MobileBookTextField: View {
-    let title: String
-    @Binding var text: String
-    var placeholder: String?
-    var keyboardType: UIKeyboardType = .default
-    var isMultiline = false
-
-    init(
-        _ title: String,
-        text: Binding<String>,
-        placeholder: String? = nil,
-        keyboardType: UIKeyboardType = .default,
-        isMultiline: Bool = false
-    ) {
-        self.title = title
-        _text = text
-        self.placeholder = placeholder
-        self.keyboardType = keyboardType
-        self.isMultiline = isMultiline
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            TextField("", text: $text, prompt: Text(placeholder ?? title), axis: isMultiline ? .vertical : .horizontal)
-                .font(.body)
-                .foregroundStyle(BookLoomStyle.ink)
-                .keyboardType(keyboardType)
-                .autocorrectionDisabled(title == "ISBN")
-                .textInputAutocapitalization(title == "ISBN" ? .characters : .sentences)
-                .lineLimit(isMultiline ? 4...8 : 1...1)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 11)
-                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-                }
-        }
     }
 }
 

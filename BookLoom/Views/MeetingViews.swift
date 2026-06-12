@@ -44,6 +44,7 @@ struct ScheduleMeetingView: View {
 
     @Bindable var club: BookClub
     let currentSubmission: BookSubmission?
+    let meeting: ClubMeeting?
 
     @State private var title: String = ""
     @State private var scheduledAt: Date = Date.now.addingTimeInterval(7 * 24 * 60 * 60)
@@ -55,6 +56,13 @@ struct ScheduleMeetingView: View {
         MeetingReminderOffset.oneDay.rawValue,
         MeetingReminderOffset.oneHour.rawValue
     ]
+    @State private var didLoadDraft = false
+
+    init(club: BookClub, currentSubmission: BookSubmission?, meeting: ClubMeeting? = nil) {
+        self.club = club
+        self.currentSubmission = currentSubmission
+        self.meeting = meeting
+    }
 
     var body: some View {
         NavigationStack {
@@ -85,30 +93,54 @@ struct ScheduleMeetingView: View {
                 if let currentSubmission {
                     Section("Book") {
                         LabeledContent("Current read", value: currentSubmission.displayTitle)
-                        Text("Starter discussion prompts will be added to this book if it does not have any yet.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        if meeting == nil {
+                            Text("Starter discussion prompts will be added to this book if it does not have any yet.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
-            .navigationTitle("Schedule Meeting")
+            .navigationTitle(meeting == nil ? "Schedule Meeting" : "Edit Meeting")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save)
-                        .disabled(scheduledAt <= .now)
+                        .disabled(saveDisabled)
                 }
             }
             .onAppear {
-                if hostName.isEmpty {
-                    hostName = memberIdentity.name
-                }
-                if title.isEmpty, let currentSubmission {
-                    title = "\(currentSubmission.displayTitle) Discussion"
-                }
+                loadDraftIfNeeded()
             }
+        }
+    }
+
+    private var saveDisabled: Bool {
+        meeting == nil && scheduledAt <= .now
+    }
+
+    private func loadDraftIfNeeded() {
+        guard !didLoadDraft else { return }
+        didLoadDraft = true
+
+        if let meeting {
+            title = meeting.title
+            scheduledAt = meeting.scheduledAt
+            hostName = meeting.hostName
+            location = meeting.location
+            meetingURL = meeting.meetingURL
+            agenda = meeting.agenda
+            selectedReminderOffsets = Set(meeting.reminderOffsets)
+            return
+        }
+
+        if hostName.isEmpty {
+            hostName = memberIdentity.name
+        }
+        if title.isEmpty, let currentSubmission {
+            title = "\(currentSubmission.displayTitle) Discussion"
         }
     }
 
@@ -126,6 +158,14 @@ struct ScheduleMeetingView: View {
     }
 
     private func save() {
+        if let meeting {
+            update(meeting)
+        } else {
+            createMeeting()
+        }
+    }
+
+    private func createMeeting() {
         let meeting = ClubMeeting(
             title: title.trimmed,
             scheduledAt: scheduledAt,
@@ -157,7 +197,36 @@ struct ScheduleMeetingView: View {
         } catch {
             assertionFailure("Failed to save meeting: \(error.localizedDescription)")
         }
-        Task { await MeetingReminderScheduler.scheduleReminders(for: meeting) }
+        let reminderSchedule = MeetingReminderScheduler.schedule(for: meeting)
+        Task { await MeetingReminderScheduler.scheduleReminders(reminderSchedule) }
+        dismiss()
+    }
+
+    private func update(_ meeting: ClubMeeting) {
+        let staleReminderIdentifiers = MeetingReminderScheduler.identifiers(for: meeting)
+        meeting.title = title.trimmed
+        meeting.scheduledAt = scheduledAt
+        meeting.hostName = hostName.trimmedOrNil ?? memberIdentity.name
+        if meeting.hostMemberID.trimmed.isEmpty {
+            meeting.hostMemberID = memberIdentity.memberID
+        }
+        meeting.location = location.trimmed
+        meeting.meetingURL = meetingURL.trimmed
+        meeting.reminderOffsets = Array(selectedReminderOffsets)
+        meeting.agenda = agenda.trimmed
+
+        do {
+            try SharedClubSync.saveAndPublish(
+                context: context,
+                club: club,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
+        } catch {
+            assertionFailure("Failed to update meeting: \(error.localizedDescription)")
+        }
+        let reminderSchedule = MeetingReminderScheduler.schedule(for: meeting)
+        Task { await MeetingReminderScheduler.scheduleReminders(reminderSchedule, replacing: staleReminderIdentifiers) }
         dismiss()
     }
 }
@@ -169,6 +238,7 @@ struct MeetingDetailView: View {
 
     @State private var selectedStatus: MeetingRSVPStatus = .attending
     @State private var bringingNote: String = ""
+    @State private var showingEditMeeting = false
 
     var body: some View {
         List {
@@ -272,13 +342,25 @@ struct MeetingDetailView: View {
         .navigationTitle("Meeting")
         .bookLoomNavigationBar()
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    showingEditMeeting = true
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .disabled(meeting.bookClub == nil)
+
                 Button {
                     meeting.completedAt = meeting.isCompleted ? nil : .now
                     saveMeetingChanges()
                 } label: {
                     Label(meeting.isCompleted ? "Reopen" : "Mark Complete", systemImage: meeting.isCompleted ? "arrow.uturn.backward" : "checkmark.seal")
                 }
+            }
+        }
+        .sheet(isPresented: $showingEditMeeting) {
+            if let club = meeting.bookClub {
+                ScheduleMeetingView(club: club, currentSubmission: meeting.bookSubmission, meeting: meeting)
             }
         }
         .onAppear {

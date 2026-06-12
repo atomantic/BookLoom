@@ -5,6 +5,27 @@ import XCTest
 
 @MainActor
 final class SharedClubSnapshotTests: XCTestCase {
+    /// `MemberShareSnapshotStore.merge` prunes acknowledged overrides into the
+    /// per-zone UserDefaults-backed stores (Status/SubmissionDetails/Submission
+    /// Deletion), keyed by `cloudZoneName`. Clearing every key under those store
+    /// prefixes after each test prevents global-state leakage across runs and
+    /// across test targets that share the standard defaults domain. Scanning by
+    /// prefix (rather than a hardcoded zone list) keeps this correct when new
+    /// tests introduce new zones.
+    override func tearDown() {
+        let prefixes = [
+            StatusOverrideStore.prefix,
+            SubmissionDetailsOverrideStore.prefix,
+            SubmissionDeletionStore.prefix
+        ]
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys
+        where prefixes.contains(where: key.hasPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+        super.tearDown()
+    }
+
     func test_perAuthorSnapshotCapturesOnlyOwnContributions() throws {
         let context = try makeContext()
         let owner = BookClub(name: "Sunday Pages", createdAt: Date(timeIntervalSince1970: 1_000))
@@ -695,6 +716,730 @@ final class SharedClubSnapshotTests: XCTestCase {
 
         let submissions = try context.fetch(FetchDescriptor<BookSubmission>())
         XCTAssertTrue(submissions.isEmpty)
+    }
+
+    // MARK: - Merge engine steps 6-11 (prompts, polls, votes, meetings, RSVPs)
+
+    /// Builds a joined club whose canonical state is owned by `member-alex`,
+    /// with the local device acting as a neutral `member-eve`.
+    private func makeJoinedClub(
+        zone: String,
+        in context: ModelContext
+    ) throws -> BookClub {
+        let club = BookClub(name: "Sunday Pages")
+        club.cloudZoneName = zone
+        club.ownerUserRecordName = "owner-record"
+        club.shareIsActive = true
+        context.insert(club)
+        try context.save()
+        return club
+    }
+
+    private func ownerSubmissionPayload(
+        selectionID: String,
+        title: String = "Owned Book"
+    ) -> MemberShareSnapshot.SubmissionPayload {
+        MemberShareSnapshot.SubmissionPayload(
+            selectionID: selectionID,
+            title: title,
+            author: "Author",
+            isbn: "",
+            submittedBy: "Alex",
+            submittedByMemberID: "member-alex",
+            submittedAt: Date(timeIntervalSince1970: 1_000),
+            initialStatusRaw: BookSubmissionStatus.proposed.rawValue,
+            initialPickedAt: nil,
+            initialCompletedAt: nil,
+            bookDescription: "",
+            publishedYear: nil,
+            coverURL: "",
+            externalProvider: "",
+            externalID: ""
+        )
+    }
+
+    /// A minimal owner-hosted meeting payload with empty optional fields. Used
+    /// by tests that only care about the meeting's child RSVPs.
+    private func emptyMeetingPayload(
+        meetingID: String = "meeting-1",
+        title: String = "Meeting"
+    ) -> MemberShareSnapshot.MeetingPayload {
+        MemberShareSnapshot.MeetingPayload(
+            meetingID: meetingID,
+            title: title,
+            scheduledAt: Date(timeIntervalSince1970: 8_000),
+            hostName: "Alex",
+            hostMemberID: "member-alex",
+            location: "",
+            meetingURL: "",
+            reminderOffsetsRaw: "",
+            agenda: "",
+            createdAt: Date(timeIntervalSince1970: 4_000),
+            completedAt: nil,
+            submissionSelectionID: nil
+        )
+    }
+
+    func test_mergeUpsertsMeetingWithRSVPsFromRemoteMember() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-Meetings", in: context)
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            submissions: [ownerSubmissionPayload(selectionID: "sel-book")],
+            meetings: [
+                MemberShareSnapshot.MeetingPayload(
+                    meetingID: "meeting-1",
+                    title: "Chapter Club",
+                    scheduledAt: Date(timeIntervalSince1970: 8_000),
+                    hostName: "Alex",
+                    hostMemberID: "member-alex",
+                    location: "Library",
+                    meetingURL: "https://example.com/call",
+                    reminderOffsetsRaw: "1440,60",
+                    agenda: "Discuss the ending.",
+                    createdAt: Date(timeIntervalSince1970: 4_000),
+                    completedAt: nil,
+                    submissionSelectionID: "sel-book"
+                )
+            ]
+        )
+        // A different remote member RSVPs to the owner's meeting.
+        let sam = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_100),
+            authorMemberID: "member-sam",
+            authorName: "Sam",
+            rsvps: [
+                MemberShareSnapshot.RSVPPayload(
+                    meetingID: "meeting-1",
+                    memberID: "member-sam",
+                    memberName: "Sam",
+                    statusRaw: MeetingRSVPStatus.maybe.rawValue,
+                    bringingNote: "Dessert",
+                    updatedAt: Date(timeIntervalSince1970: 5_050)
+                )
+            ]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, sam],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let meetings = (try context.fetch(FetchDescriptor<ClubMeeting>()))
+            .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+        XCTAssertEqual(meetings.map(\.meetingID), ["meeting-1"])
+        let meeting = try XCTUnwrap(meetings.first)
+        XCTAssertEqual(meeting.title, "Chapter Club")
+        XCTAssertEqual(meeting.agenda, "Discuss the ending.")
+        XCTAssertEqual(meeting.bookSubmission?.selectionID, "sel-book", "Meeting must relink to its book by selectionID")
+
+        let rsvps = meeting.rsvps ?? []
+        XCTAssertEqual(rsvps.map(\.memberID), ["member-sam"])
+        XCTAssertEqual(rsvps.first?.status, .maybe)
+        XCTAssertEqual(rsvps.first?.bringingNote, "Dessert")
+    }
+
+    func test_mergeUpdatesExistingRemoteRSVPByLatestUpdatedAt() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-RSVPUpdate", in: context)
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            meetings: [emptyMeetingPayload()]
+        )
+        // Two snapshots carrying the same (meeting, member) RSVP — the later
+        // updatedAt must win, exercising the votesByKey/rsvpsByKey freshness gate.
+        let stale = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_100),
+            authorMemberID: "member-sam",
+            authorName: "Sam",
+            rsvps: [
+                MemberShareSnapshot.RSVPPayload(
+                    meetingID: "meeting-1",
+                    memberID: "member-sam",
+                    memberName: "Sam",
+                    statusRaw: MeetingRSVPStatus.declined.rawValue,
+                    bringingNote: "old",
+                    updatedAt: Date(timeIntervalSince1970: 5_000)
+                )
+            ]
+        )
+        let fresh = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_200),
+            authorMemberID: "member-sam",
+            authorName: "Sam",
+            rsvps: [
+                MemberShareSnapshot.RSVPPayload(
+                    meetingID: "meeting-1",
+                    memberID: "member-sam",
+                    memberName: "Sam",
+                    statusRaw: MeetingRSVPStatus.attending.rawValue,
+                    bringingNote: "new",
+                    updatedAt: Date(timeIntervalSince1970: 6_000)
+                )
+            ]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, stale, fresh],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let meeting = try XCTUnwrap(
+            (try context.fetch(FetchDescriptor<ClubMeeting>())).first
+        )
+        let rsvps = meeting.rsvps ?? []
+        XCTAssertEqual(rsvps.count, 1, "Only one canonical RSVP per (meeting, member)")
+        XCTAssertEqual(rsvps.first?.status, .attending)
+        XCTAssertEqual(rsvps.first?.bringingNote, "new")
+    }
+
+    func test_mergeDeletesRemoteMeetingNoLongerInCanonical() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-MeetingDelete", in: context)
+
+        // Seed an existing meeting hosted by a remote member.
+        let meeting = ClubMeeting(title: "Stale", hostMemberID: "member-sam")
+        meeting.meetingID = "meeting-stale"
+        context.insert(meeting)
+        club.addMeeting(meeting)
+        try context.save()
+
+        // Owner's snapshot no longer carries that meeting; no other snapshot
+        // reintroduces it. Eve is local and is not the host, so it must go.
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            meetings: []
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let meetings = (try context.fetch(FetchDescriptor<ClubMeeting>()))
+            .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+        XCTAssertTrue(meetings.isEmpty, "A remote meeting absent from canonical must be deleted")
+    }
+
+    func test_mergeKeepsLocallyHostedMeetingAbsentFromCanonical() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-LocalMeeting", in: context)
+
+        // Eve (local) hosts an unpublished meeting.
+        let meeting = ClubMeeting(title: "Eve's draft", hostMemberID: "member-eve")
+        meeting.meetingID = "meeting-eve"
+        context.insert(meeting)
+        club.addMeeting(meeting)
+        try context.save()
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            meetings: []
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let meetings = (try context.fetch(FetchDescriptor<ClubMeeting>()))
+            .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+        XCTAssertEqual(meetings.map(\.meetingID), ["meeting-eve"], "Locally-hosted meetings survive even when absent from canonical")
+    }
+
+    func test_mergeUpsertsPromptFromNonLocalMember() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-Prompts", in: context)
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            submissions: [ownerSubmissionPayload(selectionID: "sel-book")],
+            prompts: [
+                MemberShareSnapshot.PromptPayload(
+                    promptID: "prompt-1",
+                    submissionSelectionID: "sel-book",
+                    createdByMemberID: "member-alex",
+                    question: "What surprised you most?",
+                    orderIndex: 2,
+                    sourceRaw: DiscussionPromptSource.custom.rawValue,
+                    createdAt: Date(timeIntervalSince1970: 4_500),
+                    isArchived: false
+                )
+            ]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let prompts = try context.fetch(FetchDescriptor<DiscussionPrompt>())
+        XCTAssertEqual(prompts.map(\.promptID), ["prompt-1"])
+        let prompt = try XCTUnwrap(prompts.first)
+        XCTAssertEqual(prompt.question, "What surprised you most?")
+        XCTAssertEqual(prompt.orderIndex, 2)
+        XCTAssertEqual(prompt.createdByMemberID, "member-alex")
+        XCTAssertEqual(prompt.submission?.selectionID, "sel-book", "Prompt must be parented to its submission")
+    }
+
+    func test_mergeDeletesRemotePromptNoLongerInCanonical() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-PromptDelete", in: context)
+
+        // Seed a submission + a remote-authored prompt.
+        let submission = BookSubmission(
+            title: "Owned Book",
+            submittedBy: "Alex",
+            submittedByMemberID: "member-alex"
+        )
+        submission.selectionID = "sel-book"
+        context.insert(submission)
+        club.addSubmission(submission)
+        let prompt = DiscussionPrompt(question: "Stale?")
+        prompt.promptID = "prompt-stale"
+        prompt.createdByMemberID = "member-sam"
+        prompt.submission = submission
+        context.insert(prompt)
+        submission.discussionPrompts = [prompt]
+        try context.save()
+
+        // Owner still carries the submission, but the prompt is gone from
+        // canonical and Eve (local) didn't author it.
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            submissions: [ownerSubmissionPayload(selectionID: "sel-book")],
+            prompts: []
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let prompts = try context.fetch(FetchDescriptor<DiscussionPrompt>())
+        XCTAssertTrue(prompts.isEmpty, "A remote prompt absent from canonical must be deleted")
+    }
+
+    func test_mergeKeepsStarterPromptWithEmptyAuthorOnMerge() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-Starter", in: context)
+
+        let submission = BookSubmission(
+            title: "Owned Book",
+            submittedBy: "Alex",
+            submittedByMemberID: "member-alex"
+        )
+        submission.selectionID = "sel-book"
+        context.insert(submission)
+        club.addSubmission(submission)
+        // Auto-generated starter prompt: empty createdByMemberID, not synced.
+        let starter = DiscussionPrompt(question: "Starter", source: .starter)
+        starter.promptID = "prompt-starter"
+        starter.createdByMemberID = ""
+        starter.submission = submission
+        context.insert(starter)
+        submission.discussionPrompts = [starter]
+        try context.save()
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            submissions: [ownerSubmissionPayload(selectionID: "sel-book")],
+            prompts: []
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let prompts = try context.fetch(FetchDescriptor<DiscussionPrompt>())
+        XCTAssertEqual(prompts.map(\.promptID), ["prompt-starter"], "Starter prompts (empty author) survive merge")
+    }
+
+    func test_mergeUpsertsPollAndVoteFromRemoteMember() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-Polls", in: context)
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            polls: [
+                MemberShareSnapshot.PollPayload(
+                    pollID: "poll-1",
+                    createdByMemberID: "member-alex",
+                    title: "June Pick",
+                    createdAt: Date(timeIntervalSince1970: 4_000),
+                    closesAt: Date(timeIntervalSince1970: 9_000),
+                    statusRaw: SelectionPollStatus.open.rawValue,
+                    isAnonymousResults: true,
+                    candidateIDsRaw: "sel-a,sel-b",
+                    winnerSubmissionID: ""
+                )
+            ]
+        )
+        // A remote member's ballot on the owner's poll.
+        let sam = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_100),
+            authorMemberID: "member-sam",
+            authorName: "Sam",
+            votes: [
+                MemberShareSnapshot.VotePayload(
+                    pollID: "poll-1",
+                    memberID: "member-sam",
+                    memberName: "Sam",
+                    rankedSubmissionIDsRaw: "sel-b,sel-a",
+                    updatedAt: Date(timeIntervalSince1970: 5_050)
+                )
+            ]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, sam],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let polls = (try context.fetch(FetchDescriptor<SelectionPoll>()))
+            .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+        XCTAssertEqual(polls.map(\.pollID), ["poll-1"])
+        let poll = try XCTUnwrap(polls.first)
+        XCTAssertEqual(poll.title, "June Pick")
+        XCTAssertEqual(poll.candidateIDs, ["sel-a", "sel-b"])
+
+        let votes = poll.votes ?? []
+        XCTAssertEqual(votes.map(\.memberID), ["member-sam"])
+        XCTAssertEqual(votes.first?.rankedSubmissionIDs, ["sel-b", "sel-a"], "Vote must be keyed to the correct poll and decode its ranks")
+    }
+
+    func test_mergeDoesNotMisKeyVotesAcrossPolls() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-MultiPoll", in: context)
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            polls: [
+                MemberShareSnapshot.PollPayload(
+                    pollID: "poll-1",
+                    createdByMemberID: "member-alex",
+                    title: "Poll One",
+                    createdAt: Date(timeIntervalSince1970: 4_000),
+                    closesAt: nil,
+                    statusRaw: SelectionPollStatus.open.rawValue,
+                    isAnonymousResults: true,
+                    candidateIDsRaw: "sel-a",
+                    winnerSubmissionID: ""
+                ),
+                MemberShareSnapshot.PollPayload(
+                    pollID: "poll-2",
+                    createdByMemberID: "member-alex",
+                    title: "Poll Two",
+                    createdAt: Date(timeIntervalSince1970: 4_100),
+                    closesAt: nil,
+                    statusRaw: SelectionPollStatus.open.rawValue,
+                    isAnonymousResults: true,
+                    candidateIDsRaw: "sel-b",
+                    winnerSubmissionID: ""
+                )
+            ],
+            votes: [
+                MemberShareSnapshot.VotePayload(
+                    pollID: "poll-1",
+                    memberID: "member-alex",
+                    memberName: "Alex",
+                    rankedSubmissionIDsRaw: "sel-a",
+                    updatedAt: Date(timeIntervalSince1970: 4_500)
+                ),
+                MemberShareSnapshot.VotePayload(
+                    pollID: "poll-2",
+                    memberID: "member-alex",
+                    memberName: "Alex",
+                    rankedSubmissionIDsRaw: "sel-b",
+                    updatedAt: Date(timeIntervalSince1970: 4_600)
+                )
+            ]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let polls = (try context.fetch(FetchDescriptor<SelectionPoll>()))
+            .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+        let pollOne = try XCTUnwrap(polls.first { $0.pollID == "poll-1" })
+        let pollTwo = try XCTUnwrap(polls.first { $0.pollID == "poll-2" })
+        XCTAssertEqual(pollOne.votes?.map(\.rankedSubmissionIDs), [["sel-a"]], "poll-1 keeps only its own vote")
+        XCTAssertEqual(pollTwo.votes?.map(\.rankedSubmissionIDs), [["sel-b"]], "poll-2 keeps only its own vote")
+    }
+
+    func test_mergeDeletesRemotePollNoLongerInCanonical() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-PollDelete", in: context)
+
+        let poll = SelectionPoll(title: "Stale Poll")
+        poll.pollID = "poll-stale"
+        poll.createdByMemberID = "member-sam"
+        context.insert(poll)
+        club.addSelectionPoll(poll)
+        try context.save()
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            polls: []
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let polls = (try context.fetch(FetchDescriptor<SelectionPoll>()))
+            .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
+        XCTAssertTrue(polls.isEmpty, "A remote poll absent from canonical must be deleted")
+    }
+
+    func test_mergeDeletesRemoteVoteNoLongerInCanonical() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-VoteDelete", in: context)
+
+        // Owner poll exists locally with a stale remote vote attached.
+        let poll = SelectionPoll(title: "Poll")
+        poll.pollID = "poll-1"
+        poll.createdByMemberID = "member-alex"
+        poll.candidateIDsRaw = "sel-a"
+        context.insert(poll)
+        club.addSelectionPoll(poll)
+        let staleVote = BookVote(memberID: "member-sam", memberName: "Sam", rankedSubmissionIDs: ["sel-a"])
+        staleVote.poll = poll
+        context.insert(staleVote)
+        poll.votes = [staleVote]
+        try context.save()
+
+        // Owner re-publishes the poll but Sam's vote is gone from canonical.
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            polls: [
+                MemberShareSnapshot.PollPayload(
+                    pollID: "poll-1",
+                    createdByMemberID: "member-alex",
+                    title: "Poll",
+                    createdAt: Date(timeIntervalSince1970: 4_000),
+                    closesAt: nil,
+                    statusRaw: SelectionPollStatus.open.rawValue,
+                    isAnonymousResults: true,
+                    candidateIDsRaw: "sel-a",
+                    winnerSubmissionID: ""
+                )
+            ],
+            votes: []
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let poll1 = try XCTUnwrap(
+            (try context.fetch(FetchDescriptor<SelectionPoll>())).first { $0.pollID == "poll-1" }
+        )
+        XCTAssertTrue((poll1.votes ?? []).isEmpty, "A remote vote absent from canonical must be deleted")
+    }
+
+    func test_mergeDeletesRemoteRSVPNoLongerInCanonical() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-RSVPDelete", in: context)
+
+        let meeting = ClubMeeting(title: "Meeting", hostMemberID: "member-alex")
+        meeting.meetingID = "meeting-1"
+        context.insert(meeting)
+        club.addMeeting(meeting)
+        let staleRSVP = MeetingRSVP(memberID: "member-sam", memberName: "Sam", status: .attending)
+        staleRSVP.meeting = meeting
+        context.insert(staleRSVP)
+        meeting.rsvps = [staleRSVP]
+        try context.save()
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            meetings: [emptyMeetingPayload()],
+            rsvps: []
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let meeting1 = try XCTUnwrap(
+            (try context.fetch(FetchDescriptor<ClubMeeting>())).first { $0.meetingID == "meeting-1" }
+        )
+        XCTAssertTrue((meeting1.rsvps ?? []).isEmpty, "A remote RSVP absent from canonical must be deleted")
+    }
+
+    func test_mergePreservesLocalMembersOwnRSVPAbsentFromCanonical() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-LocalRSVP", in: context)
+
+        let meeting = ClubMeeting(title: "Meeting", hostMemberID: "member-alex")
+        meeting.meetingID = "meeting-1"
+        context.insert(meeting)
+        club.addMeeting(meeting)
+        // Eve (local) RSVP'd but hasn't published yet — must not be wiped.
+        let localRSVP = MeetingRSVP(memberID: "member-eve", memberName: "Eve", status: .attending, bringingNote: "Wine")
+        localRSVP.meeting = meeting
+        context.insert(localRSVP)
+        meeting.rsvps = [localRSVP]
+        try context.save()
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            meetings: [emptyMeetingPayload()],
+            rsvps: []
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let meeting1 = try XCTUnwrap(
+            (try context.fetch(FetchDescriptor<ClubMeeting>())).first { $0.meetingID == "meeting-1" }
+        )
+        let rsvps = meeting1.rsvps ?? []
+        XCTAssertEqual(rsvps.map(\.memberID), ["member-eve"], "The local member's own RSVP must survive a merge that omits it")
+        XCTAssertEqual(rsvps.first?.bringingNote, "Wine")
+    }
+
+    // MARK: - clubMeta tiebreaker (step 1)
+
+    func test_mergeAdoptsClubMetaFromSnapshotWithMostParticipants() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-MetaTiebreak", in: context)
+
+        // A stale owner snapshot reporting an old name and 2 participants.
+        let stale = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: MemberShareSnapshot.ClubMeta(
+                name: "Old Name",
+                createdAt: Date(timeIntervalSince1970: 1_000),
+                cloudZoneName: "BookClub-MetaTiebreak",
+                shareParticipantCount: 2,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: [],
+                removedMemberIDs: [],
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+        // A fresher owner snapshot reporting more participants and the new name.
+        let fresh = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 6_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: MemberShareSnapshot.ClubMeta(
+                name: "New Name",
+                createdAt: Date(timeIntervalSince1970: 1_000),
+                cloudZoneName: "BookClub-MetaTiebreak",
+                shareParticipantCount: 5,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: [],
+                removedMemberIDs: [],
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [stale, fresh],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        XCTAssertEqual(club.name, "New Name", "clubMeta with the most participants wins the tiebreaker")
+        XCTAssertEqual(club.shareParticipantCount, 5)
+    }
+
+    func test_mergeIgnoresNonOwnerSnapshotsCarryingNoClubMeta() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-NoMetaAdoption", in: context)
+        club.name = "Canonical Name"
+        club.shareParticipantCount = 3
+        try context.save()
+
+        // Only non-owner participants publish, none carrying clubMeta. The
+        // club's existing canonical fields must be left intact (no clubMeta to
+        // adopt → the step-1 block is skipped entirely).
+        let sam = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-sam",
+            authorName: "Sam",
+            submissions: [ownerSubmissionPayload(selectionID: "sel-sam", title: "Sam's Book")]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [sam],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        XCTAssertEqual(club.name, "Canonical Name", "Without clubMeta, a non-owner snapshot must not change the club name")
+        XCTAssertEqual(club.shareParticipantCount, 3, "Participant count is owner-published; non-owner snapshots can't lower it")
     }
 
     private func makeContext() throws -> ModelContext {

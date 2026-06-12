@@ -133,6 +133,31 @@ extension View {
     func bookLoomActionWidth(minWidth: CGFloat = 180) -> some View {
         modifier(BookLoomActionWidthModifier(minWidth: minWidth))
     }
+
+    /// Show the pointing-hand cursor on hover for clickable controls on macOS.
+    /// No-op on iOS where pointer affordances aren't applicable.
+    func bookLoomPointerCursor() -> some View {
+        #if os(macOS)
+        // Set the cursor directly rather than push/pop: a hovered view can be
+        // removed (e.g. an import row's swipe-to-remove) before the exit event
+        // fires, which would strand a pushed cursor on the stack with no
+        // matching pop. `set()` carries no such balance requirement.
+        onHover { hovering in
+            (hovering ? NSCursor.pointingHand : NSCursor.arrow).set()
+        }
+        #else
+        self
+        #endif
+    }
+}
+
+extension DynamicTypeSize {
+    /// Start using roomier stacked layouts before iOS reaches the formal
+    /// accessibility sizes. `xxxLarge` already makes three-column controls
+    /// compress badly on narrow iPhones.
+    var prefersExpandedControlLayout: Bool {
+        self >= .xxLarge
+    }
 }
 
 struct BookLoomSecondaryButtonStyle: ButtonStyle {
@@ -144,7 +169,12 @@ struct BookLoomSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
+            .symbolRenderingMode(.monochrome)
             .foregroundStyle(isEnabled ? tint : Color.secondary)
+            .lineLimit(3)
+            .minimumScaleFactor(0.85)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
             .background(background(pressed: configuration.isPressed))
@@ -187,7 +217,12 @@ struct BookLoomProminentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
+            .symbolRenderingMode(.monochrome)
             .foregroundStyle(isEnabled ? Color.white : Color.secondary)
+            .lineLimit(3)
+            .minimumScaleFactor(0.85)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
             .background(background(pressed: configuration.isPressed))
@@ -206,6 +241,74 @@ struct BookLoomProminentButtonStyle: ButtonStyle {
         }
         return RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(tint.opacity(opacity))
+    }
+}
+
+struct AdaptiveSegmentedControl<Option: Hashable & Identifiable, LabelContent: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let title: String
+    @Binding var selection: Option
+    let options: [Option]
+    let label: (Option) -> LabelContent
+
+    init(
+        _ title: String,
+        selection: Binding<Option>,
+        options: [Option],
+        @ViewBuilder label: @escaping (Option) -> LabelContent
+    ) {
+        self.title = title
+        _selection = selection
+        self.options = options
+        self.label = label
+    }
+
+    var body: some View {
+        if dynamicTypeSize.prefersExpandedControlLayout {
+            VStack(spacing: 8) {
+                ForEach(options, id: \.self) { option in
+                    Button {
+                        selection = option
+                    } label: {
+                        label(option)
+                            .font(.body.weight(.semibold))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(segmentBackground(isSelected: selection == option))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(segmentStroke(isSelected: selection == option), lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selection == option ? .isSelected : [])
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(title)
+        } else {
+            Picker(title, selection: $selection) {
+                ForEach(options, id: \.self) { option in
+                    label(option).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
+    private func segmentBackground(isSelected: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(isSelected ? BookLoomStyle.plum.opacity(colorScheme == .dark ? 0.32 : 0.18) : Color.secondary.opacity(0.10))
+    }
+
+    private func segmentStroke(isSelected: Bool) -> Color {
+        isSelected ? BookLoomStyle.plum.opacity(0.55) : Color.secondary.opacity(0.18)
     }
 }
 
@@ -627,15 +730,9 @@ private struct BookCardIndicatorPill: View {
     }
 }
 
-struct StatusPill: View {
-    let status: BookSubmissionStatus
-
-    var body: some View {
-        TintedCapsuleLabel(text: status.displayName, tint: tint, systemImage: systemImage)
-    }
-
-    private var systemImage: String {
-        switch status {
+extension BookSubmissionStatus {
+    var systemImage: String {
+        switch self {
         case .proposed: "tray.full.fill"
         case .current: "book.fill"
         case .completed: "checkmark.seal.fill"
@@ -643,14 +740,171 @@ struct StatusPill: View {
         }
     }
 
-    private var tint: Color {
-        switch status {
+    var tint: Color {
+        switch self {
         case .proposed: BookLoomStyle.plum
         case .current: BookLoomStyle.sage
         case .completed: BookLoomStyle.indigo
         case .skipped: BookLoomStyle.coral
         }
     }
+}
+
+struct StatusPill: View {
+    let status: BookSubmissionStatus
+
+    var body: some View {
+        TintedCapsuleLabel(text: status.displayName, tint: status.tint, systemImage: status.systemImage)
+    }
+}
+
+/// Capsule action button shared by the Club tab's current-book row and the
+/// submission detail hero card so both render identically.
+struct BookLoomActionButton: View {
+    let title: String
+    var accessibilityTitle: String? = nil
+    let systemImage: String
+    let tint: Color
+    let prominent: Bool
+    var role: ButtonRole? = nil
+    let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Label(title, systemImage: systemImage)
+                .font(dynamicTypeSize.prefersExpandedControlLayout ? .body.weight(.bold) : .footnote.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+                .padding(.vertical, dynamicTypeSize.prefersExpandedControlLayout ? 12 : 8)
+                .bookLoomActionWidth(minWidth: 128)
+                .frame(minHeight: dynamicTypeSize.prefersExpandedControlLayout ? 52 : 40)
+                .background(prominent ? tint : tint.opacity(0.16), in: Capsule())
+                .foregroundStyle(prominent ? Color.white : tint)
+                .accessibilityLabel(accessibilityTitle ?? title)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+enum BookLoomTextFieldKeyboard {
+    case `default`
+    case numbersAndPunctuation
+    case decimalPad
+}
+
+struct BookLoomCompactCard<Content: View>: View {
+    let spacing: CGFloat
+    let padding: CGFloat
+    let content: Content
+
+    init(spacing: CGFloat = 10, padding: CGFloat = 12, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.padding = padding
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            content
+        }
+        .bookLoomCard(padding: padding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct BookLoomCompactDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.secondary.opacity(0.16))
+            .frame(height: 1)
+    }
+}
+
+struct BookLoomCompactTextField: View {
+    let title: String
+    @Binding var text: String
+    var placeholder: String?
+    var keyboard: BookLoomTextFieldKeyboard = .default
+    var isMultiline = false
+    var showsCaption = false
+
+    init(
+        _ title: String,
+        text: Binding<String>,
+        placeholder: String? = nil,
+        keyboard: BookLoomTextFieldKeyboard = .default,
+        isMultiline: Bool = false,
+        showsCaption: Bool = false
+    ) {
+        self.title = title
+        _text = text
+        self.placeholder = placeholder
+        self.keyboard = keyboard
+        self.isMultiline = isMultiline
+        self.showsCaption = showsCaption
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if showsCaption {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            inputField
+                .font(.body)
+                .foregroundStyle(BookLoomStyle.ink)
+                .lineLimit(isMultiline ? 4...8 : 1...1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                }
+                .accessibilityLabel(title)
+        }
+    }
+
+    private var inputField: some View {
+        let field = TextField("", text: $text, prompt: Text(placeholder ?? title), axis: isMultiline ? .vertical : .horizontal)
+
+        #if os(iOS)
+        return field
+            .keyboardType(uiKeyboardType)
+            .autocorrectionDisabled(title == "ISBN")
+            .textInputAutocapitalization(textCapitalization)
+        #else
+        return field
+        #endif
+    }
+
+    #if os(iOS)
+    private var textCapitalization: TextInputAutocapitalization {
+        if title == "ISBN" {
+            return .characters
+        }
+        if isMultiline {
+            return .sentences
+        }
+        return .words
+    }
+
+    private var uiKeyboardType: UIKeyboardType {
+        switch keyboard {
+        case .default:
+            return .default
+        case .numbersAndPunctuation:
+            return .numbersAndPunctuation
+        case .decimalPad:
+            return .decimalPad
+        }
+    }
+    #endif
 }
 
 struct CountBadge: View {
@@ -665,6 +919,7 @@ struct CountBadge: View {
 
 struct MetricTile: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let value: String
     let label: String
@@ -713,9 +968,10 @@ struct MetricTile: View {
         Text(label)
             .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.55)
+            .lineLimit(dynamicTypeSize.prefersExpandedControlLayout ? 2 : 1)
+            .minimumScaleFactor(dynamicTypeSize.prefersExpandedControlLayout ? 0.85 : 0.55)
             .allowsTightening(true)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

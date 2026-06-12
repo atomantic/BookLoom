@@ -281,23 +281,43 @@ enum MeetingReminderPlanner {
     }
 }
 
+struct MeetingReminderSchedule: Sendable {
+    let identifiers: [String]
+    let scheduledAt: Date
+    let offsetsMinutes: [Int]
+    let title: String
+    let bookTitle: String?
+}
+
 enum MeetingReminderScheduler {
-    static func scheduleReminders(for meeting: ClubMeeting) async {
+    static func schedule(for meeting: ClubMeeting) -> MeetingReminderSchedule {
+        MeetingReminderSchedule(
+            identifiers: identifiers(for: meeting),
+            scheduledAt: meeting.scheduledAt,
+            offsetsMinutes: meeting.reminderOffsets,
+            title: meeting.displayTitle,
+            bookTitle: meeting.bookSubmission?.displayTitle.trimmedOrNil
+        )
+    }
+
+    static func scheduleReminders(_ schedule: MeetingReminderSchedule, replacing staleIdentifiers: [String] = []) async {
         let center = UNUserNotificationCenter.current()
+        let activeIdentifiers = schedule.identifiers
+        center.removePendingNotificationRequests(withIdentifiers: Array(Set(staleIdentifiers + activeIdentifiers)))
+
         do {
             let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
             guard granted else { return }
 
-            center.removePendingNotificationRequests(withIdentifiers: identifiers(for: meeting))
             let reminderDates = MeetingReminderPlanner.reminderDates(
-                scheduledAt: meeting.scheduledAt,
-                offsetsMinutes: meeting.reminderOffsets
+                scheduledAt: schedule.scheduledAt,
+                offsetsMinutes: schedule.offsetsMinutes
             )
 
             for (index, reminderDate) in reminderDates.enumerated() {
                 let content = UNMutableNotificationContent()
-                content.title = meeting.displayTitle
-                content.body = reminderBody(for: meeting)
+                content.title = schedule.title
+                content.body = reminderBody(for: schedule)
                 content.sound = .default
 
                 let trigger = UNCalendarNotificationTrigger(
@@ -305,7 +325,7 @@ enum MeetingReminderScheduler {
                     repeats: false
                 )
                 let request = UNNotificationRequest(
-                    identifier: identifiers(for: meeting)[safe: index] ?? "\(meeting.persistentModelID)-\(index)",
+                    identifier: activeIdentifiers[safe: index] ?? "bookloom.meeting.\(index)",
                     content: content,
                     trigger: trigger
                 )
@@ -322,8 +342,8 @@ enum MeetingReminderScheduler {
         }
     }
 
-    private static func reminderBody(for meeting: ClubMeeting) -> String {
-        if let title = meeting.bookSubmission?.displayTitle.trimmedOrNil {
+    private static func reminderBody(for schedule: MeetingReminderSchedule) -> String {
+        if let title = schedule.bookTitle {
             return "Your book club is meeting about \(title)."
         }
         return "Your book club meeting is coming up."

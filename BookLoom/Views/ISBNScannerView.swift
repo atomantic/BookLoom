@@ -146,9 +146,14 @@ enum ISBNScannerParser {
         return nil
     }
 
+    // Compiled once; reused across every scanned frame to avoid recompiling the
+    // pattern on the main thread for each barcode/text observation.
+    private static let labeledISBNRegex = try? NSRegularExpression(
+        pattern: #"ISBN(?:-1[03])?[\s:]*([0-9X][0-9X\-\s]{8,28}[0-9X])"#
+    )
+
     private static func labeledISBN(in value: String) -> String? {
-        let pattern = #"ISBN(?:-1[03])?[\s:]*([0-9X][0-9X\-\s]{8,28}[0-9X])"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        guard let regex = labeledISBNRegex else { return nil }
         let range = NSRange(value.startIndex..., in: value)
 
         for match in regex.matches(in: value, range: range) {

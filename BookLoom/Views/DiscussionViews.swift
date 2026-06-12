@@ -20,7 +20,7 @@ struct DiscussionPromptCard: View {
                 Button(action: addPrompt) {
                     Label("Add", systemImage: "plus.circle")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
                 .disabled(draftPrompt.trimmed.isEmpty)
             }
 
