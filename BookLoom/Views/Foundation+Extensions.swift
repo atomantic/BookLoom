@@ -1,15 +1,7 @@
 import SwiftUI
 
-extension String {
-    var trimmed: String {
-        trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var trimmedOrNil: String? {
-        let value = trimmed
-        return value.isEmpty ? nil : value
-    }
-}
+// `String.trimmed` / `String.trimmedOrNil` live in Shared/String+Trimming.swift
+// so the share extension shares the same implementation.
 
 extension Collection {
     subscript(safe index: Index) -> Element? {

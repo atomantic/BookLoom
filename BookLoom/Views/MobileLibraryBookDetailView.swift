@@ -453,13 +453,7 @@ private struct MobileBookMenuRow<Content: View>: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(BookLoomStyle.plum)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-            }
+            .bookLoomInputFieldStyle()
         }
         .buttonStyle(.plain)
     }

@@ -142,4 +142,16 @@ extension View {
                     .stroke(BookLoomStyle.cardStroke, lineWidth: 1)
             }
     }
+
+    /// The shared compact input-field treatment (padding + filled background +
+    /// stroke) used by BookLoomCompactTextField and the menu rows that mirror it.
+    func bookLoomInputFieldStyle() -> some View {
+        padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            }
+    }
 }
