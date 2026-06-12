@@ -529,9 +529,7 @@ private struct BooksHeader: View {
     /// Stack metric tiles vertically when accessibility text sizes would
     /// otherwise compress each label to a single character.
     private var metricsLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 10))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(spacing: 8), compact: HStackLayout(spacing: 10))
     }
 
     private func memberMetricLabel(for count: Int) -> String {
@@ -615,9 +613,7 @@ private struct BooksTabRow: View {
     }
 
     private var metadataLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-            : AnyLayout(HStackLayout(spacing: 12))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 4), compact: HStackLayout(spacing: 12))
     }
 }
 
@@ -730,21 +726,15 @@ private struct CurrentSubmissionRow: View {
     }
 
     private var contentLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
-            : AnyLayout(HStackLayout(spacing: 14))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 12), compact: HStackLayout(spacing: 14))
     }
 
     private var metadataLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-            : AnyLayout(HStackLayout(spacing: 12))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 4), compact: HStackLayout(spacing: 12))
     }
 
     private var actionLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 8))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(spacing: 8), compact: HStackLayout(spacing: 8))
     }
 }
 
@@ -855,9 +845,7 @@ private struct LibraryActionBar: View {
     }
 
     private var actionLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 8))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(spacing: 8), compact: HStackLayout(spacing: 8))
     }
 
     private var actionFont: Font {
@@ -916,9 +904,7 @@ private struct ActivePollCard: View {
     }
 
     private var headerLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
-            : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 6), compact: HStackLayout(alignment: .firstTextBaseline))
     }
 }
 

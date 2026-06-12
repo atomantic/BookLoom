@@ -356,15 +356,11 @@ struct MobileLibraryBookDetailView: View {
     }
 
     private var heroLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14))
-            : AnyLayout(HStackLayout(spacing: 16))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 14), compact: HStackLayout(spacing: 16))
     }
 
     private var ratingLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-            : AnyLayout(HStackLayout(alignment: .center))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 8), compact: HStackLayout(alignment: .center))
     }
 
     private func apply(_ candidate: BookMetadataCandidate) {

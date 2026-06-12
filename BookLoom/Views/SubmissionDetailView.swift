@@ -630,15 +630,11 @@ private struct SubmissionHeroActionsCard: View {
     }
 
     private var contentLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
-            : AnyLayout(HStackLayout(spacing: 14))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 12), compact: HStackLayout(spacing: 14))
     }
 
     private var metadataLayout: AnyLayout {
-        dynamicTypeSize.prefersExpandedControlLayout
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-            : AnyLayout(HStackLayout(spacing: 12))
+        dynamicTypeSize.adaptiveLayout(expanded: VStackLayout(alignment: .leading, spacing: 4), compact: HStackLayout(spacing: 12))
     }
 
     private var actionColumns: [GridItem] {

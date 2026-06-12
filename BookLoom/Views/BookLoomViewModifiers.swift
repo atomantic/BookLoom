@@ -78,6 +78,14 @@ extension DynamicTypeSize {
     var prefersExpandedControlLayout: Bool {
         self >= .xxLarge
     }
+
+    /// Pick a roomier vertical stack at expanded text sizes and a compact
+    /// horizontal one otherwise. Collapses the repeated
+    /// `prefersExpandedControlLayout ? AnyLayout(VStackLayout(...)) : AnyLayout(HStackLayout(...))`
+    /// computed properties scattered across the tab and detail views.
+    func adaptiveLayout(expanded: VStackLayout, compact: HStackLayout) -> AnyLayout {
+        prefersExpandedControlLayout ? AnyLayout(expanded) : AnyLayout(compact)
+    }
 }
 
 struct BookLoomActionWidthModifier: ViewModifier {
