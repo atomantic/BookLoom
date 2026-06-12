@@ -137,14 +137,20 @@ final class ScreenshotTests: XCTestCase {
         }
         app.launchArguments = args
         app.launch()
-        sleep(1)
+        // Wait for the app to actually reach the foreground rather than sleeping
+        // a fixed interval — faster on quick launches, more reliable on slow ones.
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 10),
+            "App did not reach the foreground after launch"
+        )
     }
 
     @MainActor
     private func waitForText(_ text: String) {
+        // Stabilize on the expected element existing rather than sleeping a
+        // fixed interval after a best-effort wait.
         let label = app.staticTexts[text]
-        _ = label.waitForExistence(timeout: 5)
-        sleep(1)
+        _ = label.waitForExistence(timeout: 10)
     }
 
     private func shouldCapture(_ name: String) -> Bool {

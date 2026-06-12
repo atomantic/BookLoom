@@ -13,11 +13,16 @@ final class ClubLogisticsTests: XCTestCase {
             now: now
         )
 
+        // Hardcoded expected output (not re-derived via the production `> now`
+        // filter): offset 1440min lands at t=-81800 (dropped, in the past),
+        // offset 60min lands at t=1000 == now (dropped, must be strictly after
+        // now), offset 15min lands at t=3700, and offset 0 lands at the meeting
+        // time t=4600. An off-by-one regression (`>=` instead of `>`) would
+        // wrongly include the t=1000 reminder and fail this assertion.
         XCTAssertEqual(reminders, [
-            Date(timeIntervalSince1970: 1_000),
             Date(timeIntervalSince1970: 3_700),
             Date(timeIntervalSince1970: 4_600)
-        ].filter { $0 > now })
+        ])
     }
 
     func test_selectionPollReplacesBallotForSameMember() {
