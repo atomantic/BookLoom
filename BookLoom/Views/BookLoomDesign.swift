@@ -762,31 +762,13 @@ struct StatusPill: View {
 /// submission detail hero card so both render identically.
 struct BookLoomActionButton: View {
     let title: String
-    var accessibilityTitle: String?
+    var accessibilityTitle: String? = nil
     let systemImage: String
     let tint: Color
     let prominent: Bool
-    var role: ButtonRole?
+    var role: ButtonRole? = nil
     let action: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    init(
-        title: String,
-        accessibilityTitle: String? = nil,
-        systemImage: String,
-        tint: Color,
-        prominent: Bool,
-        role: ButtonRole? = nil,
-        action: @escaping () -> Void
-    ) {
-        self.title = title
-        self.accessibilityTitle = accessibilityTitle
-        self.systemImage = systemImage
-        self.tint = tint
-        self.prominent = prominent
-        self.role = role
-        self.action = action
-    }
 
     var body: some View {
         Button(role: role, action: action) {
