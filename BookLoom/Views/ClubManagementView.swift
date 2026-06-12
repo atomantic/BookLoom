@@ -156,10 +156,7 @@ struct ClubManagementView: View {
         )
         .alert(
             "Something went wrong",
-            isPresented: Binding(
-                get: { adminErrorMessage != nil },
-                set: { if !$0 { adminErrorMessage = nil } }
-            ),
+            isPresented: .presence(of: $adminErrorMessage),
             presenting: adminErrorMessage
         ) { _ in
             Button("OK", role: .cancel) {}

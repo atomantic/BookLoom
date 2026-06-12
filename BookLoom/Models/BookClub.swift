@@ -81,11 +81,6 @@ final class BookClub {
     /// shared zone already exists.
     var isShareOwner: Bool { isOwner && shareIsActive }
 
-    /// True for a club this device created that has not yet been shared (no
-    /// CKShare, so no shared zone in CloudKit). Owner-side sync must be skipped
-    /// for these until a share is created.
-    var isLocalOnly: Bool { isOwner && !shareIsActive }
-
     init(name: String = "", createdAt: Date = .now) {
         self.name = name
         self.createdAt = createdAt

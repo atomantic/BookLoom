@@ -168,7 +168,10 @@ final class CloudKitSharingService {
         let database = try database(for: club)
         let zoneID = try zoneID(for: club)
         let rootRecord = try await rootRecord(zoneID: zoneID, in: database)
-        if club.isOwner {
+        // Owner-side branch that writes canonical ClubMeta into the shared
+        // zone's root record — gate on isShareOwner so it only runs once a
+        // CKShare actually exists, not for a never-shared local club.
+        if club.isShareOwner {
             applyClubMeta(to: rootRecord, club: club)
             try await saveRootRecord(rootRecord, in: database)
         }

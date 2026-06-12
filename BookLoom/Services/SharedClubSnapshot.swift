@@ -231,9 +231,22 @@ enum MemberShareSnapshotStore {
         includeClubMeta: Bool,
         capturedAt: Date = .now
     ) -> MemberShareSnapshot {
-        let submissions = fetchedClubChildren(of: club, parentKeyPath: \BookSubmission.bookClub, fallback: club.submissions ?? [], context: context)
-        let meetings = fetchedClubChildren(of: club, parentKeyPath: \ClubMeeting.bookClub, fallback: club.meetings ?? [], context: context)
-        let polls = fetchedClubChildren(of: club, parentKeyPath: \SelectionPoll.bookClub, fallback: club.selectionPolls ?? [], context: context)
+        let clubID = club.persistentModelID
+        let submissions = fetchedClubChildren(
+            predicate: #Predicate<BookSubmission> { $0.bookClub?.persistentModelID == clubID },
+            fallback: club.submissions ?? [],
+            context: context
+        )
+        let meetings = fetchedClubChildren(
+            predicate: #Predicate<ClubMeeting> { $0.bookClub?.persistentModelID == clubID },
+            fallback: club.meetings ?? [],
+            context: context
+        )
+        let polls = fetchedClubChildren(
+            predicate: #Predicate<SelectionPoll> { $0.bookClub?.persistentModelID == clubID },
+            fallback: club.selectionPolls ?? [],
+            context: context
+        )
 
         // Backfill stable IDs for legacy rows whose property may have been
         // migrated in as the empty string. Without this every export of a
@@ -1072,20 +1085,21 @@ enum MemberShareSnapshotStore {
 
     /// Works around a SwiftData faulting case where `club.<children>` returns
     /// an empty array immediately after a CloudKit-driven merge even though
-    /// the rows are present in the store. We fetch all rows of the child type
-    /// and filter to ones whose parent matches `club`.
+    /// the rows are present in the store. We fetch the child rows scoped to
+    /// this club via `predicate` (so SQLite filters server-side rather than
+    /// loading every row) and fall back to the relationship array if the fetch
+    /// fails or comes back empty — the fallback is the documented faulting
+    /// workaround, not error-swallowing, so a failed read here degrades to the
+    /// in-memory relationship rather than aborting snapshot capture.
     private static func fetchedClubChildren<T: PersistentModel>(
-        of club: BookClub,
-        parentKeyPath: KeyPath<T, BookClub?>,
+        predicate: Predicate<T>,
         fallback: [T],
         context: ModelContext
     ) -> [T] {
-        let clubID = club.persistentModelID
-        guard let fetched = try? context.fetch(FetchDescriptor<T>()) else {
+        guard let fetched = try? context.fetch(FetchDescriptor<T>(predicate: predicate)) else {
             return fallback
         }
-        let matches = fetched.filter { $0[keyPath: parentKeyPath]?.persistentModelID == clubID }
-        return matches.isEmpty ? fallback : matches
+        return fetched.isEmpty ? fallback : fetched
     }
 }
 
