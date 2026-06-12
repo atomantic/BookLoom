@@ -4,6 +4,12 @@ import SwiftUI
 /// Stores the local member's display name. Used to attribute submissions, ratings,
 /// and notes within a shared book club. The CKShare layer (added later) handles
 /// the actual identity/auth — this is just a friendly name for the UI.
+///
+/// The display name and member ID live in `UserDefaults`, not the Keychain. This
+/// is an accepted low risk: the name is a non-secret UI label the user chooses
+/// (already broadcast to every club participant via CloudKit), and the member ID
+/// is a random per-device UUID with no credential value. Promote to the Keychain
+/// only if either field ever becomes security-sensitive.
 @Observable
 final class MemberIdentity {
     private static let defaultsKey = "net.shadowpuppet.BookLoom.memberName"

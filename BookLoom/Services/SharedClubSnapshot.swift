@@ -231,9 +231,22 @@ enum MemberShareSnapshotStore {
         includeClubMeta: Bool,
         capturedAt: Date = .now
     ) -> MemberShareSnapshot {
-        let submissions = fetchedClubChildren(of: club, parentKeyPath: \BookSubmission.bookClub, fallback: club.submissions ?? [], context: context)
-        let meetings = fetchedClubChildren(of: club, parentKeyPath: \ClubMeeting.bookClub, fallback: club.meetings ?? [], context: context)
-        let polls = fetchedClubChildren(of: club, parentKeyPath: \SelectionPoll.bookClub, fallback: club.selectionPolls ?? [], context: context)
+        let clubID = club.persistentModelID
+        let submissions = fetchedClubChildren(
+            predicate: #Predicate<BookSubmission> { $0.bookClub?.persistentModelID == clubID },
+            fallback: club.submissions ?? [],
+            context: context
+        )
+        let meetings = fetchedClubChildren(
+            predicate: #Predicate<ClubMeeting> { $0.bookClub?.persistentModelID == clubID },
+            fallback: club.meetings ?? [],
+            context: context
+        )
+        let polls = fetchedClubChildren(
+            predicate: #Predicate<SelectionPoll> { $0.bookClub?.persistentModelID == clubID },
+            fallback: club.selectionPolls ?? [],
+            context: context
+        )
 
         // Backfill stable IDs for legacy rows whose property may have been
         // migrated in as the empty string. Without this every export of a
@@ -479,28 +492,40 @@ enum MemberShareSnapshotStore {
             : snapshots.filter { !removedAuthors.contains($0.authorMemberID) }
 
         // 2. Index existing local rows by stable ID for upsert.
+        //
+        // Predicate-scope each fetch to this club so SQLite filters server-side
+        // instead of loading every row and filtering in memory (these run on
+        // every CloudKit sync tick). The fetches use `try` rather than `try?`:
+        // a failing/migrating store must propagate out of the throwing `merge()`
+        // — swallowing it would hand the delete passes below (steps 5/6/7/8) an
+        // empty "existing" index against a full canonical set, mass-deleting
+        // remote-authored rows on a transient read failure.
         let clubID = club.persistentModelID
-        let localSubmissions = (try? context.fetch(FetchDescriptor<BookSubmission>())) ?? []
+        let submissionPredicate = #Predicate<BookSubmission> { $0.bookClub?.persistentModelID == clubID }
+        let localSubmissions = try context.fetch(FetchDescriptor<BookSubmission>(predicate: submissionPredicate))
         var submissionsByID: [String: BookSubmission] = [:]
-        for sub in localSubmissions where sub.bookClub?.persistentModelID == clubID && !sub.selectionID.isEmpty {
+        for sub in localSubmissions where !sub.selectionID.isEmpty {
             submissionsByID[sub.selectionID] = sub
         }
         let preMergeSubmissions = Array(submissionsByID.values)
-        let localPrompts = (try? context.fetch(FetchDescriptor<DiscussionPrompt>())) ?? []
+        let promptPredicate = #Predicate<DiscussionPrompt> { $0.submission?.bookClub?.persistentModelID == clubID }
+        let localPrompts = try context.fetch(FetchDescriptor<DiscussionPrompt>(predicate: promptPredicate))
         var promptsByID: [String: DiscussionPrompt] = [:]
-        for prompt in localPrompts where prompt.submission?.bookClub?.persistentModelID == clubID && !prompt.promptID.isEmpty {
+        for prompt in localPrompts where !prompt.promptID.isEmpty {
             promptsByID[prompt.promptID] = prompt
         }
         let preMergePromptIDs = Set(promptsByID.keys)
-        let localPolls = (try? context.fetch(FetchDescriptor<SelectionPoll>())) ?? []
+        let pollPredicate = #Predicate<SelectionPoll> { $0.bookClub?.persistentModelID == clubID }
+        let localPolls = try context.fetch(FetchDescriptor<SelectionPoll>(predicate: pollPredicate))
         var pollsByID: [String: SelectionPoll] = [:]
-        for poll in localPolls where poll.bookClub?.persistentModelID == clubID && !poll.pollID.isEmpty {
+        for poll in localPolls where !poll.pollID.isEmpty {
             pollsByID[poll.pollID] = poll
         }
         let preMergePollIDs = Set(pollsByID.keys)
-        let localMeetings = (try? context.fetch(FetchDescriptor<ClubMeeting>())) ?? []
+        let meetingPredicate = #Predicate<ClubMeeting> { $0.bookClub?.persistentModelID == clubID }
+        let localMeetings = try context.fetch(FetchDescriptor<ClubMeeting>(predicate: meetingPredicate))
         var meetingsByID: [String: ClubMeeting] = [:]
-        for meeting in localMeetings where meeting.bookClub?.persistentModelID == clubID && !meeting.meetingID.isEmpty {
+        for meeting in localMeetings where !meeting.meetingID.isEmpty {
             meetingsByID[meeting.meetingID] = meeting
         }
         let preMergeMeetingIDs = Set(meetingsByID.keys)
@@ -1060,20 +1085,21 @@ enum MemberShareSnapshotStore {
 
     /// Works around a SwiftData faulting case where `club.<children>` returns
     /// an empty array immediately after a CloudKit-driven merge even though
-    /// the rows are present in the store. We fetch all rows of the child type
-    /// and filter to ones whose parent matches `club`.
+    /// the rows are present in the store. We fetch the child rows scoped to
+    /// this club via `predicate` (so SQLite filters server-side rather than
+    /// loading every row) and fall back to the relationship array if the fetch
+    /// fails or comes back empty — the fallback is the documented faulting
+    /// workaround, not error-swallowing, so a failed read here degrades to the
+    /// in-memory relationship rather than aborting snapshot capture.
     private static func fetchedClubChildren<T: PersistentModel>(
-        of club: BookClub,
-        parentKeyPath: KeyPath<T, BookClub?>,
+        predicate: Predicate<T>,
         fallback: [T],
         context: ModelContext
     ) -> [T] {
-        let clubID = club.persistentModelID
-        guard let fetched = try? context.fetch(FetchDescriptor<T>()) else {
+        guard let fetched = try? context.fetch(FetchDescriptor<T>(predicate: predicate)) else {
             return fallback
         }
-        let matches = fetched.filter { $0[keyPath: parentKeyPath]?.persistentModelID == clubID }
-        return matches.isEmpty ? fallback : matches
+        return fetched.isEmpty ? fallback : fetched
     }
 }
 

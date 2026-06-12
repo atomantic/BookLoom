@@ -121,7 +121,7 @@ final class CloudKitSharingService {
 
         markShareActive(finalShare, for: club)
         try await publishOwnerMemberSnapshot(for: club, context: context, ownerMemberID: ownerMemberID, ownerName: ownerName, parentRootID: rootID)
-        Self.logger.info("✅ Created share for club '\(club.name, privacy: .public)' (zone \(club.cloudZoneName, privacy: .public))")
+        Self.logger.info("✅ Created share for club '\(club.name, privacy: .private)' (zone \(club.cloudZoneName, privacy: .public))")
         return finalShare
     }
 
@@ -168,7 +168,10 @@ final class CloudKitSharingService {
         let database = try database(for: club)
         let zoneID = try zoneID(for: club)
         let rootRecord = try await rootRecord(zoneID: zoneID, in: database)
-        if club.isOwner {
+        // Owner-side branch that writes canonical ClubMeta into the shared
+        // zone's root record — gate on isShareOwner so it only runs once a
+        // CKShare actually exists, not for a never-shared local club.
+        if club.isShareOwner {
             applyClubMeta(to: rootRecord, club: club)
             try await saveRootRecord(rootRecord, in: database)
         }
@@ -251,9 +254,9 @@ final class CloudKitSharingService {
         let participantUserRecordID = (try? await privateDB.record(for: recordID))?.creatorUserRecordID
         do {
             _ = try await privateDB.modifyRecords(saving: [], deleting: [recordID])
-            Self.logger.info("✂️ Removed member snapshot \(memberID, privacy: .public) from \(club.cloudZoneName, privacy: .public)")
+            Self.logger.info("✂️ Removed member snapshot \(memberID, privacy: .private) from \(club.cloudZoneName, privacy: .public)")
         } catch {
-            Self.logger.warning("⚠️ Best-effort removeMemberSnapshot failed for \(memberID, privacy: .public): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+            Self.logger.warning("⚠️ Best-effort removeMemberSnapshot failed for \(memberID, privacy: .private): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
         }
         if let participantUserRecordID {
             await revokeShareParticipant(for: club, userRecordID: participantUserRecordID, memberID: memberID)
@@ -271,7 +274,7 @@ final class CloudKitSharingService {
         guard let rootRecord = try? await privateDB.record(for: rootID),
               let shareReference = rootRecord.share,
               let share = try? await privateDB.record(for: shareReference.recordID) as? CKShare else {
-            Self.logger.warning("⚠️ Could not load CKShare to revoke participant for \(memberID, privacy: .public)")
+            Self.logger.warning("⚠️ Could not load CKShare to revoke participant for \(memberID, privacy: .private)")
             return
         }
         guard let target = share.participants.first(where: { $0.userIdentity.userRecordID == userRecordID }) else {
@@ -286,13 +289,13 @@ final class CloudKitSharingService {
         share.removeParticipant(target)
         do {
             _ = try await privateDB.modifyRecords(saving: [share], deleting: [])
-            Self.logger.info("🚫 Revoked share access for member \(memberID, privacy: .public) in \(club.cloudZoneName, privacy: .public)")
+            Self.logger.info("🚫 Revoked share access for member \(memberID, privacy: .private) in \(club.cloudZoneName, privacy: .public)")
             let count = Self.acceptedParticipantCount(in: share)
             if club.shareParticipantCount != count {
                 club.shareParticipantCount = count
             }
         } catch {
-            Self.logger.warning("⚠️ Failed to save share after removing participant \(memberID, privacy: .public): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+            Self.logger.warning("⚠️ Failed to save share after removing participant \(memberID, privacy: .private): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
         }
     }
 
