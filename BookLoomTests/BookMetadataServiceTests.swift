@@ -53,24 +53,47 @@ final class BookMetadataServiceTests: XCTestCase {
         XCTAssertEqual(results.first?.coverURL?.absoluteString, "https://covers.openlibrary.org/b/id/380332-L.jpg?default=false")
     }
 
-    func test_submissionPersistsImportedMetadataFields() throws {
-        let submission = BookSubmission(
-            title: "Piranesi",
-            author: "Susanna Clarke",
-            isbn: "9781635575637",
-            bookDescription: "A labyrinthine novel.",
-            publishedYear: 2020,
-            coverURL: "https://covers.openlibrary.org/b/id/10226290-L.jpg?default=false",
-            externalProvider: "Open Library",
-            externalID: "OL20893680W",
-            submittedBy: "Alex"
-        )
+    func test_searchedMetadataAppliesOntoSubmission() async throws {
+        // End-to-end: a real `service.search(...)` against mocked Open Library
+        // responses, then `applyMetadata` onto a fresh submission. This replaces
+        // an earlier test that only constructed a BookSubmission directly and
+        // read back its init values without ever touching BookMetadataService.
+        MockURLProtocol.responses = [
+            "https://openlibrary.org/search.json?title=Piranesi&author=Susanna%20Clarke&fields=key,title,author_name,first_publish_year,cover_i,isbn&limit=8": """
+            {
+              "docs": [
+                {
+                  "key": "/works/OL20893680W",
+                  "title": "Piranesi",
+                  "author_name": ["Susanna Clarke"],
+                  "first_publish_year": 2020,
+                  "cover_i": 10226290,
+                  "isbn": ["9781635575637"]
+                }
+              ]
+            }
+            """.data(using: .utf8)!,
+            "https://openlibrary.org/works/OL20893680W.json": """
+            {"description": "A labyrinthine novel.", "covers": [10226290]}
+            """.data(using: .utf8)!
+        ]
 
+        let service = BookMetadataService(urlSession: .mocked, cache: nil)
+        let results = try await service.search(title: "Piranesi", author: "Susanna Clarke")
+        let candidate = try XCTUnwrap(results.first)
+
+        let submission = BookSubmission(submittedBy: "Alex")
+        submission.applyMetadata(candidate)
+
+        XCTAssertEqual(submission.title, "Piranesi")
+        XCTAssertEqual(submission.author, "Susanna Clarke")
+        XCTAssertEqual(submission.isbn, "9781635575637")
         XCTAssertEqual(submission.bookDescription, "A labyrinthine novel.")
         XCTAssertEqual(submission.publishedYear, 2020)
         XCTAssertEqual(submission.coverImageURL?.host(), "covers.openlibrary.org")
         XCTAssertEqual(submission.externalProvider, "Open Library")
         XCTAssertEqual(submission.externalID, "OL20893680W")
+        XCTAssertNil(submission.coverData, "applyMetadata must clear stale cover bytes")
     }
 
     func test_goodreadsBookID_extractsIDFromVariousURLShapes() {

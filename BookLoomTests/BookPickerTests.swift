@@ -43,11 +43,13 @@ final class BookPickerTests: XCTestCase {
 
         let pick = BookPicker.pickNext(from: [alexOne, alexTwo], using: &generator)
 
-        guard let pick else {
-            XCTFail("Expected a proposed book pick")
-            return
-        }
-        XCTAssertTrue(pick === alexOne || pick === alexTwo)
+        // ZeroRandomNumberGenerator always yields 0, so every `randomElement`
+        // selects index 0. Both submissions share the proposer key "id:alex",
+        // so reducedProposalPool returns [alexOne] (first of the group), and
+        // pickNext's final randomElement again returns alexOne. Pinning the
+        // exact identity catches a regression that reorders the group reduction
+        // or the final pick.
+        XCTAssertTrue(pick === alexOne, "Deterministic ZeroRNG must pick the first submission in the group")
     }
 }
 
