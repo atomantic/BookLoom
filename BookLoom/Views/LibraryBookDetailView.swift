@@ -9,6 +9,7 @@ struct LibraryBookDetailView: View {
 
     @State private var priceText: String
     @State private var showingMetadataSearch = false
+    @State private var showingCoverZoom = false
 
     private var editor: LibraryBookEditor { LibraryBookEditor(book) }
 
@@ -24,6 +25,7 @@ struct LibraryBookDetailView: View {
                 LibraryBookHero(
                     book: book,
                     onFindMetadata: { showingMetadataSearch = true },
+                    onViewCover: { showingCoverZoom = true },
                     onDelete: onDelete,
                     onCoverChange: applyCoverChange
                 )
@@ -44,6 +46,15 @@ struct LibraryBookDetailView: View {
         .sheet(isPresented: $showingMetadataSearch) {
             BookMetadataSearchView(title: book.title, author: book.author, isbn: book.isbn) { candidate in
                 apply(candidate)
+            }
+        }
+        .sheet(isPresented: $showingCoverZoom) {
+            BookCoverZoomView(
+                title: book.displayTitle,
+                author: book.displayAuthor,
+                coverURL: book.coverImageURL
+            ) {
+                showingCoverZoom = false
             }
         }
     }
@@ -231,18 +242,24 @@ struct LibraryBookDetailView: View {
 private struct LibraryBookHero: View {
     @Bindable var book: LibraryBook
     let onFindMetadata: () -> Void
+    let onViewCover: () -> Void
     let onDelete: () -> Void
     let onCoverChange: (String) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
-            BookCoverTile(
-                title: book.displayTitle,
-                author: book.displayAuthor,
-                coverURL: book.coverImageURL,
-                width: 128,
-                height: 184
-            )
+            Button(action: onViewCover) {
+                BookCoverTile(
+                    title: book.displayTitle,
+                    author: book.displayAuthor,
+                    coverURL: book.coverImageURL,
+                    width: 128,
+                    height: 184
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("View larger cover for \(book.displayTitle)")
+            .accessibilityHint("Opens an enlarged book cover")
 
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {

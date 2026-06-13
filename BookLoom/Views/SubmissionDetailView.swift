@@ -19,6 +19,7 @@ struct SubmissionDetailView: View {
     @State private var showingMoveToShelfConfirmation: Bool = false
     @State private var showingMetadataSearch: Bool = false
     @State private var showingDeleteConfirmation: Bool = false
+    @State private var showingCoverZoom: Bool = false
 
     var body: some View {
         let summary = submission.ratingSummary
@@ -37,6 +38,7 @@ struct SubmissionDetailView: View {
                     onMarkRead: { showingMarkReadConfirmation = true },
                     onMoveToProposals: { showingMoveToProposalsConfirmation = true },
                     onMoveToShelf: { showingMoveToShelfConfirmation = true },
+                    onViewCover: { showingCoverZoom = true },
                     onDelete: { showingDeleteConfirmation = true },
                     onCoverChange: applyCoverChange
                 )
@@ -113,6 +115,15 @@ struct SubmissionDetailView: View {
                 apply(candidate)
             }
         }
+        #if os(iOS)
+        .fullScreenCover(isPresented: $showingCoverZoom) {
+            coverZoomView
+        }
+        #else
+        .sheet(isPresented: $showingCoverZoom) {
+            coverZoomView
+        }
+        #endif
         .confirmationDialog(
             willReplaceCurrent ? "Replace the current book?" : "Set as the current book?",
             isPresented: $showingSetCurrentConfirmation,
@@ -173,6 +184,16 @@ struct SubmissionDetailView: View {
 
     private var isSavedToPersonalLibrary: Bool {
         libraryBooks.contains { $0.matchesSubmission(submission) }
+    }
+
+    private var coverZoomView: some View {
+        BookCoverZoomView(
+            title: submission.displayTitle,
+            author: submission.displayAuthor,
+            coverURL: submission.coverImageURL
+        ) {
+            showingCoverZoom = false
+        }
     }
 
     private var markReadConfirmationTitle: String {
@@ -517,6 +538,7 @@ private struct SubmissionHeroActionsCard: View {
     let onMarkRead: () -> Void
     let onMoveToProposals: () -> Void
     let onMoveToShelf: () -> Void
+    let onViewCover: () -> Void
     let onDelete: () -> Void
     let onCoverChange: (String) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -524,13 +546,19 @@ private struct SubmissionHeroActionsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             contentLayout {
-                BookCoverTile(
-                    title: submission.displayTitle,
-                    author: submission.displayAuthor,
-                    coverURL: submission.coverImageURL,
-                    width: 72,
-                    height: 98
-                )
+                Button(action: onViewCover) {
+                    BookCoverTile(
+                        title: submission.displayTitle,
+                        author: submission.displayAuthor,
+                        coverURL: submission.coverImageURL,
+                        width: 72,
+                        height: 98
+                    )
+                }
+                .buttonStyle(.plain)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .accessibilityLabel("View larger cover for \(submission.displayTitle)")
+                .accessibilityHint("Opens an enlarged book cover")
 
                 VStack(alignment: .leading, spacing: 7) {
                     StatusPill(status: submission.status)

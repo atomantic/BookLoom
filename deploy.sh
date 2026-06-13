@@ -338,9 +338,7 @@ if $BUILD_IOS; then
     echo "🚀 Uploading iOS to TestFlight..."
     IOS_UPLOAD_LOG="$BUILD_DIR/ios_upload.log"
     set +e
-    xcrun altool --upload-app \
-        --file "$IPA_PATH" \
-        --type ios \
+    xcrun altool --upload-package "$IPA_PATH" \
         --apiKey "$APPSTORE_API_KEY_ID" \
         --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$IOS_UPLOAD_LOG"
     IOS_UPLOAD_STATUS=${PIPESTATUS[0]}
@@ -394,9 +392,7 @@ if $BUILD_MACOS; then
     echo "🚀 Uploading macOS to TestFlight..."
     MACOS_UPLOAD_LOG="$BUILD_DIR/macos_upload.log"
     set +e
-    xcrun altool --upload-app \
-        --file "$PKG_PATH" \
-        --type macos \
+    xcrun altool --upload-package "$PKG_PATH" \
         --apiKey "$APPSTORE_API_KEY_ID" \
         --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$MACOS_UPLOAD_LOG"
     MACOS_UPLOAD_STATUS=${PIPESTATUS[0]}

@@ -125,3 +125,142 @@ struct BookCoverTile: View {
         return palettes[index]
     }
 }
+
+struct BookCoverZoomView: View {
+    let title: String
+    let author: String
+    var coverURL: URL? = nil
+    let onDismiss: () -> Void
+
+    @State private var cachedCoverData: Data?
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topTrailing) {
+                Color.black
+                    .ignoresSafeArea()
+
+                VStack(spacing: 18) {
+                    Spacer(minLength: 28)
+
+                    enlargedCover(in: proxy.size)
+
+                    VStack(spacing: 4) {
+                        Text(title.isEmpty ? "Untitled book" : title)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+
+                        if !author.isEmpty {
+                            Text(author)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white.opacity(0.74))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+
+                    Spacer(minLength: 28)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 30, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.white.opacity(0.92))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close cover")
+                .padding(18)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onDismiss)
+        }
+        #if os(macOS)
+        .frame(minWidth: 420, minHeight: 560)
+        #endif
+        .accessibilityLabel("Enlarged cover for \(title.isEmpty ? "Untitled book" : title)")
+        .task(id: coverURL?.absoluteString ?? "") {
+            guard let coverURL else {
+                cachedCoverData = nil
+                return
+            }
+            cachedCoverData = await BookCoverCache.shared.data(for: coverURL)
+        }
+    }
+
+    @ViewBuilder
+    private func enlargedCover(in size: CGSize) -> some View {
+        let availableWidth = max(size.width - 48, 180)
+        let availableHeight = max(size.height - 160, 240)
+        let coverWidth = min(availableWidth, availableHeight * 0.68, 440)
+        let coverHeight = min(availableHeight, coverWidth * 1.48)
+
+        if let cachedCoverImage {
+            coverFrame(
+                cachedCoverImage
+                    .resizable()
+                    .scaledToFit(),
+                width: coverWidth,
+                height: coverHeight
+            )
+        } else if let coverURL {
+            AsyncImage(url: coverURL) { phase in
+                switch phase {
+                case .success(let image):
+                    coverFrame(
+                        image
+                            .resizable()
+                            .scaledToFit(),
+                        width: coverWidth,
+                        height: coverHeight
+                    )
+                default:
+                    placeholderCover(width: coverWidth, height: coverHeight)
+                }
+            }
+        } else {
+            placeholderCover(width: coverWidth, height: coverHeight)
+        }
+    }
+
+    private func coverFrame<Content: View>(_ content: Content, width: CGFloat, height: CGFloat) -> some View {
+        content
+            .frame(maxWidth: width, maxHeight: height)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(.white.opacity(0.24), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.46), radius: 24, y: 14)
+            .accessibilityHidden(true)
+    }
+
+    private func placeholderCover(width: CGFloat, height: CGFloat) -> some View {
+        BookCoverTile(
+            title: title,
+            author: author,
+            coverURL: nil,
+            width: width,
+            height: height
+        )
+        .shadow(color: .black.opacity(0.46), radius: 24, y: 14)
+        .accessibilityHidden(true)
+    }
+
+    private var cachedCoverImage: Image? {
+        guard let coverData = cachedCoverData else { return nil }
+        #if os(iOS)
+        return UIImage(data: coverData).map { Image(uiImage: $0) }
+        #elseif os(macOS)
+        return NSImage(data: coverData).map { Image(nsImage: $0) }
+        #else
+        return nil
+        #endif
+    }
+}

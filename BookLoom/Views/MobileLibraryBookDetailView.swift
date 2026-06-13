@@ -10,6 +10,7 @@ struct MobileLibraryBookDetailView: View {
     let onSave: () -> Void
     @State private var priceText: String
     @State private var showingMetadataSearch = false
+    @State private var showingCoverZoom = false
     @State private var clubAddOutcome: ShelfClubAddOutcome?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -59,6 +60,15 @@ struct MobileLibraryBookDetailView: View {
                 apply(candidate)
             }
         }
+        .fullScreenCover(isPresented: $showingCoverZoom) {
+            BookCoverZoomView(
+                title: book.displayTitle,
+                author: book.displayAuthor,
+                coverURL: book.coverImageURL
+            ) {
+                showingCoverZoom = false
+            }
+        }
         .alert(clubAddOutcome?.title ?? "", isPresented: clubAddAlertPresented) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -69,13 +79,20 @@ struct MobileLibraryBookDetailView: View {
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             heroLayout {
-                BookCoverTile(
-                    title: book.displayTitle,
-                    author: book.displayAuthor,
-                    coverURL: book.coverImageURL,
-                    width: 92,
-                    height: 132
-                )
+                Button {
+                    showingCoverZoom = true
+                } label: {
+                    BookCoverTile(
+                        title: book.displayTitle,
+                        author: book.displayAuthor,
+                        coverURL: book.coverImageURL,
+                        width: 92,
+                        height: 132
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("View larger cover for \(book.displayTitle)")
+                .accessibilityHint("Opens an enlarged book cover")
 
                 VStack(alignment: .leading, spacing: 7) {
                     Text(book.displayTitle)
