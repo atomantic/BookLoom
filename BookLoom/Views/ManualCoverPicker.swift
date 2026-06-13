@@ -60,32 +60,37 @@ struct ManualCoverPicker: View {
         #endif
     }
 
-    @ViewBuilder
     private var uploadButton: some View {
+        // Resolve the label's values here, in the view's main-actor context,
+        // rather than inside the picker's @Sendable label closure — reading the
+        // main-actor-isolated state from that closure is rejected under strict
+        // concurrency. The closure then only captures Sendable String values.
+        let title = uploadTitle
+        let symbol = isProcessing
+            ? "hourglass"
+            : (hasManualCover ? "photo.on.rectangle" : "photo.badge.plus")
+        let processing = isProcessing
         #if os(iOS)
-        PhotosPicker(
+        return PhotosPicker(
             selection: $photoSelection,
             matching: .images,
             photoLibrary: .shared()
         ) {
-            uploadLabel
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.semibold))
         }
         .buttonStyle(.bordered)
-        .disabled(isProcessing)
+        .disabled(processing)
         #else
-        Button {
+        return Button {
             showingFilePicker = true
         } label: {
-            uploadLabel
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.semibold))
         }
         .buttonStyle(.bordered)
-        .disabled(isProcessing)
+        .disabled(processing)
         #endif
-    }
-
-    private var uploadLabel: some View {
-        Label(uploadTitle, systemImage: isProcessing ? "hourglass" : (hasManualCover ? "photo.on.rectangle" : "photo.badge.plus"))
-            .font(.caption.weight(.semibold))
     }
 
     private var uploadTitle: String {
