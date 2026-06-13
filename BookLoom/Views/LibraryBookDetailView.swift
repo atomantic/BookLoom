@@ -295,24 +295,19 @@ private struct LibraryBookHero: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 10) {
-                    Button(action: onFindMetadata) {
-                        Label("Search for Cover and Details", systemImage: "magnifyingglass")
+                // These three actions don't truncate, so a single HStack imposes
+                // a hard ~570pt minimum on the whole detail pane — enough that,
+                // with the sidebar and nav rail, the content can't fit a narrow
+                // window and clips. Fall back to a vertical stack when the row
+                // won't fit so the detail can shrink with the window.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        heroActions
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
-
-                    ManualCoverPicker(
-                        identifier: book.libraryID,
-                        currentCoverURL: book.coverURL,
-                        onCoverChange: onCoverChange
-                    )
-
-                    Button(role: .destructive, action: onDelete) {
-                        Label("Delete from Shelf", systemImage: "trash")
+                    VStack(alignment: .leading, spacing: 8) {
+                        heroActions
                     }
-                    .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.coral))
-
-                    Spacer(minLength: 0)
                 }
             }
         }
@@ -320,6 +315,24 @@ private struct LibraryBookHero: View {
         // The .largeTitle hero title can fill the entire macOS detail pane at
         // the highest system text sizes; cap it while still honoring AX tiers.
         .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+    }
+
+    @ViewBuilder private var heroActions: some View {
+        Button(action: onFindMetadata) {
+            Label("Search for Cover and Details", systemImage: "magnifyingglass")
+        }
+        .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
+
+        ManualCoverPicker(
+            identifier: book.libraryID,
+            currentCoverURL: book.coverURL,
+            onCoverChange: onCoverChange
+        )
+
+        Button(role: .destructive, action: onDelete) {
+            Label("Delete from Shelf", systemImage: "trash")
+        }
+        .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.coral))
     }
 }
 

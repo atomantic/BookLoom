@@ -19,7 +19,7 @@ struct DesktopLibraryView: View {
     var body: some View {
         HStack(spacing: 0) {
             librarySidebar
-                .frame(minWidth: 330, idealWidth: 390, maxWidth: 460)
+                .frame(minWidth: 240, idealWidth: 340, maxWidth: 420)
                 .background(BookLoomStyle.ink.opacity(0.035))
 
             Divider()
@@ -37,6 +37,12 @@ struct DesktopLibraryView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        // Fill (not exceed) the detail column. Without this the HStack reports
+        // its content's *ideal* width — the 240–420pt sidebar plus the detail's
+        // ~1180pt grid ideal — and NavigationSplitView sizes the column to that
+        // ideal, overflowing a narrower window and clipping both edges instead
+        // of letting the adaptive grid reflow to fewer columns.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .bookLoomScreenBackground()
         .navigationTitle("Shelf")
         .toolbar {

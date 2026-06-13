@@ -98,7 +98,10 @@ struct BookLoomApp: App {
                 #if os(macOS)
                 // Gives `.windowResizability(.contentMinSize)` a concrete floor;
                 // without a content minimum that modifier has nothing to derive.
-                .frame(minWidth: 800, minHeight: 600)
+                // `.topLeading` so that if content ever exceeds the window it
+                // anchors to the top-left and clips off-screen at the trailing
+                // edge, rather than centering and hiding the sidebar on the left.
+                .frame(minWidth: 800, minHeight: 600, alignment: .topLeading)
                 .modifier(ScreenshotWindowFrameOverride())
                 #endif
                 .onContinueUserActivity(ShareAcceptance.activityType) { activity in
