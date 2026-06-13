@@ -11,7 +11,12 @@ import SwiftUI
 /// view owns its own save semantics (the platforms differ in exactly when they
 /// call `context.save()`), so this type only mutates model fields. Callers
 /// invoke their own save after a mutator returns.
-struct LibraryBookEditor {
+/// `@unchecked Sendable`: SwiftUI's `Binding(get:set:)` closures are
+/// `@Sendable`, so the binding factories below capture `self`. The only stored
+/// property is a SwiftData `@Model` reference, which isn't `Sendable`, but every
+/// caller is a SwiftUI view that touches this type exclusively on the main
+/// actor, so the capture is safe in practice.
+struct LibraryBookEditor: @unchecked Sendable {
     let book: LibraryBook
 
     init(_ book: LibraryBook) {
