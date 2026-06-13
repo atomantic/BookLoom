@@ -393,7 +393,13 @@ if $BUILD_MACOS; then
     echo "🚀 Uploading macOS to TestFlight..."
     MACOS_UPLOAD_LOG="$BUILD_DIR/macos_upload.log"
     set +e
-    xcrun altool --upload-package "$PKG_PATH" \
+    # Use --upload-app (same path iOS uses successfully) rather than the
+    # low-level --upload-package: the latter loops forever on
+    # "Checksums do not match" against Apple's CDN. A .pkg needs an explicit
+    # --type since, unlike a .ipa, it doesn't self-identify its platform.
+    xcrun altool --upload-app \
+        --file "$PKG_PATH" \
+        --type macos \
         --apiKey "$APPSTORE_API_KEY_ID" \
         --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$MACOS_UPLOAD_LOG"
     MACOS_UPLOAD_STATUS=${PIPESTATUS[0]}
