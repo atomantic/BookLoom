@@ -338,7 +338,8 @@ if $BUILD_IOS; then
     echo "🚀 Uploading iOS to TestFlight..."
     IOS_UPLOAD_LOG="$BUILD_DIR/ios_upload.log"
     set +e
-    xcrun altool --upload-package "$IPA_PATH" \
+    xcrun altool --upload-app \
+        --file "$IPA_PATH" \
         --apiKey "$APPSTORE_API_KEY_ID" \
         --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$IOS_UPLOAD_LOG"
     IOS_UPLOAD_STATUS=${PIPESTATUS[0]}

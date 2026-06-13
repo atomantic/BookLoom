@@ -1,8 +1,14 @@
+<p align="center">
+  <img src="docs/app-icon.png" alt="BookLoom app icon" width="128" height="128">
+</p>
+
 # BookLoom
 
 Book club companion for picking, tracking, rating, and noting your group's reads — like a potluck where everyone brings a book and the loom weaves the picks together.
 
 iOS + macOS, SwiftUI + SwiftData, synced via iCloud.
+
+**[Download on the App Store](https://apps.apple.com/us/app/bookloom-book-club-planner/id6765790616)** · **[bookloom.shadowpuppet.net](https://bookloom.shadowpuppet.net)**
 
 ## Status
 
