@@ -90,6 +90,7 @@ enum CurrencyTextCodec {
         if let plusSign = formatter.plusSign, plusSign != "+" {
             value = value.replacingOccurrences(of: plusSign, with: "+")
         }
+        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let decimalSeparator = formatter.decimalSeparator ?? "."
         let groupingSeparator = formatter.groupingSeparator ?? ","
@@ -105,6 +106,7 @@ enum CurrencyTextCodec {
             } else if character.unicodeScalars.allSatisfy({
                 CharacterSet.whitespacesAndNewlines.contains($0)
                     || $0.properties.generalCategory == .currencySymbol
+                    || $0.properties.generalCategory == .format
             }) {
                 continue
             } else {
@@ -126,12 +128,12 @@ enum CurrencyTextCodec {
 
         let decimalParts = unsigned.components(separatedBy: decimalSeparator)
         guard decimalParts.count <= 2,
-              let integerPart = decimalParts.first,
-              !integerPart.isEmpty else {
+              let integerPart = decimalParts.first else {
             return nil
         }
         let fractionPart = decimalParts.count == 2 ? decimalParts[1] : nil
-        guard fractionPart?.contains(groupingSeparator) != true,
+        guard !integerPart.isEmpty || fractionPart?.isEmpty == false,
+              fractionPart?.contains(groupingSeparator) != true,
               fractionPart?.allSatisfy(\.isNumber) != false,
               validGrouping(
                 integerPart,
@@ -143,7 +145,8 @@ enum CurrencyTextCodec {
         }
 
         var result = numeric.hasPrefix("-") ? "-" : ""
-        result += integerPart.replacingOccurrences(of: groupingSeparator, with: "")
+        let normalizedInteger = integerPart.replacingOccurrences(of: groupingSeparator, with: "")
+        result += normalizedInteger.isEmpty ? "0" : normalizedInteger
         if let fractionPart {
             result += "." + fractionPart
         }

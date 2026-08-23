@@ -26,6 +26,25 @@ final class CurrencyTextCodecTests: XCTestCase {
             CurrencyTextCodec.parse("1\u{202F}234,56 €", locale: frenchLocale, currencyCode: "EUR"),
             .cents(123_456)
         )
+        XCTAssertEqual(
+            CurrencyTextCodec.parse("1\u{00A0}234,56\u{00A0}kr", locale: Locale(identifier: "sv_SE"), currencyCode: "SEK"),
+            .cents(123_456)
+        )
+    }
+
+    func test_parseAcceptsFractionWithoutLeadingZero() {
+        XCTAssertEqual(CurrencyTextCodec.parse(".50", locale: usLocale), .cents(50))
+        XCTAssertEqual(CurrencyTextCodec.parse(",50", locale: frenchLocale), .cents(50))
+    }
+
+    func test_parseAcceptsFormatterGeneratedBidirectionalCurrencyText() {
+        let locale = Locale(identifier: "ar_SA")
+        let formatted = CurrencyTextCodec.displayText(for: 123_456, currencyCode: "SAR", locale: locale)
+
+        XCTAssertEqual(
+            CurrencyTextCodec.parse(formatted, locale: locale, currencyCode: "SAR"),
+            .cents(123_456)
+        )
     }
 
     func test_parseAcceptsNegativeValues() {
