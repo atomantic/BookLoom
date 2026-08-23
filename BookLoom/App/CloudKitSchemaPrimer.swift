@@ -9,7 +9,6 @@ enum CloudKitSchemaPrimer {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "CloudKitSchemaPrimer")
     private static let environmentKey = "BOOKLOOM_PRIME_CLOUDKIT_SCHEMA"
     private static let launchArgument = "--prime-cloudkit-schema"
-    private static let containerID = "iCloud.net.shadowpuppet.PlotLoom"
     private static let rootRecordType = "BookClubShareRoot"
     private static var hasRun = false
 
@@ -47,7 +46,7 @@ enum CloudKitSchemaPrimer {
     }
 
     private static func primeShareSchema() async throws {
-        let container = CKContainer(identifier: containerID)
+        let container = CKContainer(identifier: BookLoomCloudKit.containerIdentifier)
         let status = try await container.accountStatus()
         guard status == .available else {
             throw PrimeError.iCloudAccountUnavailable(status)

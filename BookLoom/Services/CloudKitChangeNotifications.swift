@@ -27,7 +27,6 @@ final class CloudKitChangeInbox {
 @MainActor
 enum CloudKitChangeNotifications {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "CloudKitChangeNotifications")
-    private static let containerID = "iCloud.net.shadowpuppet.PlotLoom"
     private static let privateSubscriptionID = "bookloom-private-member-snapshot-changes"
     private static let sharedSubscriptionID = "bookloom-member-snapshot-changes"
     private static let didSavePrivateSubscriptionKey = "net.shadowpuppet.BookLoom.didSavePrivateMemberSubscription.v3"
@@ -37,7 +36,7 @@ enum CloudKitChangeNotifications {
         guard Features.cloudKitSharing else { return }
         registerForRemoteNotifications()
 
-        let container = CKContainer(identifier: containerID)
+        let container = CKContainer(identifier: BookLoomCloudKit.containerIdentifier)
         async let privateSave: Void = saveSubscriptionIfNeeded(
             subscriptionID: privateSubscriptionID,
             defaultsKey: didSavePrivateSubscriptionKey,

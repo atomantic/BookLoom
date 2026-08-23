@@ -26,18 +26,18 @@ enum BookLoomDataReset {
         "net.shadowpuppet.BookLoom.didSaveSharedMemberSubscription.v3"
     ]
 
-    /// Run the full reset. Best-effort throughout: a single failed step
-    /// should not block the rest, since the user has explicitly asked for
-    /// everything to go away.
+    /// Run the full reset. The durable model deletion is the commit point:
+    /// identity is not replaced until SwiftData confirms the deletion saved.
     static func resetAllData(
         context: ModelContext,
         memberIdentity: MemberIdentity
-    ) async {
+    ) async throws {
         logger.info("Beginning full data reset")
         let memberID = memberIdentity.memberID
 
         // 1. Cleanup CloudKit shared zones / leave member shares.
-        let clubs = (try? context.fetch(FetchDescriptor<BookClub>())) ?? []
+        let clubs = try context.fetch(FetchDescriptor<BookClub>())
+        let libraryBooks = try context.fetch(FetchDescriptor<LibraryBook>())
         for club in clubs {
             await SharedClubSync.cleanupBeforeDelete(club, localMemberID: memberID)
         }
@@ -47,7 +47,12 @@ enum BookLoomDataReset {
         for club in clubs {
             context.delete(club)
         }
-        try? context.save()
+        // LibraryBook is an independent root, not a child of BookClub, so it
+        // is not covered by the club cascade.
+        for book in libraryBooks {
+            context.delete(book)
+        }
+        try context.save()
 
         // 3. Clear file-backed caches.
         await BookCoverCache.shared.purgeAll()
@@ -72,6 +77,6 @@ enum BookLoomDataReset {
         memberIdentity.name = ""
         memberIdentity.memberID = UUID().uuidString
 
-        logger.info("Reset complete — \(clubs.count) club(s) removed")
+        logger.info("Reset complete — \(clubs.count) club(s) and \(libraryBooks.count) library book(s) removed")
     }
 }

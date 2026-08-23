@@ -25,11 +25,16 @@ struct BookLoomApp: App {
     @Environment(\.openWindow) private var openWindow
     #endif
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
+    @State private var isRefreshingCloudChanges = false
+    @State private var cloudRefreshPending = false
+
+    private let modelBootstrap: ModelBootstrap
 
     init() {
         LegacyDefaultsMigration.migrateBookLoomKeys()
         let importInboxDefaults = AppLaunchOptions.isSampleDataEnabled ? UserDefaults.standard : SharedImportInbox.defaults
         _goodreadsInbox = State(initialValue: GoodreadsImportInbox(defaults: importInboxDefaults))
+        modelBootstrap = Self.makeModelBootstrap()
 
         #if DEBUG
         if CloudKitSchemaPrimer.isRequested {
@@ -57,7 +62,7 @@ struct BookLoomApp: App {
         DiscussionPrompt.self,
     ])
 
-    var sharedModelContainer: ModelContainer = {
+    private static func makeModelBootstrap() -> ModelBootstrap {
         if AppLaunchOptions.isSampleDataEnabled {
             let configuration = ModelConfiguration(
                 schema: Self.appSchema,
@@ -65,7 +70,7 @@ struct BookLoomApp: App {
             )
             let container = try! ModelContainer(for: Self.appSchema, configurations: [configuration])
             ScreenshotSampleData.populate(container: container)
-            return container
+            return ModelBootstrap(container: container, errorMessage: nil)
         }
 
         let configuration = ModelConfiguration(
@@ -74,21 +79,35 @@ struct BookLoomApp: App {
             cloudKitDatabase: .automatic
         )
         do {
-            return try ModelContainer(for: Self.appSchema, configurations: [configuration])
+            return ModelBootstrap(
+                container: try ModelContainer(for: Self.appSchema, configurations: [configuration]),
+                errorMessage: nil
+            )
         } catch {
-            appLogger.error("⚠️ ModelContainer init failed: \(error.localizedDescription, privacy: .public) — falling back to in-memory")
+            appLogger.fault("ModelContainer init failed: \(error.localizedDescription, privacy: .public)")
+            // A temporary container exists only so SwiftUI can render the
+            // blocking recovery screen. RootView is never mounted, preventing
+            // edits that would appear to save but disappear on relaunch.
             let memoryConfig = ModelConfiguration(schema: Self.appSchema, isStoredInMemoryOnly: true)
             do {
-                return try ModelContainer(for: Self.appSchema, configurations: [memoryConfig])
+                return ModelBootstrap(
+                    container: try ModelContainer(for: Self.appSchema, configurations: [memoryConfig]),
+                    errorMessage: error.localizedDescription
+                )
             } catch let fallbackError {
                 fatalError("Failed to create ModelContainer: \(fallbackError) (original error: \(error))")
             }
         }
-    }()
+    }
+
+    private var sharedModelContainer: ModelContainer { modelBootstrap.container }
 
     var body: some Scene {
         WindowGroup("BookLoom", id: Self.mainWindowID) {
-            RootView()
+            if let errorMessage = modelBootstrap.errorMessage {
+                ModelStoreRecoveryView(errorMessage: errorMessage)
+            } else {
+                RootView()
                 .environment(memberIdentity)
                 .environment(activeClubStore)
                 .environment(goodreadsInbox)
@@ -137,13 +156,10 @@ struct BookLoomApp: App {
                 }
                 .onChange(of: cloudKitChangeInbox.pendingChangeCount) { _, _ in
                     Task { @MainActor in
-                        await CloudKitChangeNotifications.refreshSharedClubs(
-                            in: sharedModelContainer.mainContext,
-                            localMemberID: memberIdentity.memberID,
-                            localMemberName: memberIdentity.name
-                        )
+                        await refreshCloudChanges()
                     }
                 }
+            }
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
@@ -174,10 +190,14 @@ struct BookLoomApp: App {
         // macOS-conventional menu item works without removing the tab that
         // iOS relies on.
         Settings {
-            SettingsView()
-                .environment(memberIdentity)
-                .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
-                .modelContainer(sharedModelContainer)
+            if let errorMessage = modelBootstrap.errorMessage {
+                ModelStoreRecoveryView(errorMessage: errorMessage)
+            } else {
+                SettingsView()
+                    .environment(memberIdentity)
+                    .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
+                    .modelContainer(sharedModelContainer)
+            }
         }
         #endif
     }
@@ -195,6 +215,41 @@ struct BookLoomApp: App {
                 localMemberName: memberIdentity.name
             )
         }
+    }
+
+    @MainActor
+    private func refreshCloudChanges() async {
+        cloudRefreshPending = true
+        guard !isRefreshingCloudChanges else { return }
+
+        isRefreshingCloudChanges = true
+        defer { isRefreshingCloudChanges = false }
+        repeat {
+            cloudRefreshPending = false
+            await CloudKitChangeNotifications.refreshSharedClubs(
+                in: sharedModelContainer.mainContext,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
+        } while cloudRefreshPending
+    }
+}
+
+private struct ModelBootstrap {
+    let container: ModelContainer
+    let errorMessage: String?
+}
+
+private struct ModelStoreRecoveryView: View {
+    let errorMessage: String
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("BookLoom couldn't open your library", systemImage: "externaldrive.badge.exclamationmark")
+        } description: {
+            Text("Your library is read-only and unavailable because its database could not be opened. Quit BookLoom, make sure this device has free storage and iCloud Drive is available, then reopen the app.\n\n\(errorMessage)")
+        }
+        .padding(32)
     }
 }
 

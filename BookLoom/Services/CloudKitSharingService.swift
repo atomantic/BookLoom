@@ -31,7 +31,6 @@ import SwiftData
 final class CloudKitSharingService {
     static let shared = CloudKitSharingService()
 
-    private static let containerID = "iCloud.net.shadowpuppet.PlotLoom"
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "CloudKitSharing")
     /// Custom record type for the share root. NEVER prefix with `_` — that's
     /// a CloudKit-reserved namespace and `modifyRecords` will reject it.
@@ -52,7 +51,7 @@ final class CloudKitSharingService {
 
     /// Lazy so we never construct a CKContainer until a code path that has
     /// already passed the `Features.cloudKitSharing` gate calls a method.
-    private lazy var container: CKContainer = CKContainer(identifier: Self.containerID)
+    private lazy var container = CKContainer(identifier: BookLoomCloudKit.containerIdentifier)
     private var privateDB: CKDatabase { container.privateCloudDatabase }
     private var sharedDB: CKDatabase { container.sharedCloudDatabase }
 
@@ -187,7 +186,7 @@ final class CloudKitSharingService {
         }
         record.parent = CKRecord.Reference(record: rootRecord, action: .none)
         try applyMemberSnapshot(snapshot, to: record)
-        try await saveRootRecord(record, in: database)
+        try await saveMemberSnapshot(snapshot, record: record, in: database)
     }
 
     /// Fetch every member snapshot record in the shared zone for `club`.
@@ -226,7 +225,7 @@ final class CloudKitSharingService {
     /// other devices see a `zoneNotFound` on their next refresh.
     func deleteSharedZone(for club: BookClub) async throws {
         guard Features.cloudKitSharing else { return }
-        guard club.isOwner else {
+        guard club.isShareOwner else {
             throw SharingError.notOwner
         }
         let zoneID = CKRecordZone.ID(zoneName: club.cloudZoneName)
@@ -242,7 +241,7 @@ final class CloudKitSharingService {
     /// applied, and they're dropped from the share's participant list.
     func removeMemberSnapshot(for club: BookClub, memberID: String) async throws {
         guard Features.cloudKitSharing else { return }
-        guard club.isOwner else {
+        guard club.isShareOwner else {
             throw SharingError.notOwner
         }
         guard !memberID.isEmpty else {
@@ -309,7 +308,7 @@ final class CloudKitSharingService {
     /// the share's participant list without affecting the owner's data.
     func leaveShare(for club: BookClub, localMemberID: String) async throws {
         guard Features.cloudKitSharing else { return }
-        guard !club.isOwner else {
+        guard !club.isShareOwner else {
             throw SharingError.cannotLeaveOwnShare
         }
         guard !localMemberID.isEmpty else {
@@ -370,7 +369,7 @@ final class CloudKitSharingService {
         return data
     }
 
-    private func decodeMemberSnapshot(from record: CKRecord) -> MemberShareSnapshot? {
+    private func decodeMemberSnapshot(from record: CKRecord) throws -> MemberShareSnapshot {
         let data: Data?
         if let value = record[Self.snapshotDataKey] as? Data {
             data = value
@@ -379,8 +378,12 @@ final class CloudKitSharingService {
         } else {
             data = nil
         }
-        guard let data else { return nil }
-        return try? JSONDecoder().decode(MemberShareSnapshot.self, from: data)
+        guard let data else { throw SharingError.malformedMemberSnapshot(record.recordID.recordName) }
+        do {
+            return try JSONDecoder().decode(MemberShareSnapshot.self, from: data)
+        } catch {
+            throw SharingError.malformedMemberSnapshot(record.recordID.recordName)
+        }
     }
 
     private func rootRecord(zoneID: CKRecordZone.ID, in database: CKDatabase) async throws -> CKRecord {
@@ -399,10 +402,8 @@ final class CloudKitSharingService {
                 result = try await database.records(matching: query, inZoneWith: zoneID)
             }
             for (_, recordResult) in result.matchResults {
-                if case .success(let record) = recordResult,
-                   let snapshot = decodeMemberSnapshot(from: record) {
-                    snapshots.append(snapshot)
-                }
+                let record = try recordResult.get()
+                snapshots.append(try decodeMemberSnapshot(from: record))
             }
             cursor = result.queryCursor
         } while cursor != nil
@@ -468,7 +469,7 @@ final class CloudKitSharingService {
     }
 
     private func database(for club: BookClub) throws -> CKDatabase {
-        if club.isOwner {
+        if club.isShareOwner {
             return privateDB
         }
         guard club.ownerUserRecordName?.trimmedOrNil != nil else {
@@ -478,7 +479,7 @@ final class CloudKitSharingService {
     }
 
     private func zoneID(for club: BookClub) throws -> CKRecordZone.ID {
-        if club.isOwner {
+        if club.isShareOwner {
             return CKRecordZone.ID(zoneName: club.cloudZoneName)
         }
         guard let ownerName = club.ownerUserRecordName?.trimmedOrNil else {
@@ -489,6 +490,35 @@ final class CloudKitSharingService {
 
     private func saveRootRecord(_ rootRecord: CKRecord, in database: CKDatabase) async throws {
         _ = try await database.modifyRecords(saving: [rootRecord], deleting: [])
+    }
+
+    /// A publish can race a write from another device. Reapply the local
+    /// snapshot to CloudKit's current server record once instead of allowing
+    /// an older completion to overwrite or discard the latest local state.
+    private func saveMemberSnapshot(
+        _ snapshot: MemberShareSnapshot,
+        record: CKRecord,
+        in database: CKDatabase
+    ) async throws {
+        do {
+            try await saveRootRecord(record, in: database)
+        } catch {
+            guard let serverRecord = conflictServerRecord(from: error) else { throw error }
+            try applyMemberSnapshot(snapshot, to: serverRecord)
+            try await saveRootRecord(serverRecord, in: database)
+        }
+    }
+
+    private func conflictServerRecord(from error: Error) -> CKRecord? {
+        let nsError = error as NSError
+        if nsError.domain == CKErrorDomain,
+           nsError.code == CKError.serverRecordChanged.rawValue {
+            return nsError.userInfo[CKRecordChangedErrorServerRecordKey] as? CKRecord
+        }
+        if let partials = nsError.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error] {
+            return partials.values.lazy.compactMap(conflictServerRecord).first
+        }
+        return nil
     }
 
     private func saveRootAndShare(rootRecord: CKRecord, share: CKShare) async throws -> [CKRecord.ID: Result<CKRecord, Error>] {
@@ -546,6 +576,7 @@ enum SharingError: LocalizedError {
     case snapshotTooLarge
     case notOwner
     case cannotLeaveOwnShare
+    case malformedMemberSnapshot(String)
 
     var errorDescription: String? {
         switch self {
@@ -561,6 +592,8 @@ enum SharingError: LocalizedError {
             return "Only the club owner can delete the shared CloudKit zone."
         case .cannotLeaveOwnShare:
             return "You own this club — delete it instead of leaving."
+        case .malformedMemberSnapshot(let recordName):
+            return "The shared club contains an unreadable member snapshot (\(recordName)). No local data was changed."
         }
     }
 }
