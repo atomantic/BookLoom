@@ -52,6 +52,32 @@ final class DeterministicFailureSeamTests: XCTestCase {
         }
     }
 
+    func test_snapshotQueryRejectsDecoderFailureWithoutReturningPartialSet() async {
+        let first = CKRecord(recordType: "MemberShareSnapshot")
+        let invalid = CKRecord(recordType: "MemberShareSnapshot")
+        let query = StubSnapshotQuery(
+            first: MemberSnapshotQueryPage(records: [.success(first), .success(invalid)], hasMore: false)
+        )
+        var decodedCount = 0
+
+        do {
+            _ = try await CloudKitSharingService.fetchMemberSnapshots(
+                zoneID: .default,
+                query: query,
+                decode: { record in
+                    decodedCount += 1
+                    if record.recordID == invalid.recordID { throw TestFailure.expected }
+                    return MemberShareSnapshot(authorMemberID: "member", authorName: "Reader")
+                }
+            )
+            XCTFail("Expected decoder failure to abort the snapshot set")
+        } catch {
+            XCTAssertEqual(error as? TestFailure, .expected)
+        }
+
+        XCTAssertEqual(decodedCount, 2)
+    }
+
     func test_refreshRequestsCoalesceAndNeverOverlap() async throws {
         let coordinator = CloudRefreshCoordinator()
         let gate = ManualGate()
@@ -149,6 +175,8 @@ final class DeterministicFailureSeamTests: XCTestCase {
         await SharedClubSync.waitForPendingPublishes(zoneName: zoneName)
 
         XCTAssertTrue(try context.fetch(FetchDescriptor<BookClub>()).isEmpty)
+        XCTAssertEqual(service.published.count, 1)
+        XCTAssertFalse(context.hasChanges)
     }
 
     func test_queuedPublishDoesNotReadClubDeletedBeforeTaskStarts() async throws {

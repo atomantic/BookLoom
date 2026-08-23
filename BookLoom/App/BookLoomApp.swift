@@ -140,6 +140,7 @@ struct BookLoomApp: App {
 
                     SchemaPrimeDataCleanup.removeSchemaPrimeData(from: sharedModelContainer.mainContext)
                     CoverDataCleanup.clearPersistedCoverData(in: sharedModelContainer.mainContext)
+                    await BookLoomDataReset.retryPendingCloudKitCleanup(context: sharedModelContainer.mainContext)
                     await drainAcceptedShares()
                     await CloudKitChangeNotifications.configureIfNeeded()
                     await SharedClubSync.synchronizeSharedClubs(

@@ -454,6 +454,14 @@ enum SharedClubSync {
     }
 
     static func cleanupBeforeDelete(_ target: ClubCleanupTarget, localMemberID: String) async {
+        do {
+            try await cleanupBeforeDeleteThrowing(target, localMemberID: localMemberID)
+        } catch {
+            logger.error("CloudKit cleanup for \(target.clubName, privacy: .private) failed (continuing with local delete): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+        }
+    }
+
+    static func cleanupBeforeDeleteThrowing(_ target: ClubCleanupTarget, localMemberID: String) async throws {
         SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
         StatusOverrideStore.clear(forZone: target.zoneName)
         SubmissionDetailsOverrideStore.clear(forZone: target.zoneName)
@@ -461,23 +469,19 @@ enum SharedClubSync {
         queuedPublishes.removeValue(forKey: target.zoneName)
 
         guard Features.cloudKitSharing, target.shareIsActive else { return }
-        do {
-            if target.isOwner {
-                try await CloudKitSharingService.shared.deleteSharedZone(zoneName: target.zoneName)
-            } else {
-                try await CloudKitSharingService.shared.leaveShare(
-                    zoneName: target.zoneName,
-                    ownerUserRecordName: target.ownerUserRecordName,
-                    localMemberID: localMemberID
-                )
-            }
-        } catch {
-            logger.error("CloudKit cleanup for \(target.clubName, privacy: .private) failed (continuing with local delete): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+        if target.isOwner {
+            try await CloudKitSharingService.shared.deleteSharedZone(zoneName: target.zoneName)
+        } else {
+            try await CloudKitSharingService.shared.leaveShare(
+                zoneName: target.zoneName,
+                ownerUserRecordName: target.ownerUserRecordName,
+                localMemberID: localMemberID
+            )
         }
     }
 }
 
-struct ClubCleanupTarget: Equatable {
+struct ClubCleanupTarget: Codable, Equatable, Sendable {
     let zoneName: String
     let clubName: String
     let ownerUserRecordName: String?

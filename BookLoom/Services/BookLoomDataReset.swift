@@ -38,7 +38,7 @@ extension MemberIdentity: ResetMemberIdentity {}
 
 @MainActor
 struct DataResetSideEffects {
-    var cleanupCloudKit: @MainActor ([ClubCleanupTarget], String) async -> Void
+    var cleanupCloudKit: @MainActor ([ClubCleanupTarget], String) async throws -> Void
     var purgeCaches: @MainActor () async -> Void
     var clearDefaults: @MainActor () -> Void
 
@@ -46,7 +46,7 @@ struct DataResetSideEffects {
         DataResetSideEffects(
             cleanupCloudKit: { targets, memberID in
                 for target in targets {
-                    await SharedClubSync.cleanupBeforeDelete(target, localMemberID: memberID)
+                    try await SharedClubSync.cleanupBeforeDeleteThrowing(target, localMemberID: memberID)
                 }
             },
             purgeCaches: {
@@ -64,6 +64,13 @@ struct DataResetSideEffects {
 @MainActor
 enum BookLoomDataReset {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "DataReset")
+    private static let pendingCleanupKey = "net.shadowpuppet.BookLoom.pendingResetCloudKitCleanup"
+
+    private struct PendingCleanup: Codable {
+        let targets: [ClubCleanupTarget]
+        let memberID: String
+        var isCommitted: Bool
+    }
 
     /// UserDefaults keys this app owns. Listed explicitly rather than
     /// prefix-matched so we never accidentally clear unrelated apps' values
@@ -91,14 +98,16 @@ enum BookLoomDataReset {
         try await resetAllData(
             store: ModelContextDataResetStore(context: context),
             memberIdentity: memberIdentity,
-            sideEffects: .production
+            sideEffects: .production,
+            persistCleanupRecovery: true
         )
     }
 
     static func resetAllData(
         store: any DataResetStore,
         memberIdentity: any ResetMemberIdentity,
-        sideEffects: DataResetSideEffects
+        sideEffects: DataResetSideEffects,
+        persistCleanupRecovery: Bool = false
     ) async throws {
         logger.info("Beginning full data reset")
         let memberID = memberIdentity.memberID
@@ -111,6 +120,9 @@ enum BookLoomDataReset {
         // Capture the value-only CloudKit cleanup inputs while they are live,
         // but defer the actual side effect until after the save succeeds.
         let cleanupTargets = clubs.map(ClubCleanupTarget.init)
+        if persistCleanupRecovery, !cleanupTargets.isEmpty {
+            savePendingCleanup(PendingCleanup(targets: cleanupTargets, memberID: memberID, isCommitted: false))
+        }
 
         // Delete every SwiftData row. Cascade rules drop submissions,
         //    ratings, notes, prompts, polls, votes, meetings, and RSVPs.
@@ -122,11 +134,20 @@ enum BookLoomDataReset {
         for book in libraryBooks {
             store.delete(book)
         }
-        try store.save()
+        do {
+            try store.save()
+        } catch {
+            if persistCleanupRecovery { clearPendingCleanup() }
+            throw error
+        }
 
         // The save above is the commit point. External cleanup and identity
         // replacement happen only after durable deletion succeeds.
-        await sideEffects.cleanupCloudKit(cleanupTargets, memberID)
+        if persistCleanupRecovery, !cleanupTargets.isEmpty {
+            savePendingCleanup(PendingCleanup(targets: cleanupTargets, memberID: memberID, isCommitted: true))
+        }
+        try await sideEffects.cleanupCloudKit(cleanupTargets, memberID)
+        if persistCleanupRecovery { clearPendingCleanup() }
         await sideEffects.purgeCaches()
         sideEffects.clearDefaults()
 
@@ -134,6 +155,44 @@ enum BookLoomDataReset {
         memberIdentity.memberID = UUID().uuidString
 
         logger.info("Reset complete — \(clubs.count) club(s) and \(libraryBooks.count) library book(s) removed")
+    }
+
+    /// Completes CloudKit cleanup left by a crash or outage after the local
+    /// deletion commit. A pre-commit marker is discarded when its clubs still
+    /// exist, so a failed local save can never delete live remote data later.
+    static func retryPendingCloudKitCleanup(context: ModelContext) async {
+        guard var pending = loadPendingCleanup() else { return }
+        if !pending.isCommitted {
+            let existingZones = (try? context.fetch(FetchDescriptor<BookClub>()))
+                .map { Set($0.map(\.cloudZoneName)) } ?? []
+            guard pending.targets.allSatisfy({ !existingZones.contains($0.zoneName) }) else {
+                clearPendingCleanup()
+                return
+            }
+            pending.isCommitted = true
+            savePendingCleanup(pending)
+        }
+
+        do {
+            try await DataResetSideEffects.production.cleanupCloudKit(pending.targets, pending.memberID)
+            clearPendingCleanup()
+        } catch {
+            logger.error("Pending reset CloudKit cleanup will retry next launch: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private static func savePendingCleanup(_ pending: PendingCleanup) {
+        guard let data = try? JSONEncoder().encode(pending) else { return }
+        UserDefaults.standard.set(data, forKey: pendingCleanupKey)
+    }
+
+    private static func loadPendingCleanup() -> PendingCleanup? {
+        guard let data = UserDefaults.standard.data(forKey: pendingCleanupKey) else { return nil }
+        return try? JSONDecoder().decode(PendingCleanup.self, from: data)
+    }
+
+    private static func clearPendingCleanup() {
+        UserDefaults.standard.removeObject(forKey: pendingCleanupKey)
     }
 
     static func clearOwnedDefaults() {
