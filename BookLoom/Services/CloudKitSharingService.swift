@@ -3,6 +3,58 @@ import CloudKit
 import os
 import SwiftData
 
+struct MemberSnapshotQueryPage {
+    let records: [Result<CKRecord, Error>]
+    let hasMore: Bool
+}
+
+/// Narrow CloudKit query seam. Keeping pagination and per-record failures in
+/// the result lets tests prove that an incomplete snapshot set is discarded.
+@MainActor
+protocol MemberSnapshotQuerying {
+    func firstPage(recordType: String, zoneID: CKRecordZone.ID) async throws -> MemberSnapshotQueryPage
+    func nextPage() async throws -> MemberSnapshotQueryPage
+}
+
+@MainActor
+private final class CloudKitMemberSnapshotQuery: MemberSnapshotQuerying {
+    let database: CKDatabase
+    private var cursor: CKQueryOperation.Cursor?
+
+    init(database: CKDatabase) {
+        self.database = database
+    }
+
+    func firstPage(recordType: String, zoneID: CKRecordZone.ID) async throws -> MemberSnapshotQueryPage {
+        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+        let result = try await database.records(matching: query, inZoneWith: zoneID)
+        cursor = result.queryCursor
+        return MemberSnapshotQueryPage(
+            records: result.matchResults.map(\.1),
+            hasMore: cursor != nil
+        )
+    }
+
+    func nextPage() async throws -> MemberSnapshotQueryPage {
+        guard let cursor else {
+            return MemberSnapshotQueryPage(records: [], hasMore: false)
+        }
+        let result = try await database.records(continuingMatchFrom: cursor)
+        self.cursor = result.queryCursor
+        return MemberSnapshotQueryPage(
+            records: result.matchResults.map(\.1),
+            hasMore: self.cursor != nil
+        )
+    }
+}
+
+@MainActor
+protocol MemberSnapshotSyncing: AnyObject {
+    func publishMemberSnapshot(_ snapshot: MemberShareSnapshot, for club: BookClub, localMemberID: String) async throws
+    func fetchMemberSnapshots(for club: BookClub) async throws -> [MemberShareSnapshot]
+    func fetchAcceptedParticipantCount(for club: BookClub) async throws -> Int
+}
+
 /// Owns the CKShare invite handshake AND the per-author snapshot read/write
 /// loop. The collaboration model:
 ///
@@ -28,7 +80,7 @@ import SwiftData
 /// `Features.cloudKitSharing` first. The singleton is fine to import — it only
 /// touches the container lazily.
 @MainActor
-final class CloudKitSharingService {
+final class CloudKitSharingService: MemberSnapshotSyncing {
     static let shared = CloudKitSharingService()
 
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "CloudKitSharing")
@@ -55,7 +107,13 @@ final class CloudKitSharingService {
     private var privateDB: CKDatabase { container.privateCloudDatabase }
     private var sharedDB: CKDatabase { container.sharedCloudDatabase }
 
-    private init() {}
+    private let queryFactory: @MainActor (CKDatabase) -> any MemberSnapshotQuerying
+
+    private init(
+        queryFactory: @escaping @MainActor (CKDatabase) -> any MemberSnapshotQuerying = { CloudKitMemberSnapshotQuery(database: $0) }
+    ) {
+        self.queryFactory = queryFactory
+    }
 
     // MARK: - Owner-side: create or fetch share
 
@@ -391,22 +449,27 @@ final class CloudKitSharingService {
     }
 
     private func fetchMemberSnapshots(zoneID: CKRecordZone.ID, in database: CKDatabase) async throws -> [MemberShareSnapshot] {
-        let query = CKQuery(recordType: Self.memberSnapshotRecordType, predicate: NSPredicate(value: true))
+        try await Self.fetchMemberSnapshots(
+            zoneID: zoneID,
+            query: queryFactory(database),
+            decode: decodeMemberSnapshot
+        )
+    }
+
+    static func fetchMemberSnapshots(
+        zoneID: CKRecordZone.ID,
+        query: any MemberSnapshotQuerying,
+        decode: (CKRecord) throws -> MemberShareSnapshot
+    ) async throws -> [MemberShareSnapshot] {
         var snapshots: [MemberShareSnapshot] = []
-        var cursor: CKQueryOperation.Cursor?
-        repeat {
-            let result: (matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?)
-            if let cursor {
-                result = try await database.records(continuingMatchFrom: cursor)
-            } else {
-                result = try await database.records(matching: query, inZoneWith: zoneID)
+        var page = try await query.firstPage(recordType: memberSnapshotRecordType, zoneID: zoneID)
+        while true {
+            for recordResult in page.records {
+                snapshots.append(try decode(recordResult.get()))
             }
-            for (_, recordResult) in result.matchResults {
-                let record = try recordResult.get()
-                snapshots.append(try decodeMemberSnapshot(from: record))
-            }
-            cursor = result.queryCursor
-        } while cursor != nil
+            guard page.hasMore else { break }
+            page = try await query.nextPage()
+        }
         return snapshots
     }
 

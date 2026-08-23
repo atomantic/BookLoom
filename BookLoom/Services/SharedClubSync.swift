@@ -45,6 +45,33 @@ enum SyncOperation {
     case refresh
 }
 
+/// Coalesces refresh triggers while guaranteeing that only one refresh body
+/// mutates local state at a time. A trigger received during an active refresh
+/// schedules one follow-up pass with the newest operation.
+@MainActor
+final class CloudRefreshCoordinator {
+    private var isRunning = false
+    private var pending = false
+    private var latestOperation: (@MainActor () async -> Void)?
+
+    func request(_ operation: @escaping @MainActor () async -> Void) async {
+        latestOperation = operation
+        pending = true
+        guard !isRunning else { return }
+
+        isRunning = true
+        defer {
+            isRunning = false
+            latestOperation = nil
+        }
+        repeat {
+            pending = false
+            guard let latestOperation else { return }
+            await latestOperation()
+        } while pending
+    }
+}
+
 /// User-facing classification of a CloudKit sync failure. Hides raw CKError
 /// codes and produces copy a non-developer can act on. Transient/network
 /// failures render as a soft "offline" indicator rather than an alarming
@@ -175,6 +202,7 @@ enum SharedClubSync {
         let context: ModelContext
         let localMemberID: String
         let localMemberName: String
+        let service: any MemberSnapshotSyncing
     }
 
     private static var queuedPublishes: [String: PublishRequest] = [:]
@@ -212,9 +240,11 @@ enum SharedClubSync {
         _ club: BookClub,
         context: ModelContext,
         localMemberID: String,
-        localMemberName: String
+        localMemberName: String,
+        service: any MemberSnapshotSyncing = CloudKitSharingService.shared,
+        isEnabled: Bool = Features.cloudKitSharing
     ) {
-        guard Features.cloudKitSharing, club.shareIsActive else { return }
+        guard isEnabled, club.shareIsActive else { return }
         guard !localMemberID.isEmpty else {
             logger.error("Cannot publish snapshot for \(club.name, privacy: .private): localMemberID is empty")
             return
@@ -227,7 +257,8 @@ enum SharedClubSync {
             club: club,
             context: context,
             localMemberID: localMemberID,
-            localMemberName: localMemberName
+            localMemberName: localMemberName,
+            service: service
         )
         guard activePublishes[zoneName] == nil else { return }
         activePublishes[zoneName] = Task { @MainActor in
@@ -246,7 +277,7 @@ enum SharedClubSync {
         let club = request.club
         do {
             if club.isShareOwner,
-               let acceptedCount = try? await CloudKitSharingService.shared.fetchAcceptedParticipantCount(for: club),
+               let acceptedCount = try? await request.service.fetchAcceptedParticipantCount(for: club),
                acceptedCount != club.shareParticipantCount {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(request.context, club: club, what: "participant-count update")
@@ -258,7 +289,7 @@ enum SharedClubSync {
                 authorName: request.localMemberName,
                 includeClubMeta: club.isShareOwner
             )
-            try await CloudKitSharingService.shared.publishMemberSnapshot(
+            try await request.service.publishMemberSnapshot(
                 snapshot,
                 for: club,
                 localMemberID: request.localMemberID
@@ -280,13 +311,15 @@ enum SharedClubSync {
         _ club: BookClub,
         context: ModelContext,
         localMemberID: String,
-        localMemberName: String
+        localMemberName: String,
+        service: any MemberSnapshotSyncing = CloudKitSharingService.shared,
+        isEnabled: Bool = Features.cloudKitSharing
     ) async {
-        guard Features.cloudKitSharing, club.shareIsActive else { return }
+        guard isEnabled, club.shareIsActive else { return }
 
         let remoteSnapshots: [MemberShareSnapshot]
         do {
-            remoteSnapshots = try await CloudKitSharingService.shared.fetchMemberSnapshots(for: club)
+            remoteSnapshots = try await service.fetchMemberSnapshots(for: club)
         } catch {
             if CKZoneAvailability.classify(error) == .zoneRemoved {
                 // The owner has deleted the club, or we've been removed from
@@ -322,7 +355,7 @@ enum SharedClubSync {
                 context: context,
                 localMemberID: localMemberID
             )
-            if let acceptedCount = try? await CloudKitSharingService.shared.fetchAcceptedParticipantCount(for: club),
+            if let acceptedCount = try? await service.fetchAcceptedParticipantCount(for: club),
                acceptedCount != club.shareParticipantCount {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(context, club: club, what: "participant-count update")
@@ -336,6 +369,10 @@ enum SharedClubSync {
             SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .refresh, error: error)
             logger.error("Member snapshot merge failed: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
         }
+    }
+
+    static func waitForPendingPublishes(zoneName: String) async {
+        await activePublishes[zoneName]?.value
     }
 
     static func refreshIfNeeded(
