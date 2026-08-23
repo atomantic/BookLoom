@@ -30,7 +30,7 @@ final class NavigationCoordinatorTests: XCTestCase {
     ) -> RouteEffects {
         var effects = RouteEffects()
         coordinator.applyScreenshotRoute(
-            route,
+            ScreenshotRoute(rawValueOrBooks: route),
             hasClub: hasClub,
             presentFirstPendingImport: { effects.presentedImport += 1 },
             pushCurrentRead: {

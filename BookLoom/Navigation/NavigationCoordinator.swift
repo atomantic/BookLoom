@@ -46,7 +46,6 @@ enum ScreenshotRoute: String {
         self = ScreenshotRoute(rawValue: raw) ?? .books
     }
 
-    var showsClubImports: Bool { self == .shelf || self == .import || self == .imports }
     var usesFullScreenImport: Bool { self == .import }
     var clearsSampleImports: Bool { self == .library }
 }

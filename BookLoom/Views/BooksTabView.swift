@@ -380,7 +380,11 @@ private struct BooksTabContent: View {
     /// so each screen captures the same view regardless of pending Shelf items.
     private var screenshotInitialLibraryTab: LibraryTab? {
         guard let route = AppLaunchOptions.screenshotRoute else { return nil }
-        return route.showsClubImports ? .imports : .proposed
+        switch route {
+        case .shelf, .import, .imports: return .imports
+        case .books, .clubs, .clubHome: return .proposed
+        default: return nil
+        }
     }
 
     private var clubSubmissions: [BookSubmission] {
