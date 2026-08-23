@@ -322,7 +322,7 @@ private final class ControlledSnapshotService: MemberSnapshotSyncing {
     private var activePublishes = 0
     private var firstContinuation: CheckedContinuation<Void, Never>?
 
-    func publishMemberSnapshot(_ snapshot: MemberShareSnapshot, for club: BookClub, localMemberID: String) async throws {
+    func publishMemberSnapshot(_ snapshot: MemberShareSnapshot, target: MemberSnapshotSyncTarget, localMemberID: String) async throws {
         activePublishes += 1
         maximumActivePublishes = max(maximumActivePublishes, activePublishes)
         published.append(snapshot)
@@ -332,8 +332,8 @@ private final class ControlledSnapshotService: MemberSnapshotSyncing {
         activePublishes -= 1
     }
 
-    func fetchMemberSnapshots(for club: BookClub) async throws -> [MemberShareSnapshot] { [] }
-    func fetchAcceptedParticipantCount(for club: BookClub) async throws -> Int { 1 }
+    func fetchMemberSnapshots(target: MemberSnapshotSyncTarget) async throws -> [MemberShareSnapshot] { [] }
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 1 }
 
     func releaseFirstPublish() {
         firstContinuation?.resume()

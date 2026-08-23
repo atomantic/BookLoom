@@ -202,6 +202,7 @@ enum SharedClubSync {
         let context: ModelContext
         let zoneName: String
         let clubName: String
+        let target: MemberSnapshotSyncTarget
         let localMemberID: String
         let localMemberName: String
         let service: any MemberSnapshotSyncing
@@ -260,6 +261,7 @@ enum SharedClubSync {
             context: context,
             zoneName: zoneName,
             clubName: club.name,
+            target: MemberSnapshotSyncTarget(club),
             localMemberID: localMemberID,
             localMemberName: localMemberName,
             service: service
@@ -280,19 +282,17 @@ enum SharedClubSync {
     private static func publish(_ request: PublishRequest) async {
         let club = request.club
         guard club.modelContext != nil else {
-            queuedPublishes.removeValue(forKey: request.zoneName)
             return
         }
         do {
             if club.isShareOwner,
-               let acceptedCount = try? await request.service.fetchAcceptedParticipantCount(for: club),
+               let acceptedCount = try? await request.service.fetchAcceptedParticipantCount(target: request.target),
                club.modelContext != nil,
                acceptedCount != club.shareParticipantCount {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(request.context, club: club, what: "participant-count update")
             }
             guard club.modelContext != nil else {
-                queuedPublishes.removeValue(forKey: request.zoneName)
                 return
             }
             let snapshot = MemberShareSnapshotStore.snapshot(
@@ -304,11 +304,10 @@ enum SharedClubSync {
             )
             try await request.service.publishMemberSnapshot(
                 snapshot,
-                for: club,
+                target: request.target,
                 localMemberID: request.localMemberID
             )
             guard club.modelContext != nil else {
-                queuedPublishes.removeValue(forKey: request.zoneName)
                 return
             }
             // Record completion only after CloudKit accepted this serialized
@@ -333,10 +332,11 @@ enum SharedClubSync {
         isEnabled: Bool = Features.cloudKitSharing
     ) async {
         guard isEnabled, club.shareIsActive else { return }
+        let target = MemberSnapshotSyncTarget(club)
 
         let remoteSnapshots: [MemberShareSnapshot]
         do {
-            remoteSnapshots = try await service.fetchMemberSnapshots(for: club)
+            remoteSnapshots = try await service.fetchMemberSnapshots(target: target)
         } catch {
             if CKZoneAvailability.classify(error) == .zoneRemoved {
                 // The owner has deleted the club, or we've been removed from
@@ -355,7 +355,8 @@ enum SharedClubSync {
             }
             return
         }
-        SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
+        guard club.modelContext != nil else { return }
+        SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
 
         do {
             // Always include the local member's freshly-built snapshot in the
@@ -375,7 +376,8 @@ enum SharedClubSync {
                 context: context,
                 localMemberID: localMemberID
             )
-            if let acceptedCount = try? await service.fetchAcceptedParticipantCount(for: club),
+            if let acceptedCount = try? await service.fetchAcceptedParticipantCount(target: target),
+               club.modelContext != nil,
                acceptedCount != club.shareParticipantCount {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(context, club: club, what: "participant-count update")
