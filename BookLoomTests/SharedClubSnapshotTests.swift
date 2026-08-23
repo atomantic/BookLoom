@@ -215,6 +215,72 @@ final class SharedClubSnapshotTests: XCTestCase {
         XCTAssertEqual(annihilation.status, .proposed)
     }
 
+    func test_mergeKeepsNewestRatingWhenSnapshotsContainSameMemberRating() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.cloudZoneName = "BookClub-Test"
+        club.shareIsActive = true
+        context.insert(club)
+
+        let submission = MemberShareSnapshot.SubmissionPayload(
+            selectionID: "sel-piranesi",
+            title: "Piranesi",
+            author: "Susanna Clarke",
+            isbn: "",
+            submittedBy: "Alex",
+            submittedByMemberID: "member-alex",
+            submittedAt: Date(timeIntervalSince1970: 1_000),
+            initialStatusRaw: BookSubmissionStatus.proposed.rawValue,
+            initialPickedAt: nil,
+            initialCompletedAt: nil,
+            bookDescription: "",
+            publishedYear: nil,
+            coverURL: "",
+            externalProvider: "",
+            externalID: ""
+        )
+        let olderRating = MemberShareSnapshot.RatingPayload(
+            submissionSelectionID: "sel-piranesi",
+            memberID: "member-sam",
+            memberName: "Sam",
+            stars: 2,
+            createdAt: Date(timeIntervalSince1970: 2_000)
+        )
+        let newerRating = MemberShareSnapshot.RatingPayload(
+            submissionSelectionID: "sel-piranesi",
+            memberID: "member-sam",
+            memberName: "Sam",
+            stars: 5,
+            createdAt: Date(timeIntervalSince1970: 3_000)
+        )
+        let newerSnapshot = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 4_000),
+            authorMemberID: "member-sam",
+            authorName: "Sam",
+            submissions: [submission],
+            ratings: [newerRating]
+        )
+        let olderSnapshot = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-sam",
+            authorName: "Sam",
+            submissions: [submission],
+            ratings: [olderRating]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [newerSnapshot, olderSnapshot],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let persisted = try context.fetch(FetchDescriptor<Rating>())
+        XCTAssertEqual(persisted.count, 1)
+        XCTAssertEqual(persisted.first?.stars, 5)
+        XCTAssertEqual(persisted.first?.createdAt, newerRating.createdAt)
+    }
+
     func test_statusOverridesFromAnotherMemberWinByOccurredAt() throws {
         let context = try makeContext()
         let joined = BookClub(name: "Sunday Pages")

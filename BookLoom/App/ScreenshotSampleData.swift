@@ -8,7 +8,7 @@ enum AppLaunchOptions {
 
     static let isSampleDataEnabled: Bool = ProcessInfo.processInfo.arguments.contains(seedSampleDataArgument)
 
-    static let screenshotRoute: String? = launchArgument(named: screenshotRouteArgument)
+    static let screenshotRoute: ScreenshotRoute? = launchArgument(named: screenshotRouteArgument).map(ScreenshotRoute.init(rawValueOrBooks:))
 
     /// Optional Dynamic Type override used by accessibility screenshot variants.
     /// Accepted values match `DynamicTypeSize` raw cases:
@@ -62,7 +62,7 @@ enum ScreenshotSampleData {
 
     static func populate(context: ModelContext) {
         seedBundledCovers()
-        if AppLaunchOptions.screenshotRoute == ScreenshotRoute.library.rawValue {
+        if AppLaunchOptions.screenshotRoute?.clearsSampleImports == true {
             clearShelfImports()
         } else {
             seedShelfImports()

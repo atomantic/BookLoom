@@ -65,6 +65,7 @@ private struct BooksTabContent: View {
     /// available. Owns the sync orchestration and SwiftData mutations that used
     /// to live in this view's action methods (see #18).
     @State private var coordinator: ClubActionCoordinator?
+    @State private var mutationError: LibraryMutationError?
 
     private func makeCoordinator() -> ClubActionCoordinator {
         if let coordinator { return coordinator }
@@ -364,6 +365,11 @@ private struct BooksTabContent: View {
                 libraryTab = .imports
             }
         }
+        .alert("Club Change Failed", isPresented: .presence(of: $mutationError)) {
+            Button("OK") { mutationError = nil }
+        } message: {
+            Text(mutationError?.localizedDescription ?? "The club change couldn't be saved.")
+        }
     }
 
     private var sections: BookClubSubmissionSections {
@@ -374,11 +380,7 @@ private struct BooksTabContent: View {
     /// so each screen captures the same view regardless of pending Shelf items.
     private var screenshotInitialLibraryTab: LibraryTab? {
         guard let route = AppLaunchOptions.screenshotRoute else { return nil }
-        switch ScreenshotRoute(rawValue: route) {
-        case .shelf, .import, .imports: return .imports
-        case .books, .clubs, .clubHome: return .proposed
-        default: return nil
-        }
+        return route.showsClubImports ? .imports : .proposed
     }
 
     private var clubSubmissions: [BookSubmission] {
@@ -437,24 +439,33 @@ private struct BooksTabContent: View {
     }
 
     private func pickRandomNext() {
-        makeCoordinator().pickRandomNext(in: club, from: sections.proposed)
+        let action = makeCoordinator()
+        action.pickRandomNext(in: club, from: sections.proposed)
+        mutationError = action.mutationError
     }
 
     private func openOrCreatePoll() {
-        guard let poll = makeCoordinator().openOrCreatePoll(
+        let action = makeCoordinator()
+        let poll = action.openOrCreatePoll(
             in: club,
             activePoll: activePoll,
             proposed: sections.proposed
-        ) else { return }
+        )
+        mutationError = action.mutationError
+        guard let poll else { return }
         path.append(poll)
     }
 
     private func assignCurrent(_ submission: BookSubmission) {
-        makeCoordinator().assignCurrent(submission, in: club)
+        let action = makeCoordinator()
+        action.assignCurrent(submission, in: club)
+        mutationError = action.mutationError
     }
 
     private func markComplete(_ submission: BookSubmission) {
-        makeCoordinator().markComplete(submission, in: club)
+        let action = makeCoordinator()
+        action.markComplete(submission, in: club)
+        mutationError = action.mutationError
     }
 
     private func offerToKeepInLibrary(_ submission: BookSubmission) {
@@ -464,23 +475,34 @@ private struct BooksTabContent: View {
     }
 
     private func saveToPersonalLibrary(_ submission: BookSubmission) {
-        makeCoordinator().saveToPersonalLibrary(submission)
+        let action = makeCoordinator()
+        action.saveToPersonalLibrary(submission)
+        mutationError = action.mutationError
     }
 
     private func moveCurrentToProposals(_ submission: BookSubmission) {
-        makeCoordinator().moveCurrentToProposals(submission, in: club)
+        let action = makeCoordinator()
+        action.moveCurrentToProposals(submission, in: club)
+        mutationError = action.mutationError
     }
 
     private func delete(_ items: [BookSubmission], at offsets: IndexSet) {
-        makeCoordinator().delete(items, at: offsets, in: club)
+        let action = makeCoordinator()
+        action.delete(items, at: offsets, in: club)
+        mutationError = action.mutationError
     }
 
     private func delete(_ submission: BookSubmission, shouldSave: Bool = true) {
-        makeCoordinator().delete(submission, in: club, shouldSave: shouldSave)
+        let action = makeCoordinator()
+        action.delete(submission, in: club, shouldSave: shouldSave)
+        mutationError = action.mutationError
     }
 
     private func moveSubmissionToImports(_ submission: BookSubmission) {
-        guard makeCoordinator().moveSubmissionToImports(submission, inbox: goodreadsInbox, in: club) else { return }
+        let action = makeCoordinator()
+        let didMove = action.moveSubmissionToImports(submission, inbox: goodreadsInbox, in: club)
+        mutationError = action.mutationError
+        guard didMove else { return }
         libraryTab = .imports
     }
 }

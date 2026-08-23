@@ -45,6 +45,10 @@ enum ScreenshotRoute: String {
     init(rawValueOrBooks raw: String) {
         self = ScreenshotRoute(rawValue: raw) ?? .books
     }
+
+    var showsClubImports: Bool { self == .shelf || self == .import || self == .imports }
+    var usesFullScreenImport: Bool { self == .import }
+    var clearsSampleImports: Bool { self == .library }
 }
 
 /// Centralizes top-level navigation state for `MainTabs` and `RegularWidthMainView`.
@@ -104,7 +108,7 @@ final class NavigationCoordinator {
     ///   - pushFirstSelectionPoll: Pushes the first selection poll for `poll`/`vote`.
     ///   - pushFirstMeeting: Pushes the first/most-recent meeting for `meeting`/`meetings`.
     func applyScreenshotRoute(
-        _ route: String,
+        _ route: ScreenshotRoute,
         hasClub: Bool,
         presentFirstPendingImport: () -> Void,
         pushCurrentRead: () -> Void,
@@ -118,7 +122,7 @@ final class NavigationCoordinator {
             return
         }
 
-        switch ScreenshotRoute(rawValueOrBooks: route) {
+        switch route {
         case .library:
             selectedTab = .library
         case .books, .clubs, .clubHome, .shelf, .imports:
