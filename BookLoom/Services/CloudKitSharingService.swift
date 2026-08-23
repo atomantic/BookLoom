@@ -3,6 +3,75 @@ import CloudKit
 import os
 import SwiftData
 
+struct MemberSnapshotQueryPage {
+    let records: [Result<CKRecord, Error>]
+    let hasMore: Bool
+}
+
+/// Narrow CloudKit query seam. Keeping pagination and per-record failures in
+/// the result lets tests prove that an incomplete snapshot set is discarded.
+@MainActor
+protocol MemberSnapshotQuerying {
+    func firstPage(recordType: String, zoneID: CKRecordZone.ID) async throws -> MemberSnapshotQueryPage
+    func nextPage() async throws -> MemberSnapshotQueryPage
+}
+
+@MainActor
+private final class CloudKitMemberSnapshotQuery: MemberSnapshotQuerying {
+    let database: CKDatabase
+    private var cursor: CKQueryOperation.Cursor?
+
+    init(database: CKDatabase) {
+        self.database = database
+    }
+
+    func firstPage(recordType: String, zoneID: CKRecordZone.ID) async throws -> MemberSnapshotQueryPage {
+        let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
+        let result = try await database.records(matching: query, inZoneWith: zoneID)
+        cursor = result.queryCursor
+        return MemberSnapshotQueryPage(
+            records: result.matchResults.map(\.1),
+            hasMore: cursor != nil
+        )
+    }
+
+    func nextPage() async throws -> MemberSnapshotQueryPage {
+        guard let cursor else {
+            return MemberSnapshotQueryPage(records: [], hasMore: false)
+        }
+        let result = try await database.records(continuingMatchFrom: cursor)
+        self.cursor = result.queryCursor
+        return MemberSnapshotQueryPage(
+            records: result.matchResults.map(\.1),
+            hasMore: self.cursor != nil
+        )
+    }
+}
+
+@MainActor
+protocol MemberSnapshotSyncing: AnyObject {
+    func publishMemberSnapshot(_ snapshot: MemberShareSnapshot, target: MemberSnapshotSyncTarget, localMemberID: String) async throws
+    func fetchMemberSnapshots(target: MemberSnapshotSyncTarget) async throws -> [MemberShareSnapshot]
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int
+}
+
+struct MemberSnapshotSyncTarget: Equatable {
+    let zoneName: String
+    let ownerUserRecordName: String?
+    let isShareOwner: Bool
+    let participantCount: Int
+
+    var isOwner: Bool { ownerUserRecordName == nil }
+
+    @MainActor
+    init(_ club: BookClub) {
+        zoneName = club.cloudZoneName
+        ownerUserRecordName = club.ownerUserRecordName
+        isShareOwner = club.isShareOwner
+        participantCount = club.shareParticipantCount
+    }
+}
+
 /// Owns the CKShare invite handshake AND the per-author snapshot read/write
 /// loop. The collaboration model:
 ///
@@ -28,7 +97,7 @@ import SwiftData
 /// `Features.cloudKitSharing` first. The singleton is fine to import — it only
 /// touches the container lazily.
 @MainActor
-final class CloudKitSharingService {
+final class CloudKitSharingService: MemberSnapshotSyncing {
     static let shared = CloudKitSharingService()
 
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "CloudKitSharing")
@@ -55,7 +124,13 @@ final class CloudKitSharingService {
     private var privateDB: CKDatabase { container.privateCloudDatabase }
     private var sharedDB: CKDatabase { container.sharedCloudDatabase }
 
-    private init() {}
+    private let queryFactory: @MainActor (CKDatabase) -> any MemberSnapshotQuerying
+
+    private init(
+        queryFactory: @escaping @MainActor (CKDatabase) -> any MemberSnapshotQuerying = { CloudKitMemberSnapshotQuery(database: $0) }
+    ) {
+        self.queryFactory = queryFactory
+    }
 
     // MARK: - Owner-side: create or fetch share
 
@@ -161,20 +236,32 @@ final class CloudKitSharingService {
         for club: BookClub,
         localMemberID: String
     ) async throws {
+        try await publishMemberSnapshot(
+            snapshot,
+            target: MemberSnapshotSyncTarget(club),
+            localMemberID: localMemberID
+        )
+    }
+
+    func publishMemberSnapshot(
+        _ snapshot: MemberShareSnapshot,
+        target: MemberSnapshotSyncTarget,
+        localMemberID: String
+    ) async throws {
         guard Features.cloudKitSharing else {
             throw SharingError.featureDisabled
         }
         guard !localMemberID.isEmpty else {
             throw SharingError.missingLocalMemberID
         }
-        let database = try database(for: club)
-        let zoneID = try zoneID(for: club)
+        let database = try database(for: target)
+        let zoneID = try zoneID(for: target)
         let rootRecord = try await rootRecord(zoneID: zoneID, in: database)
         // Owner-side branch that writes canonical ClubMeta into the shared
         // zone's root record — gate on isShareOwner so it only runs once a
         // CKShare actually exists, not for a never-shared local club.
-        if club.isShareOwner {
-            applyClubMeta(to: rootRecord, club: club)
+        if target.isShareOwner, let clubMeta = snapshot.clubMeta {
+            applyClubMeta(to: rootRecord, clubMeta: clubMeta)
             try await saveRootRecord(rootRecord, in: database)
         }
         let recordID = CKRecord.ID(recordName: Self.memberRecordPrefix + localMemberID, zoneID: zoneID)
@@ -191,24 +278,32 @@ final class CloudKitSharingService {
 
     /// Fetch every member snapshot record in the shared zone for `club`.
     func fetchMemberSnapshots(for club: BookClub) async throws -> [MemberShareSnapshot] {
+        try await fetchMemberSnapshots(target: MemberSnapshotSyncTarget(club))
+    }
+
+    func fetchMemberSnapshots(target: MemberSnapshotSyncTarget) async throws -> [MemberShareSnapshot] {
         guard Features.cloudKitSharing else {
             throw SharingError.featureDisabled
         }
-        let database = try database(for: club)
-        let zoneID = try zoneID(for: club)
+        let database = try database(for: target)
+        let zoneID = try zoneID(for: target)
         return try await fetchMemberSnapshots(zoneID: zoneID, in: database)
     }
 
     func fetchAcceptedParticipantCount(for club: BookClub) async throws -> Int {
+        try await fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget(club))
+    }
+
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int {
         guard Features.cloudKitSharing else {
             throw SharingError.featureDisabled
         }
-        let database = try database(for: club)
-        let zoneID = try zoneID(for: club)
+        let database = try database(for: target)
+        let zoneID = try zoneID(for: target)
         let root = try await rootRecord(zoneID: zoneID, in: database)
         guard let shareReference = root.share,
               let share = try await database.record(for: shareReference.recordID) as? CKShare else {
-            return max(1, club.shareParticipantCount)
+            return max(1, target.participantCount)
         }
         return Self.acceptedParticipantCount(in: share)
     }
@@ -228,9 +323,14 @@ final class CloudKitSharingService {
         guard club.isOwner else {
             throw SharingError.notOwner
         }
-        let zoneID = CKRecordZone.ID(zoneName: club.cloudZoneName)
+        try await deleteSharedZone(zoneName: club.cloudZoneName)
+    }
+
+    func deleteSharedZone(zoneName: String) async throws {
+        guard Features.cloudKitSharing else { return }
+        let zoneID = CKRecordZone.ID(zoneName: zoneName)
         _ = try await privateDB.modifyRecordZones(saving: [], deleting: [zoneID])
-        Self.logger.info("🗑 Deleted shared zone \(club.cloudZoneName, privacy: .public)")
+        Self.logger.info("🗑 Deleted shared zone \(zoneName, privacy: .public)")
     }
 
     /// Owner-side: delete a specific participant's `MemberShareSnapshot`
@@ -311,16 +411,26 @@ final class CloudKitSharingService {
         guard !club.isOwner else {
             throw SharingError.cannotLeaveOwnShare
         }
-        guard !localMemberID.isEmpty else {
-            throw SharingError.missingLocalMemberID
+        try await leaveShare(
+            zoneName: club.cloudZoneName,
+            ownerUserRecordName: club.ownerUserRecordName,
+            localMemberID: localMemberID
+        )
+    }
+
+    func leaveShare(zoneName: String, ownerUserRecordName: String?, localMemberID: String) async throws {
+        guard Features.cloudKitSharing else { return }
+        guard let ownerName = ownerUserRecordName?.trimmedOrNil else {
+            throw SharingError.missingOwnerUserRecordName
         }
-        let zoneID = try zoneID(for: club)
+        guard !localMemberID.isEmpty else { throw SharingError.missingLocalMemberID }
+        let zoneID = CKRecordZone.ID(zoneName: zoneName, ownerName: ownerName)
         let memberRecordID = CKRecord.ID(recordName: Self.memberRecordPrefix + localMemberID, zoneID: zoneID)
         // Best-effort: clear our own contribution record. The zone-delete
         // below is what actually removes us from the share.
         _ = try? await sharedDB.modifyRecords(saving: [], deleting: [memberRecordID])
         _ = try await sharedDB.modifyRecordZones(saving: [], deleting: [zoneID])
-        Self.logger.info("👋 Left share \(club.cloudZoneName, privacy: .public)")
+        Self.logger.info("👋 Left share \(zoneName, privacy: .public)")
     }
 
     // MARK: - Private helpers
@@ -346,6 +456,11 @@ final class CloudKitSharingService {
     private func applyClubMeta(to rootRecord: CKRecord, club: BookClub) {
         rootRecord[Self.clubNameKey] = club.name as CKRecordValue
         rootRecord[Self.clubCreatedAtKey] = club.createdAt as CKRecordValue
+    }
+
+    private func applyClubMeta(to rootRecord: CKRecord, clubMeta: MemberShareSnapshot.ClubMeta) {
+        rootRecord[Self.clubNameKey] = clubMeta.name as CKRecordValue
+        rootRecord[Self.clubCreatedAtKey] = clubMeta.createdAt as CKRecordValue
     }
 
     private func clubName(from record: CKRecord?) -> String? {
@@ -391,22 +506,27 @@ final class CloudKitSharingService {
     }
 
     private func fetchMemberSnapshots(zoneID: CKRecordZone.ID, in database: CKDatabase) async throws -> [MemberShareSnapshot] {
-        let query = CKQuery(recordType: Self.memberSnapshotRecordType, predicate: NSPredicate(value: true))
+        try await Self.fetchMemberSnapshots(
+            zoneID: zoneID,
+            query: queryFactory(database),
+            decode: decodeMemberSnapshot
+        )
+    }
+
+    static func fetchMemberSnapshots(
+        zoneID: CKRecordZone.ID,
+        query: any MemberSnapshotQuerying,
+        decode: (CKRecord) throws -> MemberShareSnapshot
+    ) async throws -> [MemberShareSnapshot] {
         var snapshots: [MemberShareSnapshot] = []
-        var cursor: CKQueryOperation.Cursor?
-        repeat {
-            let result: (matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?)
-            if let cursor {
-                result = try await database.records(continuingMatchFrom: cursor)
-            } else {
-                result = try await database.records(matching: query, inZoneWith: zoneID)
+        var page = try await query.firstPage(recordType: memberSnapshotRecordType, zoneID: zoneID)
+        while true {
+            for recordResult in page.records {
+                snapshots.append(try decode(recordResult.get()))
             }
-            for (_, recordResult) in result.matchResults {
-                let record = try recordResult.get()
-                snapshots.append(try decodeMemberSnapshot(from: record))
-            }
-            cursor = result.queryCursor
-        } while cursor != nil
+            guard page.hasMore else { break }
+            page = try await query.nextPage()
+        }
         return snapshots
     }
 
@@ -486,6 +606,22 @@ final class CloudKitSharingService {
             throw SharingError.missingOwnerUserRecordName
         }
         return CKRecordZone.ID(zoneName: club.cloudZoneName, ownerName: ownerName)
+    }
+
+    private func database(for target: MemberSnapshotSyncTarget) throws -> CKDatabase {
+        if target.isOwner { return privateDB }
+        guard target.ownerUserRecordName?.trimmedOrNil != nil else {
+            throw SharingError.missingOwnerUserRecordName
+        }
+        return sharedDB
+    }
+
+    private func zoneID(for target: MemberSnapshotSyncTarget) throws -> CKRecordZone.ID {
+        if target.isOwner { return CKRecordZone.ID(zoneName: target.zoneName) }
+        guard let ownerName = target.ownerUserRecordName?.trimmedOrNil else {
+            throw SharingError.missingOwnerUserRecordName
+        }
+        return CKRecordZone.ID(zoneName: target.zoneName, ownerName: ownerName)
     }
 
     private func saveRootRecord(_ rootRecord: CKRecord, in database: CKDatabase) async throws {

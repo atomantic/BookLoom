@@ -100,6 +100,59 @@ final class SharedImportInboxTests: XCTestCase {
         XCTAssertEqual(Set(entries.map(\.url)), Set(urls))
     }
 
+    #if os(macOS)
+    func test_separateProcessesContendingOnFileLockPreserveEveryEntry() async throws {
+        let fileURL = makeTemporaryQueueFileURL()
+        let directory = fileURL.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let helperURL = Bundle(for: Self.self).bundleURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("InboxProcessHelper")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: helperURL.path))
+
+        let lockReadyURL = directory.appendingPathComponent("lock-ready")
+        let releasePipe = Pipe()
+        let blocker = Process()
+        blocker.executableURL = helperURL
+        blocker.arguments = ["hold-lock", fileURL.path, lockReadyURL.path]
+        blocker.standardInput = releasePipe
+        try blocker.run()
+        try await waitForFile(lockReadyURL)
+
+        let urls = [
+            URL(string: "https://www.goodreads.com/book/show/process-1")!,
+            URL(string: "https://www.goodreads.com/book/show/process-2")!,
+        ]
+        var workers: [Process] = []
+        for (index, url) in urls.enumerated() {
+            let startedURL = directory.appendingPathComponent("worker-\(index)-started")
+            let process = Process()
+            process.executableURL = helperURL
+            process.arguments = ["enqueue", fileURL.path, url.absoluteString, startedURL.path]
+            try process.run()
+            try await waitForFile(startedURL)
+            workers.append(process)
+        }
+
+        releasePipe.fileHandleForWriting.write(Data([1]))
+        releasePipe.fileHandleForWriting.closeFile()
+        try await waitForExit(blocker)
+        for worker in workers {
+            try await waitForExit(worker)
+        }
+
+        XCTAssertEqual(blocker.terminationStatus, 0)
+        XCTAssertTrue(workers.allSatisfy { $0.terminationStatus == 0 })
+        let entries = SharedImportInbox.peekAll(defaults: nil, fileURL: fileURL)
+        XCTAssertEqual(Set(entries.map(\.url)), Set(urls))
+    }
+    #endif
+
     func test_clearRemovesFileMirror() throws {
         let fileURL = makeTemporaryQueueFileURL()
         defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
@@ -215,4 +268,32 @@ final class SharedImportInboxTests: XCTestCase {
             .appendingPathComponent("SharedImportInboxTests-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent(SharedImportInbox.queueFileName, isDirectory: false)
     }
+
+    #if os(macOS)
+    private func waitForFile(_ url: URL) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !FileManager.default.fileExists(atPath: url.path) {
+            guard ContinuousClock.now < deadline else { throw InboxWaitError.timeout(url) }
+            await Task.yield()
+        }
+    }
+
+    private func waitForExit(_ process: Process) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while process.isRunning {
+            guard ContinuousClock.now < deadline else {
+                process.terminate()
+                throw InboxWaitError.processTimeout
+            }
+            await Task.yield()
+        }
+    }
+    #endif
 }
+
+#if os(macOS)
+private enum InboxWaitError: Error {
+    case timeout(URL)
+    case processTimeout
+}
+#endif

@@ -156,10 +156,21 @@ targets:
       - BookLoomTests
     dependencies:
       - target: BookLoom_macOS
+      - target: InboxProcessHelper
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.BookLoom.tests
         GENERATE_INFOPLIST_FILE: YES
+
+  InboxProcessHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - InboxProcessHelper
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.shadowpuppet.BookLoom.InboxProcessHelper
 
   BookLoomShareExtension:
     type: app-extension
