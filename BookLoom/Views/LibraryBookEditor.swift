@@ -4,8 +4,7 @@ import SwiftUI
 /// Shared edit logic for a single `LibraryBook`, used by both the iOS
 /// (`MobileLibraryBookDetailView`) and macOS (`LibraryBookDetailView`) detail
 /// screens. Both platforms previously carried byte-identical copies of the
-/// seven `Binding` factories, the price parsing/formatting, and the field-clear
-/// mutators below.
+/// seven `Binding` factories and the field-clear mutators below.
 ///
 /// This is a value type wrapping the book; it does **not** persist. Each detail
 /// view owns its own save semantics (the platforms differ in exactly when they
@@ -98,22 +97,19 @@ struct LibraryBookEditor: @unchecked Sendable {
     /// Parses `priceText` into `book.purchasePriceCents`. Leaves the book
     /// unchanged when the text is non-empty but unparseable. Does not save.
     func applyPrice(from priceText: String) {
-        let trimmed = priceText.trimmed
-        guard !trimmed.isEmpty else {
+        switch CurrencyTextCodec.parse(priceText, currencyCode: book.purchaseCurrencyCode) {
+        case .empty:
             book.purchasePriceCents = nil
-            return
+        case .cents(let cents):
+            book.purchasePriceCents = cents
+        case .invalid:
+            break
         }
-        let normalized = trimmed
-            .replacingOccurrences(of: "$", with: "")
-            .replacingOccurrences(of: ",", with: "")
-        guard let value = Double(normalized) else { return }
-        book.purchasePriceCents = Int((value * 100).rounded())
     }
 
     /// The editable price string for a book, formatted to two decimals.
     static func priceText(for book: LibraryBook) -> String {
-        guard let cents = book.purchasePriceCents else { return "" }
-        return String(format: "%.2f", Double(cents) / 100)
+        CurrencyTextCodec.editableText(for: book.purchasePriceCents)
     }
 
     // MARK: - Field mutators (no save)

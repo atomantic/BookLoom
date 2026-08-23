@@ -61,13 +61,8 @@ struct AddBookDraft {
     var trimmedTitle: String { title.trimmed }
 
     var priceCents: Int? {
-        let trimmed = priceText.trimmed
-        guard !trimmed.isEmpty else { return nil }
-        let normalized = trimmed
-            .replacingOccurrences(of: "$", with: "")
-            .replacingOccurrences(of: ",", with: "")
-        guard let value = Double(normalized) else { return nil }
-        return Int((value * 100).rounded())
+        guard case .cents(let cents) = CurrencyTextCodec.parse(priceText) else { return nil }
+        return cents
     }
 
     mutating func apply(_ candidate: BookMetadataCandidate) {
