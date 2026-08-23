@@ -266,7 +266,12 @@ struct MobileLibraryBookDetailView: View {
 
     private var purchaseCard: some View {
         MobileBookEditCard(title: "Purchase", systemImage: "creditcard.fill") {
-            BookLoomCompactTextField("Paid", text: $priceText, placeholder: "$0.00", keyboard: .decimalPad)
+            BookLoomCompactTextField(
+                "Paid",
+                text: $priceText,
+                placeholder: CurrencyTextCodec.editableText(for: 0),
+                keyboard: .decimalPad
+            )
             BookLoomCompactTextField("Purchased from", text: $book.purchaseSource)
 
             if hasPurchaseDetails {

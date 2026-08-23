@@ -50,9 +50,14 @@ final class CurrencyTextCodecTests: XCTestCase {
     func test_parseUsesCurrencySpecificDecimalSeparator() {
         let locale = Locale(identifier: "pt_CV")
         let formatted = CurrencyTextCodec.displayText(for: 123_456, currencyCode: "CVE", locale: locale)
+        let editable = CurrencyTextCodec.editableText(for: 123_456, locale: locale)
 
         XCTAssertEqual(
             CurrencyTextCodec.parse(formatted, locale: locale, currencyCode: "CVE"),
+            .cents(123_456)
+        )
+        XCTAssertEqual(
+            CurrencyTextCodec.parse(editable, locale: locale, currencyCode: "CVE"),
             .cents(123_456)
         )
     }

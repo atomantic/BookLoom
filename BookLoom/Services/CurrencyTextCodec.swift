@@ -101,6 +101,9 @@ enum CurrencyTextCodec {
         let decimalSeparator = formatter.currencyDecimalSeparator
             ?? formatter.decimalSeparator
             ?? "."
+        let acceptedDecimalSeparators = Set(
+            [decimalSeparator, formatter.decimalSeparator].compactMap { $0 }
+        )
         let groupingSeparator = formatter.currencyGroupingSeparator
             ?? formatter.groupingSeparator
             ?? ","
@@ -108,8 +111,9 @@ enum CurrencyTextCodec {
         for character in value {
             if let digit = character.wholeNumberValue {
                 numeric.append(String(digit))
-            } else if String(character) == decimalSeparator
-                        || String(character) == groupingSeparator
+            } else if acceptedDecimalSeparators.contains(String(character)) {
+                numeric.append(decimalSeparator)
+            } else if String(character) == groupingSeparator
                         || character == "+"
                         || character == "-" {
                 numeric.append(character)
