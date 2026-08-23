@@ -122,7 +122,7 @@ final class SharedImportInboxTests: XCTestCase {
         blocker.arguments = ["hold-lock", fileURL.path, lockReadyURL.path]
         blocker.standardInput = releasePipe
         try blocker.run()
-        await waitForFile(lockReadyURL)
+        try await waitForFile(lockReadyURL)
 
         let urls = [
             URL(string: "https://www.goodreads.com/book/show/process-1")!,
@@ -135,7 +135,7 @@ final class SharedImportInboxTests: XCTestCase {
             process.executableURL = helperURL
             process.arguments = ["enqueue", fileURL.path, url.absoluteString, startedURL.path]
             try process.run()
-            await waitForFile(startedURL)
+            try await waitForFile(startedURL)
             workers.append(process)
         }
 
@@ -268,10 +268,18 @@ final class SharedImportInboxTests: XCTestCase {
     }
 
     #if os(macOS)
-    private func waitForFile(_ url: URL) async {
+    private func waitForFile(_ url: URL) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
         while !FileManager.default.fileExists(atPath: url.path) {
+            guard ContinuousClock.now < deadline else { throw InboxWaitError.timeout(url) }
             await Task.yield()
         }
     }
     #endif
 }
+
+#if os(macOS)
+private enum InboxWaitError: Error {
+    case timeout(URL)
+}
+#endif

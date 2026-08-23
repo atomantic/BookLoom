@@ -52,7 +52,7 @@ final class DeterministicFailureSeamTests: XCTestCase {
         }
     }
 
-    func test_refreshRequestsCoalesceAndNeverOverlap() async {
+    func test_refreshRequestsCoalesceAndNeverOverlap() async throws {
         let coordinator = CloudRefreshCoordinator()
         let gate = ManualGate()
         var events: [String] = []
@@ -69,7 +69,7 @@ final class DeterministicFailureSeamTests: XCTestCase {
                 activeCount -= 1
             }
         }
-        await waitUntil { events == ["first-start"] }
+        try await waitUntil { events == ["first-start"] }
 
         await coordinator.request {
             activeCount += 1
@@ -103,7 +103,7 @@ final class DeterministicFailureSeamTests: XCTestCase {
             service: service,
             isEnabled: true
         )
-        await waitUntil { service.published.count == 1 }
+        try await waitUntil { service.published.count == 1 }
 
         club.name = "Newest"
         SharedClubSync.publishIfNeeded(
@@ -120,6 +120,35 @@ final class DeterministicFailureSeamTests: XCTestCase {
         XCTAssertEqual(service.maximumActivePublishes, 1)
         XCTAssertEqual(service.published.count, 2)
         XCTAssertEqual(service.published.last?.clubMeta?.name, "Newest")
+    }
+
+    func test_publishCompletionDoesNotTouchClubDeletedWhileRequestWasInFlight() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let club = BookClub(name: "Delete during publish")
+        club.shareIsActive = true
+        club.creatorMemberID = "local"
+        context.insert(club)
+        try context.save()
+        let zoneName = club.cloudZoneName
+        let service = ControlledSnapshotService()
+
+        SharedClubSync.publishIfNeeded(
+            club,
+            context: context,
+            localMemberID: "local",
+            localMemberName: "Reader",
+            service: service,
+            isEnabled: true
+        )
+        try await waitUntil { service.published.count == 1 }
+
+        context.delete(club)
+        try context.save()
+        service.releaseFirstPublish()
+        await SharedClubSync.waitForPendingPublishes(zoneName: zoneName)
+
+        XCTAssertTrue(try context.fetch(FetchDescriptor<BookClub>()).isEmpty)
     }
 
     func test_persistentBootstrapFailureSelectsOnlyRecoveryPresentation() {
@@ -183,7 +212,9 @@ final class DeterministicFailureSeamTests: XCTestCase {
     func test_successfulResetDeletesClubCascadesAndIndependentLibraryRoots() async throws {
         let container = try makeContainer()
         let context = container.mainContext
-        context.insert(BookClub(name: "Delete"))
+        let club = BookClub(name: "Delete")
+        club.cloudZoneName = "BookClub-Reset"
+        context.insert(club)
         context.insert(LibraryBook(title: "Independent root"))
         try context.save()
         let identity = StubIdentity(name: "Reader", memberID: "old-id")
@@ -200,6 +231,7 @@ final class DeterministicFailureSeamTests: XCTestCase {
         XCTAssertEqual(identity.name, "")
         XCTAssertNotEqual(identity.memberID, "old-id")
         XCTAssertEqual(effects.callCount, 3)
+        XCTAssertEqual(effects.cleanupTargets.map(\.zoneName), ["BookClub-Reset"])
     }
 
     private func makeContainer() throws -> ModelContainer {
@@ -207,8 +239,10 @@ final class DeterministicFailureSeamTests: XCTestCase {
         return try ModelContainer(for: BookLoomApp.appSchema, configurations: [configuration])
     }
 
-    private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async {
+    private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
         while !predicate() {
+            guard ContinuousClock.now < deadline else { throw TestFailure.timeout }
             await Task.yield()
         }
     }
@@ -216,6 +250,7 @@ final class DeterministicFailureSeamTests: XCTestCase {
 
 private enum TestFailure: Error, Equatable {
     case expected
+    case timeout
 }
 
 @MainActor
@@ -338,10 +373,14 @@ private final class StubResetStore: DataResetStore {
 @MainActor
 private final class ResetEffectsRecorder {
     private(set) var callCount = 0
+    private(set) var cleanupTargets: [ClubCleanupTarget] = []
 
     var sideEffects: DataResetSideEffects {
         DataResetSideEffects(
-            cleanupCloudKit: { [weak self] _, _ in self?.callCount += 1 },
+            cleanupCloudKit: { [weak self] targets, _ in
+                self?.cleanupTargets = targets
+                self?.callCount += 1
+            },
             purgeCaches: { [weak self] in self?.callCount += 1 },
             clearDefaults: { [weak self] in self?.callCount += 1 }
         )

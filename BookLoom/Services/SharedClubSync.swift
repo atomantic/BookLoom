@@ -200,6 +200,8 @@ enum SharedClubSync {
     private struct PublishRequest {
         let club: BookClub
         let context: ModelContext
+        let zoneName: String
+        let clubName: String
         let localMemberID: String
         let localMemberName: String
         let service: any MemberSnapshotSyncing
@@ -256,6 +258,8 @@ enum SharedClubSync {
         queuedPublishes[zoneName] = PublishRequest(
             club: club,
             context: context,
+            zoneName: zoneName,
+            clubName: club.name,
             localMemberID: localMemberID,
             localMemberName: localMemberName,
             service: service
@@ -278,6 +282,7 @@ enum SharedClubSync {
         do {
             if club.isShareOwner,
                let acceptedCount = try? await request.service.fetchAcceptedParticipantCount(for: club),
+               club.modelContext != nil,
                acceptedCount != club.shareParticipantCount {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(request.context, club: club, what: "participant-count update")
@@ -294,15 +299,19 @@ enum SharedClubSync {
                 for: club,
                 localMemberID: request.localMemberID
             )
+            guard club.modelContext != nil else {
+                queuedPublishes.removeValue(forKey: request.zoneName)
+                return
+            }
             // Record completion only after CloudKit accepted this serialized
             // publish; a stale/failed operation must not advance sync state.
             club.lastSharedSnapshotAt = snapshot.capturedAt
             guard saveOrLog(request.context, club: club, what: "snapshot timestamp") else { return }
-            SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
-            logger.info("Published member snapshot for \(club.name, privacy: .private) by \(request.localMemberName, privacy: .private)")
+            SharedClubSyncStatus.shared.clearFailure(zoneName: request.zoneName)
+            logger.info("Published member snapshot for \(request.clubName, privacy: .private) by \(request.localMemberName, privacy: .private)")
         } catch {
             let description = CloudKitErrorDescriber.describe(error)
-            SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .publish, error: error)
+            SharedClubSyncStatus.shared.recordFailure(zoneName: request.zoneName, operation: .publish, error: error)
             logger.error("Member snapshot publish failed: \(description, privacy: .public)")
         }
     }
@@ -324,8 +333,11 @@ enum SharedClubSync {
             if CKZoneAvailability.classify(error) == .zoneRemoved {
                 // The owner has deleted the club, or we've been removed from
                 // the share. Drop the orphan local row so the UI clears.
-                logger.info("Shared zone for \(club.name, privacy: .private) is gone — removing local club")
-                SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
+                let zoneName = club.cloudZoneName
+                let clubName = club.name
+                logger.info("Shared zone for \(clubName, privacy: .private) is gone — removing local club")
+                SharedClubSyncStatus.shared.clearFailure(zoneName: zoneName)
+                queuedPublishes.removeValue(forKey: zoneName)
                 context.delete(club)
                 saveOrLog(context, club: club, what: "orphan-club delete")
             } else {
@@ -428,25 +440,47 @@ enum SharedClubSync {
     /// user has asked for it to go away, and the most common failure mode
     /// here is "zone already deleted" which is the desired end state anyway.
     static func cleanupBeforeDelete(_ club: BookClub, localMemberID: String) async {
-        let zoneName = club.cloudZoneName
-        SharedClubSyncStatus.shared.clearFailure(zoneName: zoneName)
-        StatusOverrideStore.clear(forZone: zoneName)
-        SubmissionDetailsOverrideStore.clear(forZone: zoneName)
-        SubmissionDeletionStore.clear(forZone: zoneName)
+        await cleanupBeforeDelete(ClubCleanupTarget(club), localMemberID: localMemberID)
+    }
 
-        guard Features.cloudKitSharing, club.shareIsActive else { return }
+    static func cleanupBeforeDelete(_ target: ClubCleanupTarget, localMemberID: String) async {
+        SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
+        StatusOverrideStore.clear(forZone: target.zoneName)
+        SubmissionDetailsOverrideStore.clear(forZone: target.zoneName)
+        SubmissionDeletionStore.clear(forZone: target.zoneName)
+        queuedPublishes.removeValue(forKey: target.zoneName)
+
+        guard Features.cloudKitSharing, target.shareIsActive else { return }
         do {
-            if club.isOwner {
-                try await CloudKitSharingService.shared.deleteSharedZone(for: club)
+            if target.isOwner {
+                try await CloudKitSharingService.shared.deleteSharedZone(zoneName: target.zoneName)
             } else {
                 try await CloudKitSharingService.shared.leaveShare(
-                    for: club,
+                    zoneName: target.zoneName,
+                    ownerUserRecordName: target.ownerUserRecordName,
                     localMemberID: localMemberID
                 )
             }
         } catch {
-            logger.error("CloudKit cleanup for \(club.name, privacy: .private) failed (continuing with local delete): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+            logger.error("CloudKit cleanup for \(target.clubName, privacy: .private) failed (continuing with local delete): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
         }
+    }
+}
+
+struct ClubCleanupTarget: Equatable {
+    let zoneName: String
+    let clubName: String
+    let ownerUserRecordName: String?
+    let shareIsActive: Bool
+
+    var isOwner: Bool { ownerUserRecordName == nil }
+
+    @MainActor
+    init(_ club: BookClub) {
+        zoneName = club.cloudZoneName
+        clubName = club.name
+        ownerUserRecordName = club.ownerUserRecordName
+        shareIsActive = club.shareIsActive
     }
 }
 

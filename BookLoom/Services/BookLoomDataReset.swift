@@ -38,15 +38,15 @@ extension MemberIdentity: ResetMemberIdentity {}
 
 @MainActor
 struct DataResetSideEffects {
-    var cleanupCloudKit: @MainActor ([BookClub], String) async -> Void
+    var cleanupCloudKit: @MainActor ([ClubCleanupTarget], String) async -> Void
     var purgeCaches: @MainActor () async -> Void
     var clearDefaults: @MainActor () -> Void
 
     static var production: DataResetSideEffects {
         DataResetSideEffects(
-            cleanupCloudKit: { clubs, memberID in
-                for club in clubs {
-                    await SharedClubSync.cleanupBeforeDelete(club, localMemberID: memberID)
+            cleanupCloudKit: { targets, memberID in
+                for target in targets {
+                    await SharedClubSync.cleanupBeforeDelete(target, localMemberID: memberID)
                 }
             },
             purgeCaches: {
@@ -107,6 +107,10 @@ enum BookLoomDataReset {
         // durable store and every external side effect untouched.
         let clubs = try store.fetchClubs()
         let libraryBooks = try store.fetchLibraryBooks()
+        // SwiftData models become invalid once their deletion is committed.
+        // Capture the value-only CloudKit cleanup inputs while they are live,
+        // but defer the actual side effect until after the save succeeds.
+        let cleanupTargets = clubs.map(ClubCleanupTarget.init)
 
         // Delete every SwiftData row. Cascade rules drop submissions,
         //    ratings, notes, prompts, polls, votes, meetings, and RSVPs.
@@ -122,7 +126,7 @@ enum BookLoomDataReset {
 
         // The save above is the commit point. External cleanup and identity
         // replacement happen only after durable deletion succeeds.
-        await sideEffects.cleanupCloudKit(clubs, memberID)
+        await sideEffects.cleanupCloudKit(cleanupTargets, memberID)
         await sideEffects.purgeCaches()
         sideEffects.clearDefaults()
 

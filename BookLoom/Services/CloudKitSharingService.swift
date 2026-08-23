@@ -286,9 +286,14 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
         guard club.isOwner else {
             throw SharingError.notOwner
         }
-        let zoneID = CKRecordZone.ID(zoneName: club.cloudZoneName)
+        try await deleteSharedZone(zoneName: club.cloudZoneName)
+    }
+
+    func deleteSharedZone(zoneName: String) async throws {
+        guard Features.cloudKitSharing else { return }
+        let zoneID = CKRecordZone.ID(zoneName: zoneName)
         _ = try await privateDB.modifyRecordZones(saving: [], deleting: [zoneID])
-        Self.logger.info("🗑 Deleted shared zone \(club.cloudZoneName, privacy: .public)")
+        Self.logger.info("🗑 Deleted shared zone \(zoneName, privacy: .public)")
     }
 
     /// Owner-side: delete a specific participant's `MemberShareSnapshot`
@@ -369,16 +374,26 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
         guard !club.isOwner else {
             throw SharingError.cannotLeaveOwnShare
         }
-        guard !localMemberID.isEmpty else {
-            throw SharingError.missingLocalMemberID
+        try await leaveShare(
+            zoneName: club.cloudZoneName,
+            ownerUserRecordName: club.ownerUserRecordName,
+            localMemberID: localMemberID
+        )
+    }
+
+    func leaveShare(zoneName: String, ownerUserRecordName: String?, localMemberID: String) async throws {
+        guard Features.cloudKitSharing else { return }
+        guard let ownerName = ownerUserRecordName?.trimmedOrNil else {
+            throw SharingError.missingOwnerUserRecordName
         }
-        let zoneID = try zoneID(for: club)
+        guard !localMemberID.isEmpty else { throw SharingError.missingLocalMemberID }
+        let zoneID = CKRecordZone.ID(zoneName: zoneName, ownerName: ownerName)
         let memberRecordID = CKRecord.ID(recordName: Self.memberRecordPrefix + localMemberID, zoneID: zoneID)
         // Best-effort: clear our own contribution record. The zone-delete
         // below is what actually removes us from the share.
         _ = try? await sharedDB.modifyRecords(saving: [], deleting: [memberRecordID])
         _ = try await sharedDB.modifyRecordZones(saving: [], deleting: [zoneID])
-        Self.logger.info("👋 Left share \(club.cloudZoneName, privacy: .public)")
+        Self.logger.info("👋 Left share \(zoneName, privacy: .public)")
     }
 
     // MARK: - Private helpers
