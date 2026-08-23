@@ -10,6 +10,7 @@ enum CurrencyTextParseResult: Equatable {
 /// representation and formats that representation for library editing and display.
 enum CurrencyTextCodec {
     private static let displayFormatters = CurrencyDisplayFormatterStore()
+    private static let editableFormatters = CurrencyEditableFormatterStore()
 
     static func parse(
         _ text: String,
@@ -41,13 +42,7 @@ enum CurrencyTextCodec {
     /// Formats a price for an editable field without a currency symbol or grouping.
     static func editableText(for cents: Int?, locale: Locale = .current) -> String {
         guard let cents else { return "" }
-        let formatter = NumberFormatter()
-        formatter.locale = locale
-        formatter.numberStyle = .decimal
-        formatter.usesGroupingSeparator = false
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
-        return formatter.string(from: decimalNumber(for: cents))
+        return editableFormatters.string(from: decimalNumber(for: cents), locale: locale)
             ?? String(format: "%.2f", locale: locale, Double(cents) / 100)
     }
 
@@ -109,7 +104,7 @@ enum CurrencyTextCodec {
             ?? ","
         var numeric = ""
         for character in value {
-            if let digit = character.wholeNumberValue {
+            if let digit = decimalDigitValue(character) {
                 numeric.append(String(digit))
             } else if acceptedDecimalSeparators.contains(String(character)) {
                 numeric.append(decimalSeparator)
@@ -118,9 +113,7 @@ enum CurrencyTextCodec {
                         || character == "-" {
                 numeric.append(character)
             } else if character.unicodeScalars.allSatisfy({
-                CharacterSet.whitespacesAndNewlines.contains($0)
-                    || $0.properties.generalCategory == .currencySymbol
-                    || $0.properties.generalCategory == .format
+                $0.properties.generalCategory == .format
             }) {
                 continue
             } else {
@@ -194,6 +187,40 @@ enum CurrencyTextCodec {
 
     private static func decimalNumber(for cents: Int) -> NSDecimalNumber {
         NSDecimalNumber(value: cents).dividing(by: 100)
+    }
+
+    private static func decimalDigitValue(_ character: Character) -> Int? {
+        guard character.unicodeScalars.count == 1,
+              character.unicodeScalars.first?.properties.numericType == .decimal,
+              let value = character.wholeNumberValue,
+              (0...9).contains(value) else {
+            return nil
+        }
+        return value
+    }
+}
+
+private final class CurrencyEditableFormatterStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var formatters: [String: NumberFormatter] = [:]
+
+    func string(from number: NSNumber, locale: Locale) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        let formatter: NumberFormatter
+        if let cached = formatters[locale.identifier] {
+            formatter = cached
+        } else {
+            let newFormatter = NumberFormatter()
+            newFormatter.locale = locale
+            newFormatter.numberStyle = .decimal
+            newFormatter.usesGroupingSeparator = false
+            newFormatter.minimumFractionDigits = 2
+            newFormatter.maximumFractionDigits = 2
+            formatters[locale.identifier] = newFormatter
+            formatter = newFormatter
+        }
+        return formatter.string(from: number)
     }
 }
 

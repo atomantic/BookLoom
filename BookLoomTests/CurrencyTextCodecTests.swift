@@ -88,6 +88,10 @@ final class CurrencyTextCodecTests: XCTestCase {
         XCTAssertEqual(CurrencyTextCodec.parse("$12,34.56", locale: usLocale), .invalid)
         XCTAssertEqual(CurrencyTextCodec.parse("12.3.4", locale: usLocale), .invalid)
         XCTAssertEqual(CurrencyTextCodec.parse("--12.34", locale: usLocale), .invalid)
+        XCTAssertEqual(CurrencyTextCodec.parse("12²", locale: usLocale), .invalid)
+        XCTAssertEqual(CurrencyTextCodec.parse("€12.34", locale: usLocale, currencyCode: "USD"), .invalid)
+        XCTAssertEqual(CurrencyTextCodec.parse("1 2 3 4.56", locale: usLocale), .invalid)
+        XCTAssertEqual(CurrencyTextCodec.parse(String(repeating: "9", count: 100), locale: usLocale), .invalid)
     }
 
     func test_formattingPreservesStoredCentsAndPresentationStyles() {
@@ -96,6 +100,10 @@ final class CurrencyTextCodecTests: XCTestCase {
         XCTAssertEqual(
             CurrencyTextCodec.displayText(for: 123_456, currencyCode: "USD", locale: usLocale),
             "$1,234.56"
+        )
+        XCTAssertEqual(
+            CurrencyTextCodec.displayText(for: 123_456, currencyCode: "JPY", locale: usLocale),
+            "¥1,235"
         )
     }
 
@@ -109,5 +117,16 @@ final class CurrencyTextCodecTests: XCTestCase {
 
         editor.applyPrice(from: "")
         XCTAssertNil(book.purchasePriceCents)
+    }
+
+    func test_addDraftPreservesExistingPriceForInvalidText() {
+        let book = LibraryBook(title: "Piranesi")
+        book.purchasePriceCents = 2_800
+        var draft = AddBookDraft()
+        draft.priceText = "28.OO"
+
+        draft.applyLibraryFields(to: book, preservingExistingTracking: true)
+
+        XCTAssertEqual(book.purchasePriceCents, 2_800)
     }
 }

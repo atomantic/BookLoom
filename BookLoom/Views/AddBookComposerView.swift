@@ -60,11 +60,6 @@ struct AddBookDraft {
 
     var trimmedTitle: String { title.trimmed }
 
-    var priceCents: Int? {
-        guard case .cents(let cents) = CurrencyTextCodec.parse(priceText) else { return nil }
-        return cents
-    }
-
     mutating func apply(_ candidate: BookMetadataCandidate) {
         title = candidate.title
         author = candidate.authorLine
@@ -123,7 +118,16 @@ struct AddBookDraft {
             book.loanDueDate = nil
         }
         book.purchaseSource = purchaseSource.trimmed
-        book.purchasePriceCents = priceCents
+        switch CurrencyTextCodec.parse(priceText, currencyCode: book.purchaseCurrencyCode) {
+        case .empty:
+            book.purchasePriceCents = nil
+        case .cents(let cents):
+            book.purchasePriceCents = cents
+        case .invalid:
+            if !preservingExistingTracking {
+                book.purchasePriceCents = nil
+            }
+        }
         book.updatedAt = .now
     }
 
