@@ -300,37 +300,42 @@ private struct CopyInviteLinkView: View {
     @Binding var didCopy: Bool
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "link.circle.fill")
-                .font(.largeTitle)
-                .foregroundStyle(.tint)
-            Text("Invite to \"\(clubName)\"")
-                .font(.title3.bold())
-                .multilineTextAlignment(.center)
-            Text(url.absoluteString)
-                .font(.callout.monospaced())
-                .multilineTextAlignment(.center)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity)
-                .bookLoomCard(padding: 12)
-                .padding(.horizontal, 20)
-            Button {
-                Pasteboard.copy(url.absoluteString)
-                didCopy = true
-            } label: {
-                Label(
-                    didCopy ? "Copied!" : "Copy Invite Link",
-                    systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc"
-                )
+        ScrollView {
+            VStack(spacing: 14) {
+                Image(systemName: "link.circle.fill")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.tint)
+                Text("Invite to \"\(clubName)\"")
+                    .font(.title3.bold())
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(url.absoluteString)
+                    .font(.callout.monospaced())
+                    .multilineTextAlignment(.center)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity)
+                    .bookLoomCard(padding: 12)
+                Button {
+                    Pasteboard.copy(url.absoluteString)
+                    didCopy = true
+                } label: {
+                    Label(
+                        didCopy ? "Copied!" : "Copy Invite Link",
+                        systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc"
+                    )
+                }
+                .buttonStyle(BookLoomProminentButtonStyle())
+                Text("Send this link via Messages, email, or any channel. The recipient must be signed into iCloud and have BookLoom installed. Only the club creator can revoke or re-issue links.")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(BookLoomProminentButtonStyle())
-            Text("Send this link via Messages, email, or any channel. The recipient must be signed into iCloud and have BookLoom installed. Only the club creator can revoke or re-issue links.")
-                .font(.footnote)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 20)
+            .padding(.horizontal, 20)
+            .padding(.vertical)
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity)
         }
-        .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .bookLoomScreenBackground()
     }
