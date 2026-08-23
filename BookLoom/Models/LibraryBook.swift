@@ -155,7 +155,10 @@ extension LibraryBook {
         if isOnLoan { badges.append("On loan") }
         if hasGiftPlan { badges.append("Gift planned") }
         if let purchasePriceCents, purchasePriceCents > 0 {
-            badges.append(Self.currencyFormatter(currencyCode: purchaseCurrencyCode).string(from: NSNumber(value: Double(purchasePriceCents) / 100)) ?? "\(purchasePriceCents / 100)")
+            badges.append(CurrencyTextCodec.displayText(
+                for: purchasePriceCents,
+                currencyCode: purchaseCurrencyCode
+            ))
         }
         return badges
     }
@@ -262,26 +265,4 @@ extension LibraryBook {
         return externalProvider == submission.externalProvider && externalID == submission.externalID
     }
 
-    // NumberFormatter creation is expensive and `ownershipBadges` runs inside
-    // SwiftUI `body` once per rendered row, so cache one formatter per currency
-    // code. The lock keeps the shared cache safe if accessed off the main thread.
-    private static let formatterCacheLock = NSLock()
-    nonisolated(unsafe) private static var formatterCache: [String: NumberFormatter] = [:]
-
-    // Returns a shared, cached formatter — callers must only read from it
-    // (e.g. `string(from:)`) and must not mutate its properties, since the
-    // instance is reused across every row using the same currency code.
-    static func currencyFormatter(currencyCode: String) -> NumberFormatter {
-        let code = currencyCode.trimmedOrNil ?? "USD"
-        formatterCacheLock.lock()
-        defer { formatterCacheLock.unlock() }
-        if let cached = formatterCache[code] {
-            return cached
-        }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = code
-        formatterCache[code] = formatter
-        return formatter
-    }
 }

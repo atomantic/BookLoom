@@ -98,7 +98,11 @@ struct LibraryBookDetailView: View {
                 StarRatingPicker(stars: editor.rating)
             }
             propertyButtonGrid
-            TextField("Paid", text: $priceText, prompt: Text("$0.00"))
+            TextField(
+                "Paid",
+                text: $priceText,
+                prompt: Text(CurrencyTextCodec.editableText(for: 0))
+            )
             TextField("Purchased from", text: $book.purchaseSource)
             Button {
                 clearPrice()
