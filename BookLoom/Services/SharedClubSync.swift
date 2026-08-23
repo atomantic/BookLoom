@@ -399,7 +399,7 @@ enum SharedClubSync {
 
         guard Features.cloudKitSharing, club.shareIsActive else { return }
         do {
-            if club.isShareOwner {
+            if club.isOwner {
                 try await CloudKitSharingService.shared.deleteSharedZone(for: club)
             } else {
                 try await CloudKitSharingService.shared.leaveShare(
@@ -521,7 +521,7 @@ enum ClubAdminService {
     /// retries on next open.
     static func backfillCreatorIfNeeded(_ club: BookClub, context: ModelContext, localMemberID: String) {
         guard club.creatorMemberID.isEmpty,
-              club.isShareOwner,
+              club.isOwner,
               !localMemberID.isEmpty
         else { return }
         club.creatorMemberID = localMemberID

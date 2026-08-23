@@ -225,7 +225,7 @@ final class CloudKitSharingService {
     /// other devices see a `zoneNotFound` on their next refresh.
     func deleteSharedZone(for club: BookClub) async throws {
         guard Features.cloudKitSharing else { return }
-        guard club.isShareOwner else {
+        guard club.isOwner else {
             throw SharingError.notOwner
         }
         let zoneID = CKRecordZone.ID(zoneName: club.cloudZoneName)
@@ -241,7 +241,7 @@ final class CloudKitSharingService {
     /// applied, and they're dropped from the share's participant list.
     func removeMemberSnapshot(for club: BookClub, memberID: String) async throws {
         guard Features.cloudKitSharing else { return }
-        guard club.isShareOwner else {
+        guard club.isOwner else {
             throw SharingError.notOwner
         }
         guard !memberID.isEmpty else {
@@ -308,7 +308,7 @@ final class CloudKitSharingService {
     /// the share's participant list without affecting the owner's data.
     func leaveShare(for club: BookClub, localMemberID: String) async throws {
         guard Features.cloudKitSharing else { return }
-        guard !club.isShareOwner else {
+        guard !club.isOwner else {
             throw SharingError.cannotLeaveOwnShare
         }
         guard !localMemberID.isEmpty else {
@@ -469,7 +469,7 @@ final class CloudKitSharingService {
     }
 
     private func database(for club: BookClub) throws -> CKDatabase {
-        if club.isShareOwner {
+        if club.isOwner {
             return privateDB
         }
         guard club.ownerUserRecordName?.trimmedOrNil != nil else {
@@ -479,7 +479,7 @@ final class CloudKitSharingService {
     }
 
     private func zoneID(for club: BookClub) throws -> CKRecordZone.ID {
-        if club.isShareOwner {
+        if club.isOwner {
             return CKRecordZone.ID(zoneName: club.cloudZoneName)
         }
         guard let ownerName = club.ownerUserRecordName?.trimmedOrNil else {
