@@ -92,8 +92,18 @@ enum CurrencyTextCodec {
         }
         value = value.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let decimalSeparator = formatter.decimalSeparator ?? "."
-        let groupingSeparator = formatter.groupingSeparator ?? ","
+        if let sign = value.first, sign == "+" || sign == "-" {
+            value = String(sign) + value.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let sign = value.last, sign == "+" || sign == "-" {
+            value = String(sign) + value.dropLast().trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let decimalSeparator = formatter.currencyDecimalSeparator
+            ?? formatter.decimalSeparator
+            ?? "."
+        let groupingSeparator = formatter.currencyGroupingSeparator
+            ?? formatter.groupingSeparator
+            ?? ","
         var numeric = ""
         for character in value {
             if let digit = character.wholeNumberValue {

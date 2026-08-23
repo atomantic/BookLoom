@@ -306,7 +306,12 @@ struct AddBookComposerView: View {
 
             DisclosureGroup("Purchase", isExpanded: $showingPurchaseDetails) {
                 VStack(spacing: 12) {
-                    BookLoomCompactTextField("Paid", text: $draft.priceText, placeholder: "$0.00", keyboard: .decimalPad)
+                    BookLoomCompactTextField(
+                        "Paid",
+                        text: $draft.priceText,
+                        placeholder: CurrencyTextCodec.editableText(for: 0),
+                        keyboard: .decimalPad
+                    )
                     BookLoomCompactTextField("Purchased from", text: $draft.purchaseSource)
                 }
                 .padding(.top, 12)
@@ -525,7 +530,11 @@ struct AddBookComposerView: View {
     private var purchaseCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: "Purchase")
-            TextField("Paid", text: $draft.priceText, prompt: Text("$0.00"))
+            TextField(
+                "Paid",
+                text: $draft.priceText,
+                prompt: Text(CurrencyTextCodec.editableText(for: 0))
+            )
             TextField("Purchased from", text: $draft.purchaseSource)
         }
         .bookLoomCard(padding: 12)

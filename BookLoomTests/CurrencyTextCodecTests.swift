@@ -47,10 +47,30 @@ final class CurrencyTextCodecTests: XCTestCase {
         )
     }
 
+    func test_parseUsesCurrencySpecificDecimalSeparator() {
+        let locale = Locale(identifier: "pt_CV")
+        let formatted = CurrencyTextCodec.displayText(for: 123_456, currencyCode: "CVE", locale: locale)
+
+        XCTAssertEqual(
+            CurrencyTextCodec.parse(formatted, locale: locale, currencyCode: "CVE"),
+            .cents(123_456)
+        )
+    }
+
     func test_parseAcceptsNegativeValues() {
         XCTAssertEqual(
             CurrencyTextCodec.parse("-$12.34", locale: usLocale, currencyCode: "USD"),
             .cents(-1_234)
+        )
+        let southAfricanLocale = Locale(identifier: "en_ZA")
+        let formatted = CurrencyTextCodec.displayText(
+            for: -123_456,
+            currencyCode: "ZAR",
+            locale: southAfricanLocale
+        )
+        XCTAssertEqual(
+            CurrencyTextCodec.parse(formatted, locale: southAfricanLocale, currencyCode: "ZAR"),
+            .cents(-123_456)
         )
     }
 
