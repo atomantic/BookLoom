@@ -151,6 +151,32 @@ final class DeterministicFailureSeamTests: XCTestCase {
         XCTAssertTrue(try context.fetch(FetchDescriptor<BookClub>()).isEmpty)
     }
 
+    func test_queuedPublishDoesNotReadClubDeletedBeforeTaskStarts() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let club = BookClub(name: "Delete before publish task")
+        club.shareIsActive = true
+        club.creatorMemberID = "local"
+        context.insert(club)
+        try context.save()
+        let zoneName = club.cloudZoneName
+        let service = ControlledSnapshotService()
+
+        SharedClubSync.publishIfNeeded(
+            club,
+            context: context,
+            localMemberID: "local",
+            localMemberName: "Reader",
+            service: service,
+            isEnabled: true
+        )
+        context.delete(club)
+        try context.save()
+        await SharedClubSync.waitForPendingPublishes(zoneName: zoneName)
+
+        XCTAssertTrue(service.published.isEmpty)
+    }
+
     func test_persistentBootstrapFailureSelectsOnlyRecoveryPresentation() {
         let factory = FailingPersistentContainerFactory()
 

@@ -141,8 +141,10 @@ final class SharedImportInboxTests: XCTestCase {
 
         releasePipe.fileHandleForWriting.write(Data([1]))
         releasePipe.fileHandleForWriting.closeFile()
-        blocker.waitUntilExit()
-        workers.forEach { $0.waitUntilExit() }
+        try await waitForExit(blocker)
+        for worker in workers {
+            try await waitForExit(worker)
+        }
 
         XCTAssertEqual(blocker.terminationStatus, 0)
         XCTAssertTrue(workers.allSatisfy { $0.terminationStatus == 0 })
@@ -275,11 +277,23 @@ final class SharedImportInboxTests: XCTestCase {
             await Task.yield()
         }
     }
+
+    private func waitForExit(_ process: Process) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while process.isRunning {
+            guard ContinuousClock.now < deadline else {
+                process.terminate()
+                throw InboxWaitError.processTimeout
+            }
+            await Task.yield()
+        }
+    }
     #endif
 }
 
 #if os(macOS)
 private enum InboxWaitError: Error {
     case timeout(URL)
+    case processTimeout
 }
 #endif

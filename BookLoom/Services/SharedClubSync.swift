@@ -279,6 +279,10 @@ enum SharedClubSync {
 
     private static func publish(_ request: PublishRequest) async {
         let club = request.club
+        guard club.modelContext != nil else {
+            queuedPublishes.removeValue(forKey: request.zoneName)
+            return
+        }
         do {
             if club.isShareOwner,
                let acceptedCount = try? await request.service.fetchAcceptedParticipantCount(for: club),
@@ -286,6 +290,10 @@ enum SharedClubSync {
                acceptedCount != club.shareParticipantCount {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(request.context, club: club, what: "participant-count update")
+            }
+            guard club.modelContext != nil else {
+                queuedPublishes.removeValue(forKey: request.zoneName)
+                return
             }
             let snapshot = MemberShareSnapshotStore.snapshot(
                 from: club,
