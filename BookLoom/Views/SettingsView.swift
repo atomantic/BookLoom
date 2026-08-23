@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var nameSaved: Bool = false
     @State private var showingResetConfirmation: Bool = false
     @State private var isResetting: Bool = false
+    @State private var resetErrorMessage: String?
 
     var body: some View {
         ScrollView {
@@ -83,6 +84,14 @@ struct SettingsView: View {
         } message: {
             Text("Removes every club, proposal, rating, note, meeting, and poll on this device. Owned clubs are deleted from iCloud; clubs you joined are left. This can't be undone.")
         }
+        .alert("Couldn't delete all data", isPresented: Binding(
+            get: { resetErrorMessage != nil },
+            set: { if !$0 { resetErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { resetErrorMessage = nil }
+        } message: {
+            Text(resetErrorMessage ?? "Your data was not fully deleted. Please try again.")
+        }
         .onAppear {
             draftName = memberIdentity.name
         }
@@ -112,9 +121,13 @@ struct SettingsView: View {
         guard !isResetting else { return }
         isResetting = true
         Task { @MainActor in
-            await BookLoomDataReset.resetAllData(context: context, memberIdentity: memberIdentity)
-            draftName = ""
-            replayWelcome = true
+            do {
+                try await BookLoomDataReset.resetAllData(context: context, memberIdentity: memberIdentity)
+                draftName = ""
+                replayWelcome = true
+            } catch {
+                resetErrorMessage = "BookLoom couldn't finish deleting your saved data. Nothing else will be cleared until the local database can be saved. Try again, then restart the app if the problem continues.\n\n\(error.localizedDescription)"
+            }
             isResetting = false
         }
     }

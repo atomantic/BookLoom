@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Queue for handing book imports to the main app. On iOS this is App
 /// Group-backed because the Share Extension enqueues Goodreads URLs from a
@@ -9,6 +10,7 @@ import Foundation
 /// of overwriting each other when the user shares several books before
 /// returning to BookLoom.
 enum SharedImportInbox {
+    private static let processLock = NSLock()
     static let appGroupID = "group.net.shadowpuppet.PlotLoom"
     static let queueKey = "pendingGoodreadsImportQueue"
     static let queueFileName = "pendingGoodreadsImportQueue.json"
@@ -65,13 +67,15 @@ enum SharedImportInbox {
         fileURL: URL? = nil
     ) {
         let resolvedFileURL = resolvedQueueFileURL(defaults: defaults, explicitFileURL: fileURL)
-        var queue = readQueue(defaults: defaults, now: now, fileURL: resolvedFileURL)
-        if queue.contains(where: { $0.url == url }) { return }
-        queue.append(PendingImport(url: url, enqueuedAt: now))
-        if queue.count > maxQueueLength {
-            queue.removeFirst(queue.count - maxQueueLength)
+        withQueueLock(fileURL: resolvedFileURL) {
+            var queue = readQueue(defaults: defaults, now: now, fileURL: resolvedFileURL)
+            if queue.contains(where: { $0.url == url }) { return }
+            queue.append(PendingImport(url: url, enqueuedAt: now))
+            if queue.count > maxQueueLength {
+                queue.removeFirst(queue.count - maxQueueLength)
+            }
+            writeQueue(queue, defaults: defaults, fileURL: resolvedFileURL)
         }
-        writeQueue(queue, defaults: defaults, fileURL: resolvedFileURL)
     }
 
     /// Returns all pending imports oldest-first (insertion order).
@@ -81,7 +85,10 @@ enum SharedImportInbox {
         now: Date = .now,
         fileURL: URL? = nil
     ) -> [PendingImport] {
-        readQueue(defaults: defaults, now: now, fileURL: resolvedQueueFileURL(defaults: defaults, explicitFileURL: fileURL))
+        let resolvedFileURL = resolvedQueueFileURL(defaults: defaults, explicitFileURL: fileURL)
+        return withQueueLock(fileURL: resolvedFileURL) {
+            readQueue(defaults: defaults, now: now, fileURL: resolvedFileURL)
+        }
     }
 
     static func peekNext(
@@ -99,9 +106,11 @@ enum SharedImportInbox {
         fileURL: URL? = nil
     ) {
         let resolvedFileURL = resolvedQueueFileURL(defaults: defaults, explicitFileURL: fileURL)
-        var queue = readQueue(defaults: defaults, now: now, fileURL: resolvedFileURL)
-        queue.removeAll { $0.url == url }
-        writeQueue(queue, defaults: defaults, fileURL: resolvedFileURL)
+        withQueueLock(fileURL: resolvedFileURL) {
+            var queue = readQueue(defaults: defaults, now: now, fileURL: resolvedFileURL)
+            queue.removeAll { $0.url == url }
+            writeQueue(queue, defaults: defaults, fileURL: resolvedFileURL)
+        }
     }
 
     /// Mutates the queue entry for `url` in place. Returns `true` if a matching
@@ -117,11 +126,13 @@ enum SharedImportInbox {
         mutation: (inout PendingImport) -> Void
     ) -> Bool {
         let resolvedFileURL = resolvedQueueFileURL(defaults: defaults, explicitFileURL: fileURL)
-        var queue = readQueue(defaults: defaults, now: now, fileURL: resolvedFileURL)
-        guard let index = queue.firstIndex(where: { $0.url == url }) else { return false }
-        mutation(&queue[index])
-        writeQueue(queue, defaults: defaults, fileURL: resolvedFileURL)
-        return true
+        return withQueueLock(fileURL: resolvedFileURL) {
+            var queue = readQueue(defaults: defaults, now: now, fileURL: resolvedFileURL)
+            guard let index = queue.firstIndex(where: { $0.url == url }) else { return false }
+            mutation(&queue[index])
+            writeQueue(queue, defaults: defaults, fileURL: resolvedFileURL)
+            return true
+        }
     }
 
     /// Replace the entire queue in a single read-modify-write. Used by
@@ -133,17 +144,21 @@ enum SharedImportInbox {
         fileURL: URL? = nil
     ) {
         let resolvedFileURL = resolvedQueueFileURL(defaults: defaults, explicitFileURL: fileURL)
-        writeQueue(entries, defaults: defaults, fileURL: resolvedFileURL)
+        withQueueLock(fileURL: resolvedFileURL) {
+            writeQueue(entries, defaults: defaults, fileURL: resolvedFileURL)
+        }
     }
 
     static func clear(defaults: UserDefaults? = SharedImportInbox.defaults, fileURL: URL? = nil) {
         let resolvedFileURL = resolvedQueueFileURL(defaults: defaults, explicitFileURL: fileURL)
-        defaults?.removeObject(forKey: queueKey)
-        defaults?.removeObject(forKey: legacyURLKey)
-        defaults?.removeObject(forKey: legacyTimestampKey)
-        defaults?.synchronize()
-        if let resolvedFileURL {
-            try? FileManager.default.removeItem(at: resolvedFileURL)
+        withQueueLock(fileURL: resolvedFileURL) {
+            defaults?.removeObject(forKey: queueKey)
+            defaults?.removeObject(forKey: legacyURLKey)
+            defaults?.removeObject(forKey: legacyTimestampKey)
+            defaults?.synchronize()
+            if let resolvedFileURL {
+                try? FileManager.default.removeItem(at: resolvedFileURL)
+            }
         }
     }
 
@@ -163,6 +178,39 @@ enum SharedImportInbox {
     }
 
     // MARK: - Internal
+
+    /// Serializes the complete read-modify-write transaction. The App Group
+    /// file lock coordinates the main app and share extension processes;
+    /// defaults-only/test queues still receive equivalent in-process safety.
+    private static func withQueueLock<T>(fileURL: URL?, operation: () -> T) -> T {
+        guard let fileURL else {
+            processLock.lock()
+            defer { processLock.unlock() }
+            return operation()
+        }
+
+        let lockURL = fileURL.appendingPathExtension("lock")
+        try? FileManager.default.createDirectory(
+            at: lockURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let descriptor = open(lockURL.path, O_CREAT | O_RDWR, 0o600)
+        guard descriptor >= 0 else {
+            // The in-process lock still prevents local corruption if the App
+            // Group filesystem is temporarily unavailable.
+            processLock.lock()
+            defer { processLock.unlock() }
+            return operation()
+        }
+        defer { close(descriptor) }
+        guard flock(descriptor, LOCK_EX) == 0 else {
+            processLock.lock()
+            defer { processLock.unlock() }
+            return operation()
+        }
+        defer { flock(descriptor, LOCK_UN) }
+        return operation()
+    }
 
     /// Decodes the queue, migrates a legacy single-URL entry into it, prunes
     /// aged entries, and writes back if anything changed. The "read" mutates

@@ -76,6 +76,30 @@ final class SharedImportInboxTests: XCTestCase {
         XCTAssertEqual(SharedImportInbox.pendingCount(defaults: defaults, fileURL: fileURL), 1)
     }
 
+    func test_concurrentFileBackedEnqueuesPreserveEveryDistinctURL() throws {
+        let fileURL = makeTemporaryQueueFileURL()
+        defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+        let urls = (1...40).map { URL(string: "https://www.goodreads.com/book/show/\($0)")! }
+        let base = Date(timeIntervalSinceReferenceDate: 800_000_000)
+
+        DispatchQueue.concurrentPerform(iterations: urls.count) { index in
+            SharedImportInbox.enqueue(
+                urls[index],
+                defaults: nil,
+                now: base.addingTimeInterval(TimeInterval(index)),
+                fileURL: fileURL
+            )
+        }
+
+        let entries = SharedImportInbox.peekAll(
+            defaults: nil,
+            now: base.addingTimeInterval(60),
+            fileURL: fileURL
+        )
+        XCTAssertEqual(entries.count, urls.count)
+        XCTAssertEqual(Set(entries.map(\.url)), Set(urls))
+    }
+
     func test_clearRemovesFileMirror() throws {
         let fileURL = makeTemporaryQueueFileURL()
         defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }

@@ -170,18 +170,30 @@ extension ModelContext {
 @MainActor
 enum SharedClubSync {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "SharedClubSync")
+    private struct PublishRequest {
+        let club: BookClub
+        let context: ModelContext
+        let localMemberID: String
+        let localMemberName: String
+    }
+
+    private static var queuedPublishes: [String: PublishRequest] = [:]
+    private static var activePublishes: [String: Task<Void, Never>] = [:]
 
     /// Persist a context mutation made on the publish/refresh path, logging and
     /// recording a sync failure on error instead of swallowing it. These saves
     /// only carry bookkeeping (snapshot timestamps, participant counts, orphan
     /// deletes); a failure means in-memory state has diverged from disk, so we
     /// surface it via `SharedClubSyncStatus` rather than letting it vanish.
-    private static func saveOrLog(_ context: ModelContext, club: BookClub, what: String) {
+    @discardableResult
+    private static func saveOrLog(_ context: ModelContext, club: BookClub, what: String) -> Bool {
         do {
             try context.save()
+            return true
         } catch {
             SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .publish, error: error)
             logger.error("Failed to save \(what, privacy: .public) for shared club: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
@@ -210,31 +222,57 @@ enum SharedClubSync {
         if CoverDataCleanup.clearPersistedCoverData(in: club) {
             saveOrLog(context, club: club, what: "cover-data cleanup")
         }
-        Task { @MainActor in
-            do {
-                if club.isShareOwner,
-                   let acceptedCount = try? await CloudKitSharingService.shared.fetchAcceptedParticipantCount(for: club),
-                   acceptedCount != club.shareParticipantCount {
-                    club.shareParticipantCount = acceptedCount
-                    saveOrLog(context, club: club, what: "participant-count update")
-                }
-                let snapshot = MemberShareSnapshotStore.snapshot(
-                    from: club,
-                    context: context,
-                    authorMemberID: localMemberID,
-                    authorName: localMemberName,
-                    includeClubMeta: club.isShareOwner
-                )
-                club.lastSharedSnapshotAt = snapshot.capturedAt
-                saveOrLog(context, club: club, what: "snapshot timestamp")
-                try await CloudKitSharingService.shared.publishMemberSnapshot(snapshot, for: club, localMemberID: localMemberID)
-                SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
-                logger.info("Published member snapshot for \(club.name, privacy: .private) by \(localMemberName, privacy: .private)")
-            } catch {
-                let description = CloudKitErrorDescriber.describe(error)
-                SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .publish, error: error)
-                logger.error("Member snapshot publish failed: \(description, privacy: .public)")
+        let zoneName = club.cloudZoneName
+        queuedPublishes[zoneName] = PublishRequest(
+            club: club,
+            context: context,
+            localMemberID: localMemberID,
+            localMemberName: localMemberName
+        )
+        guard activePublishes[zoneName] == nil else { return }
+        activePublishes[zoneName] = Task { @MainActor in
+            await drainPublishes(for: zoneName)
+        }
+    }
+
+    private static func drainPublishes(for zoneName: String) async {
+        while let request = queuedPublishes.removeValue(forKey: zoneName) {
+            await publish(request)
+        }
+        activePublishes.removeValue(forKey: zoneName)
+    }
+
+    private static func publish(_ request: PublishRequest) async {
+        let club = request.club
+        do {
+            if club.isShareOwner,
+               let acceptedCount = try? await CloudKitSharingService.shared.fetchAcceptedParticipantCount(for: club),
+               acceptedCount != club.shareParticipantCount {
+                club.shareParticipantCount = acceptedCount
+                saveOrLog(request.context, club: club, what: "participant-count update")
             }
+            let snapshot = MemberShareSnapshotStore.snapshot(
+                from: club,
+                context: request.context,
+                authorMemberID: request.localMemberID,
+                authorName: request.localMemberName,
+                includeClubMeta: club.isShareOwner
+            )
+            try await CloudKitSharingService.shared.publishMemberSnapshot(
+                snapshot,
+                for: club,
+                localMemberID: request.localMemberID
+            )
+            // Record completion only after CloudKit accepted this serialized
+            // publish; a stale/failed operation must not advance sync state.
+            club.lastSharedSnapshotAt = snapshot.capturedAt
+            guard saveOrLog(request.context, club: club, what: "snapshot timestamp") else { return }
+            SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
+            logger.info("Published member snapshot for \(club.name, privacy: .private) by \(request.localMemberName, privacy: .private)")
+        } catch {
+            let description = CloudKitErrorDescriber.describe(error)
+            SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .publish, error: error)
+            logger.error("Member snapshot publish failed: \(description, privacy: .public)")
         }
     }
 
