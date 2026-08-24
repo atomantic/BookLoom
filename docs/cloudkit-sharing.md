@@ -5,7 +5,8 @@
 - The app has the iCloud container entitlement for `iCloud.net.shadowpuppet.PlotLoom`.
 - `CKSharingSupported` is generated into the built iOS and macOS `Info.plist` files from `project.yml`.
 - `CloudKitSharingService` creates a `BookClubShareRoot` record in a custom zone, saves a `CKShare`, and returns the created share even on OS builds that omit the `CKShare` from `modifyRecords` save results.
-- The share root carries a versioned JSON `snapshotData` payload for the club graph. Accepted invites import the full club state instead of creating only a placeholder `BookClub`.
+- Each member snapshot is authenticated against CloudKit's immutable creator and latest-modifier system fields before merge. The owner publishes the canonical member-ID-to-CloudKit-user binding map in schema v4 `ClubMeta`.
+- New shares are private, read/write collaborations. iOS and macOS use the system CloudKit sharing UI to add specified recipients; BookLoom no longer distributes a reusable public write link.
 - Cover images are not stored in the share snapshot or SwiftData for new writes. Shared snapshots carry cover URLs, and `BookCoverCache` stores fetched image bytes in each device's local Caches directory.
 - Shared clubs refresh from the share root on club list/home load and publish a new snapshot after proposals, ratings, notes, prompts, meetings, RSVPs, polls, votes, and winner promotion changes.
 - `InviteLoadError` maps common CloudKit auth and network failures into user-actionable states.
@@ -23,6 +24,15 @@
    - Recipient accepts the invite from the share link.
    - Owner and recipient each add a proposal, rating, and note.
    - Both devices verify the same club data after relaunch.
+
+## Authorization and legacy migration
+
+- A snapshot record is accepted only when its record name matches its claimed `authorMemberID`, its CloudKit creator and latest modifier are the same user, and the owner-published binding maps that member ID to that CloudKit user.
+- Every member-scoped identity inside the payload must match the authenticated snapshot author. Club metadata, the admin list, and removals are accepted only from the CloudKit share owner. Rename proposals additionally require the authenticated author to be the creator or an owner-designated admin.
+- Status, details, and deletion overrides remain collaborative operations available to any verified member, but actor fields cannot impersonate another member.
+- On an existing schema v1-v3 share, the provenance-verified owner snapshot is the trust root. When the owner next syncs, BookLoom enrolls intact legacy member records whose creator and latest modifier agree, then republishes the binding map. Other participants ignore unbound records until that owner migration arrives.
+- Existing public shares are not converted silently. The owner sees an explicit migration screen explaining that public participants will be disconnected and need new specified-recipient invitations. Their already-published records remain in the owner's shared hierarchy.
+- CloudKit removes public participants when a share's `publicPermission` changes to `.none`; this is why migration requires confirmation and re-invitation. New shares start at `.none` and never enter this legacy state.
 
 ## Important Validation Boundary
 

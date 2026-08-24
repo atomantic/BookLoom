@@ -55,15 +55,24 @@ enum ShareAcceptance {
             joined.shareIsActive = true
             joined.shareParticipantCount = max(1, info.participantCount)
 
-            if !info.memberSnapshots.isEmpty {
+            let authorization = MemberSnapshotAuthorization.authorize(
+                info.memberSnapshotBatch,
+                existingBindings: joined.memberIdentityBindings,
+                isShareOwner: false
+            )
+            joined.memberIdentityBindings = authorization.bindings
+
+            if authorization.isTrustEstablished,
+               authorization.rejectedRecordNames.isEmpty,
+               !authorization.snapshots.isEmpty {
                 try MemberShareSnapshotStore.merge(
-                    snapshots: info.memberSnapshots,
+                    snapshots: authorization.snapshots,
                     into: joined,
                     context: context,
                     localMemberID: localMemberID
                 )
                 try context.save()
-                logger.info("✅ Accepted share — imported '\(joined.name, privacy: .public)' from \(info.memberSnapshots.count) member snapshot(s)")
+                logger.info("✅ Accepted share — imported '\(joined.name, privacy: .public)' from \(authorization.snapshots.count) authenticated member snapshot(s)")
             } else {
                 try context.save()
                 logger.info("✅ Accepted share — joined '\(info.title, privacy: .public)' (zone \(info.zoneName, privacy: .public))")

@@ -33,9 +33,11 @@ extension MemberShareSnapshotStore {
                 let nextRemoved = Set(removed.filter { !$0.isEmpty })
                 if club.removedMemberIDs != nextRemoved { club.removedMemberIDs = nextRemoved }
             }
-            if let url = meta.inviteURLString?.trimmedOrNil, club.inviteURLString != url {
-                club.inviteURLString = url
-            }
+            // Identity bindings are applied only by
+            // `MemberSnapshotAuthorization`, after CloudKit provenance has
+            // authenticated this metadata. Applying decoded values here would
+            // also overwrite bindings the owner just enrolled during legacy
+            // migration before they can be republished.
         }
 
         let validProposers = club.adminMemberIDs.union(

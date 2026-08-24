@@ -27,6 +27,7 @@ struct ClubManagementView: View {
         let canManageClub = club.isAdmin(memberID: localID)
         let canDelete = club.isCreator(memberID: localID)
         let canManageAdmins = canDelete
+        let canInvite = club.isOwner
 
         List {
             Section {
@@ -75,7 +76,7 @@ struct ClubManagementView: View {
             .bookLoomListRow()
 
             Section {
-                if canManageClub {
+                if canInvite {
                     Button {
                         showingInvite = true
                     } label: {
@@ -86,14 +87,12 @@ struct ClubManagementView: View {
                     .buttonStyle(BookLoomProminentButtonStyle())
                     .bookLoomActionWidth()
 
-                    PermissionsHelpRow(
-                        message: canManageAdmins
-                            ? "Toggle admin to grant a member the same management abilities you have. The club creator is always admin and cannot be demoted. Remove a member to drop their books, ratings, and notes from the club and revoke their iCloud access."
-                            : "You're an admin: you can rename the club and share the invite link. Only the creator can promote other admins, remove members, or delete the club."
-                    )
+                    PermissionsHelpRow(message: "Toggle admin to let a member rename the club. The creator remains the only person who can privately invite or remove members, manage admins, or delete the club.")
                 } else {
                     PermissionsHelpRow(
-                        message: "The creator and other admins manage invitations and admin permissions."
+                        message: canManageClub
+                            ? "You're an admin and can rename the club. Private invitations, member removal, and admin permissions remain creator-only."
+                            : "The creator manages private invitations, member removal, and admin permissions."
                     )
                 }
             } header: {

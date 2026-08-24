@@ -144,7 +144,10 @@ enum MemberShareSnapshotStore {
                 creatorMemberID: club.creatorMemberID.trimmedOrNil,
                 adminMemberIDs: club.adminMemberIDs.sorted(),
                 removedMemberIDs: club.removedMemberIDs.sorted(),
-                inviteURLString: club.inviteURLString.trimmedOrNil,
+                memberIdentityBindings: club.memberIdentityBindings
+                    .map { MemberShareSnapshot.MemberIdentityBinding(memberID: $0.key, cloudKitUserRecordName: $0.value) }
+                    .sorted { $0.memberID < $1.memberID },
+                inviteURLString: nil,
                 nameUpdatedAt: club.nameUpdatedAt > .distantPast ? club.nameUpdatedAt : nil
             )
             : nil

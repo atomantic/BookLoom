@@ -49,6 +49,12 @@ final class BookClub {
     /// re-applying any future re-published snapshot from a removed member.
     var removedMemberIDsJSON: String = "[]"
 
+    /// Owner-authorized mapping from BookLoom member IDs to CloudKit user
+    /// record names. CloudKit provenance authenticates the Apple ID that
+    /// created a snapshot record; this map binds that identity to the
+    /// per-device member ID used inside BookLoom payloads.
+    var memberIdentityBindingsJSON: String = "{}"
+
     var inviteURLString: String = ""
 
     /// Tie-break clock for `name`: the latest of the owner's `ClubMeta` rename
@@ -159,6 +165,22 @@ final class BookClub {
     var removedMemberIDs: Set<String> {
         get { decodeIDSet(removedMemberIDsJSON) }
         set { removedMemberIDsJSON = encodeIDSet(newValue) }
+    }
+
+    var memberIdentityBindings: [String: String] {
+        get {
+            guard let data = memberIdentityBindingsJSON.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([String: String].self, from: data) else {
+                return [:]
+            }
+            return decoded.filter { !$0.key.isEmpty && !$0.value.isEmpty }
+        }
+        set {
+            let sanitized = newValue.filter { !$0.key.isEmpty && !$0.value.isEmpty }
+            guard let data = try? JSONEncoder().encode(sanitized),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            memberIdentityBindingsJSON = json
+        }
     }
 
     /// Owner-only operation. Marks `memberID` as removed, demotes them out of

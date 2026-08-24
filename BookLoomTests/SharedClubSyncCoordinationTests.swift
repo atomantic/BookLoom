@@ -15,15 +15,8 @@ import XCTest
 ///   * `saveAndPublish`'s synchronous cover-data cleanup + save, which runs
 ///     regardless of the feature flag;
 ///   * `synchronizeSharedClubs`'s fetch-then-iterate over the local store;
+///   * authorization failures abort before local merge mutations;
 ///   * `SharedClubSyncStatus`'s record/clear/dedup coordination.
-///
-/// BLOCKED (needs a production seam): the success/failure branches inside the
-/// publish/refresh `Task` — participant-count reconcile, snapshot publish,
-/// fetch+merge, orphan-zone delete — all dispatch through
-/// `CloudKitSharingService.shared`, a concrete singleton. Verifying those
-/// branches requires injecting a `CloudKitSharingService` protocol stub
-/// (issue #47's "longer-term" suggestion). That injection is a production
-/// change and is intentionally NOT made here.
 @MainActor
 final class SharedClubSyncCoordinationTests: XCTestCase {
     // Status assertions key on each club's random `cloudZoneName` (a fresh
@@ -101,6 +94,34 @@ final class SharedClubSyncCoordinationTests: XCTestCase {
 
         let surviving = try context.fetch(FetchDescriptor<BookClub>())
         XCTAssertEqual(surviving.map(\.persistentModelID), [clubID])
+    }
+
+    /// A missing provenance-verified owner snapshot must fail the whole batch
+    /// before the canonical merge can interpret the absence of remote rows as
+    /// deletions. This protects existing content when an attacker overwrites,
+    /// hides, or replaces records in a legacy public share.
+    func test_refreshIfNeeded_rejectsUntrustedBatchWithoutMutatingLocalRows() async throws {
+        let context = try makeContext()
+        let club = makeActiveSharedClub()
+        let submission = BookSubmission(title: "Keep Me", coverURL: "")
+        context.insert(club)
+        context.insert(submission)
+        club.addSubmission(submission)
+        try context.save()
+        let submissionID = submission.persistentModelID
+
+        await SharedClubSync.refreshIfNeeded(
+            club,
+            context: context,
+            localMemberID: "member-eve",
+            localMemberName: "Eve",
+            service: UntrustedBatchSnapshotService(),
+            isEnabled: true
+        )
+
+        let surviving = try context.fetch(FetchDescriptor<BookSubmission>())
+        XCTAssertEqual(surviving.map(\.persistentModelID), [submissionID])
+        XCTAssertNotNil(SharedClubSyncStatus.shared.issue(for: club))
     }
 
     // MARK: - saveAndPublish synchronous half
@@ -239,4 +260,18 @@ final class SharedClubSyncCoordinationTests: XCTestCase {
         )
         return ModelContext(container)
     }
+}
+
+private final class UntrustedBatchSnapshotService: MemberSnapshotSyncing {
+    func publishMemberSnapshot(
+        _ snapshot: MemberShareSnapshot,
+        target: MemberSnapshotSyncTarget,
+        localMemberID: String
+    ) async throws {}
+
+    func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
+        MemberSnapshotBatch(ownerUserRecordName: "owner-user", snapshots: [])
+    }
+
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 0 }
 }

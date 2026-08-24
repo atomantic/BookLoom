@@ -505,7 +505,7 @@ final class SharedClubSnapshotTests: XCTestCase {
         XCTAssertEqual(club.name, "Sunday Pages", "Non-admin members should not be able to rename via nameProposal")
     }
 
-    func test_inviteURLPropagatesThroughClubMeta() throws {
+    func test_legacyInviteURLIsNotPropagatedThroughClubMeta() throws {
         let context = try makeContext()
         let club = BookClub(name: "Sunday Pages")
         club.cloudZoneName = "BookClub-Test"
@@ -539,7 +539,7 @@ final class SharedClubSnapshotTests: XCTestCase {
             localMemberID: "member-lena"
         )
 
-        XCTAssertEqual(club.inviteURLString, inviteURL, "Invite URL from owner's clubMeta should land on member device for admins to copy")
+        XCTAssertTrue(club.inviteURLString.isEmpty, "Reusable legacy invite URLs must not propagate to member devices")
     }
 
     func test_coverDataCleanupRemovesPersistedImageBytes() throws {

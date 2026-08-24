@@ -6,7 +6,7 @@ import XCTest
 /// shared CloudKit zone. A decode failure on a record written by an older or
 /// newer client silently drops that member's contributions, so these tests
 /// pin both encode→decode losslessness and tolerant decoding of legacy
-/// payloads that predate the optional fields added in schemaVersion 3.
+/// payloads that predate the optional fields added through schemaVersion 4.
 final class MemberShareSnapshotCodableTests: XCTestCase {
     private func makeFullyPopulatedSnapshot() -> MemberShareSnapshot {
         MemberShareSnapshot(
@@ -22,6 +22,10 @@ final class MemberShareSnapshotCodableTests: XCTestCase {
                 creatorMemberID: "member-alex",
                 adminMemberIDs: ["member-alex", "member-lena"],
                 removedMemberIDs: ["member-kim"],
+                memberIdentityBindings: [
+                    .init(memberID: "member-alex", cloudKitUserRecordName: "cloud-alex"),
+                    .init(memberID: "member-lena", cloudKitUserRecordName: "cloud-lena")
+                ],
                 inviteURLString: "https://www.icloud.com/share/0Aabcdef",
                 nameUpdatedAt: Date(timeIntervalSince1970: 2_000)
             ),
@@ -173,6 +177,7 @@ final class MemberShareSnapshotCodableTests: XCTestCase {
         // Spot-check the nested optionals survived rather than relying solely on
         // the synthesized Equatable conformance.
         XCTAssertEqual(decoded.clubMeta?.adminMemberIDs, ["member-alex", "member-lena"])
+        XCTAssertEqual(decoded.clubMeta?.memberIdentityBindings?.count, 2)
         XCTAssertEqual(decoded.detailsOverrides?.count, 1)
         XCTAssertEqual(decoded.deletedSubmissions?.first?.submissionSelectionID, "sel-old")
         XCTAssertEqual(decoded.nameProposal?.name, "Sunday Mornings")
@@ -286,6 +291,7 @@ final class MemberShareSnapshotCodableTests: XCTestCase {
         XCTAssertNil(meta.creatorMemberID)
         XCTAssertNil(meta.adminMemberIDs)
         XCTAssertNil(meta.removedMemberIDs)
+        XCTAssertNil(meta.memberIdentityBindings)
         XCTAssertNil(meta.inviteURLString)
         XCTAssertNil(meta.nameUpdatedAt)
     }

@@ -334,9 +334,9 @@ enum SharedClubSync {
         guard isEnabled, club.shareIsActive else { return }
         let target = MemberSnapshotSyncTarget(club)
 
-        let remoteSnapshots: [MemberShareSnapshot]
+        let remoteBatch: MemberSnapshotBatch
         do {
-            remoteSnapshots = try await service.fetchMemberSnapshots(target: target)
+            remoteBatch = try await service.fetchMemberSnapshotBatch(target: target)
         } catch {
             if CKZoneAvailability.classify(error) == .zoneRemoved {
                 // The owner has deleted the club, or we've been removed from
@@ -359,6 +359,27 @@ enum SharedClubSync {
         SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
 
         do {
+            let authorization = MemberSnapshotAuthorization.authorize(
+                remoteBatch,
+                existingBindings: club.memberIdentityBindings,
+                isShareOwner: club.isShareOwner
+            )
+            guard authorization.isTrustEstablished,
+                  authorization.rejectedRecordNames.isEmpty else {
+                let error = MemberSnapshotAuthorizationError(
+                    rejectedRecordNames: authorization.rejectedRecordNames
+                )
+                SharedClubSyncStatus.shared.recordFailure(
+                    zoneName: club.cloudZoneName,
+                    operation: .refresh,
+                    error: error
+                )
+                logger.error("Snapshot authorization failed for \(club.name, privacy: .private): \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            if club.memberIdentityBindings != authorization.bindings {
+                club.memberIdentityBindings = authorization.bindings
+            }
             // Always include the local member's freshly-built snapshot in the
             // merge so locally-authored items survive the additive reconcile
             // even if they haven't reached CloudKit yet.
@@ -369,7 +390,7 @@ enum SharedClubSync {
                 authorName: localMemberName,
                 includeClubMeta: club.isShareOwner
             )
-            let merged = remoteSnapshots.filter { $0.authorMemberID != localMemberID } + [localSnapshot]
+            let merged = authorization.snapshots.filter { $0.authorMemberID != localMemberID } + [localSnapshot]
             try MemberShareSnapshotStore.merge(
                 snapshots: merged,
                 into: club,
@@ -382,7 +403,18 @@ enum SharedClubSync {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(context, club: club, what: "participant-count update")
             }
-            logger.info("Merged \(remoteSnapshots.count) member snapshot(s) for \(club.name, privacy: .private)")
+            if authorization.bindingsChanged, club.isShareOwner {
+                saveOrLog(context, club: club, what: "member identity bindings")
+                publishIfNeeded(
+                    club,
+                    context: context,
+                    localMemberID: localMemberID,
+                    localMemberName: localMemberName,
+                    service: service,
+                    isEnabled: isEnabled
+                )
+            }
+            logger.info("Merged \(authorization.snapshots.count) authenticated member snapshot(s) for \(club.name, privacy: .private)")
         } catch {
             // A merge failure now includes a failed local fetch/save (see
             // MemberShareSnapshotStore.merge). Surface it instead of silently
