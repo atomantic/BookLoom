@@ -60,7 +60,10 @@ enum ShareAcceptance {
                 existingBindings: joined.memberIdentityBindings,
                 isShareOwner: false
             )
-            joined.memberIdentityBindings = authorization.bindings
+            joined.memberIdentityBindings = bindingsAfterAuthorization(
+                existing: joined.memberIdentityBindings,
+                authorization: authorization
+            )
 
             if authorization.isTrustEstablished,
                authorization.rejectedRecordNames.isEmpty,
@@ -102,5 +105,15 @@ enum ShareAcceptance {
         } catch {
             logger.error("⚠️ Share accept failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// A just-accepted share may not have materialized its owner record yet.
+    /// Preserve a previously authenticated map on re-accept instead of replacing
+    /// it with the fail-closed empty result from an inconclusive fetch.
+    static func bindingsAfterAuthorization(
+        existing: [String: String],
+        authorization: MemberSnapshotAuthorizationResult
+    ) -> [String: String] {
+        authorization.isTrustEstablished ? authorization.bindings : existing
     }
 }

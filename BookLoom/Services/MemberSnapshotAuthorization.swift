@@ -83,7 +83,14 @@ enum MemberSnapshotAuthorization {
         // participants' devices. Normalize the owner binding to the trusted
         // CKShare owner identity visible to this fetch instead of persisting a
         // cross-database alias comparison.
-        bindings[ownerMemberID] = batch.ownerUserRecordName
+        // One Apple ID can use BookLoom on multiple devices, each with its own
+        // local member ID and owner-authored snapshot. Bind every structurally
+        // valid record created by the CKShare owner, not only whichever owner
+        // metadata envelope won the version comparison.
+        for envelope in structurallyValid
+        where envelope.provenance.creatorUserRecordName == batch.ownerUserRecordName {
+            bindings[envelope.snapshot.authorMemberID] = batch.ownerUserRecordName
+        }
 
         // A participant who has left (or was removed directly in the system
         // sharing UI) no longer has authority in this share. Retire all of that
@@ -99,14 +106,17 @@ enum MemberSnapshotAuthorization {
         let creatorMemberID = ownerMeta.creatorMemberID?.trimmedOrNil ?? ownerMemberID
         let authorizedAdmins = Set(ownerMeta.adminMemberIDs ?? []).union([creatorMemberID])
         let removedMemberIDs = Set(ownerMeta.removedMemberIDs ?? [])
-        let protectedMemberIDs = authorizedAdmins.union(removedMemberIDs).union(bindings.keys)
+        let protectedMemberIDs = removedMemberIDs.union(bindings.keys)
 
         if isShareOwner {
             // The owner adding a specified CloudKit participant is the approval
             // handshake for that Apple ID. Only a pristine record from an
-            // approved participant may introduce a fresh, non-privileged local
-            // member ID; existing/admin/removed IDs can never be claimed.
-            for envelope in structurallyValid where envelope.snapshot.clubMeta == nil {
+            // approved participant may introduce a fresh local member ID.
+            // Existing and removed IDs can never be claimed; an admin ID from
+            // legacy owner metadata is enrolled here because the trusted owner
+            // both granted that role and admitted this CloudKit participant.
+            for envelope in structurallyValid
+            where envelope.provenance.creatorUserRecordName != batch.ownerUserRecordName {
                 let memberID = envelope.snapshot.authorMemberID
                 guard bindings[memberID] == nil,
                       !protectedMemberIDs.contains(memberID),

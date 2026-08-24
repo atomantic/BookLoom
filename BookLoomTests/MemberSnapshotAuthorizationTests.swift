@@ -152,6 +152,53 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-owner", "member-sam"])
     }
 
+    func test_ownerMigratesApprovedLegacyAdminBinding() {
+        let admin = MemberShareSnapshot(
+            authorMemberID: "member-admin",
+            authorName: "Admin",
+            nameProposal: .init(
+                name: "Admin Rename",
+                updatedAt: .now,
+                proposerMemberID: "member-admin"
+            )
+        )
+        let batch = batch(
+            ownerBindings: nil,
+            admins: ["member-admin"],
+            additional: [envelope(admin, creator: "cloud-admin")]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(batch, existingBindings: [:], isShareOwner: true)
+
+        XCTAssertEqual(result.bindings["member-admin"], "cloud-admin")
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-admin", "member-owner"])
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+    }
+
+    func test_bindsEveryStructurallyValidOwnerDeviceSnapshot() {
+        let secondOwnerDevice = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 2_000),
+            authorMemberID: "member-owner-device-2",
+            authorName: "Owner",
+            clubMeta: ownerMeta(
+                creatorMemberID: "member-owner",
+                removedMemberIDs: [],
+                bindings: nil
+            )
+        )
+        let batch = batch(
+            ownerBindings: nil,
+            additional: [envelope(secondOwnerDevice, creator: "cloud-owner")]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(batch, existingBindings: [:], isShareOwner: false)
+
+        XCTAssertEqual(result.bindings["member-owner"], "cloud-owner")
+        XCTAssertEqual(result.bindings["member-owner-device-2"], "cloud-owner")
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-owner", "member-owner-device-2"])
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+    }
+
     func test_ownerIgnoresLegacySnapshotFromUnapprovedCloudKitParticipant() {
         let candidate = envelope(memberSnapshot("member-sam"), creator: "cloud-sam")
         let original = batch(ownerBindings: nil, additional: [candidate])
@@ -312,6 +359,28 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         XCTAssertFalse(result.isTrustEstablished)
         XCTAssertTrue(result.snapshots.isEmpty)
         XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-sam"])
+    }
+
+    func test_shareReacceptPreservesBindingsWhenOwnerTrustIsNotYetAvailable() {
+        let member = envelope(memberSnapshot("member-sam"), creator: "cloud-sam")
+        let batch = MemberSnapshotBatch(
+            ownerUserRecordName: "cloud-owner",
+            approvedParticipantUserRecordNames: ["cloud-owner", "cloud-sam"],
+            snapshots: [member]
+        )
+        let authorization = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: [:],
+            isShareOwner: false
+        )
+        let existing = ["member-owner": "cloud-owner", "member-sam": "cloud-sam"]
+
+        let resolved = ShareAcceptance.bindingsAfterAuthorization(
+            existing: existing,
+            authorization: authorization
+        )
+
+        XCTAssertEqual(resolved, existing)
     }
 
     private func batch(
