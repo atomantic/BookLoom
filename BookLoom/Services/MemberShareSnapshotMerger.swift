@@ -12,10 +12,10 @@ extension MemberShareSnapshotStore {
         localMemberID: String
     ) throws {
         // 1. Apply club meta from the snapshot that carries it (the owner's).
-        if let meta = snapshots
+        if let metaSnapshot = snapshots
             .filter({ $0.clubMeta != nil })
-            .max(by: { clubMetaVersion($0) < clubMetaVersion($1) })?
-            .clubMeta {
+            .max(by: { clubMetaVersion($0) < clubMetaVersion($1) }),
+           let meta = metaSnapshot.clubMeta {
             if club.name != meta.name { club.name = meta.name }
             let nextNameUpdatedAt = meta.nameUpdatedAt ?? club.nameUpdatedAt
             if club.nameUpdatedAt != nextNameUpdatedAt { club.nameUpdatedAt = nextNameUpdatedAt }
@@ -36,7 +36,7 @@ extension MemberShareSnapshotStore {
                 let nextRemoved = Set(removed.filter { !$0.isEmpty })
                 if club.removedMemberIDs != nextRemoved { club.removedMemberIDs = nextRemoved }
             }
-            let nextMetaUpdatedAt = meta.metadataUpdatedAt ?? meta.createdAt
+            let nextMetaUpdatedAt = meta.metadataUpdatedAt ?? metaSnapshot.capturedAt
             if club.clubMetaUpdatedAt != nextMetaUpdatedAt { club.clubMetaUpdatedAt = nextMetaUpdatedAt }
             // Identity bindings are applied only by
             // `MemberSnapshotAuthorization`, after CloudKit provenance has
@@ -394,7 +394,7 @@ extension MemberShareSnapshotStore {
 
     private static func clubMetaVersion(_ snapshot: MemberShareSnapshot) -> Date {
         guard let meta = snapshot.clubMeta else { return .distantPast }
-        return meta.metadataUpdatedAt ?? meta.createdAt
+        return meta.metadataUpdatedAt ?? snapshot.capturedAt
     }
 
     /// Reconcile a per-parent collection (ratings on submissions, votes on

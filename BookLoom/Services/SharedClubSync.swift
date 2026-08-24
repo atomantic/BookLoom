@@ -377,13 +377,12 @@ enum SharedClubSync {
                 logger.error("Snapshot authorization failed for \(club.name, privacy: .private): \(error.localizedDescription, privacy: .public)")
                 return
             }
-            if club.memberIdentityBindings != authorization.bindings {
-                club.memberIdentityBindings = authorization.bindings
-                if club.isShareOwner { club.clubMetaUpdatedAt = .now }
-            }
             // Always include the local member's freshly-built snapshot in the
             // merge so locally-authored items survive the additive reconcile
-            // even if they haven't reached CloudKit yet.
+            // even if they haven't reached CloudKit yet. Capture it before
+            // advancing the binding clock: the merge must first reconcile any
+            // newer owner metadata instead of publishing stale local metadata
+            // with an artificially newer version.
             let localSnapshot = MemberShareSnapshotStore.snapshot(
                 from: club,
                 context: context,
@@ -391,29 +390,44 @@ enum SharedClubSync {
                 authorName: localMemberName,
                 includeClubMeta: club.isShareOwner
             )
-            let merged = authorization.snapshots.filter { $0.authorMemberID != localMemberID } + [localSnapshot]
+            // Keep the authenticated remote snapshot for the local author in
+            // the input as well. The local snapshot comes last and therefore
+            // wins content upserts, while a newer remote owner metadata clock
+            // can still reconcile canonical admin/removal/name state first.
+            let merged = authorization.snapshots + [localSnapshot]
             try MemberShareSnapshotStore.merge(
                 snapshots: merged,
                 into: club,
                 context: context,
                 localMemberID: localMemberID
             )
+            if club.memberIdentityBindings != authorization.bindings {
+                club.memberIdentityBindings = authorization.bindings
+                if club.isShareOwner {
+                    let now = Date.now
+                    club.clubMetaUpdatedAt = now > club.clubMetaUpdatedAt
+                        ? now
+                        : club.clubMetaUpdatedAt.addingTimeInterval(0.001)
+                }
+            }
             if let acceptedCount = try? await service.fetchAcceptedParticipantCount(target: target),
                club.modelContext != nil,
                acceptedCount != club.shareParticipantCount {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(context, club: club, what: "participant-count update")
             }
-            if authorization.bindingsChanged, club.isShareOwner {
+            if authorization.bindingsChanged {
                 saveOrLog(context, club: club, what: "member identity bindings")
-                publishIfNeeded(
-                    club,
-                    context: context,
-                    localMemberID: localMemberID,
-                    localMemberName: localMemberName,
-                    service: service,
-                    isEnabled: isEnabled
-                )
+                if club.isShareOwner {
+                    publishIfNeeded(
+                        club,
+                        context: context,
+                        localMemberID: localMemberID,
+                        localMemberName: localMemberName,
+                        service: service,
+                        isEnabled: isEnabled
+                    )
+                }
             }
             logger.info("Merged \(authorization.snapshots.count) authenticated member snapshot(s) for \(club.name, privacy: .private)")
         } catch {

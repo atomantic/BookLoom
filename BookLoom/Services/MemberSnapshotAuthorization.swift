@@ -85,6 +85,17 @@ enum MemberSnapshotAuthorization {
         // cross-database alias comparison.
         bindings[ownerMemberID] = batch.ownerUserRecordName
 
+        // A participant who has left (or was removed directly in the system
+        // sharing UI) no longer has authority in this share. Retire all of that
+        // CloudKit identity's member IDs before checking for missing records.
+        // The owner binding remains anchored to the provenance-verified share
+        // owner even if CloudKit omits the owner from the participant array.
+        bindings = bindings.filter { memberID, userRecordName in
+            memberID == ownerMemberID
+                || userRecordName == batch.ownerUserRecordName
+                || batch.approvedParticipantUserRecordNames.contains(userRecordName)
+        }
+
         let creatorMemberID = ownerMeta.creatorMemberID?.trimmedOrNil ?? ownerMemberID
         let authorizedAdmins = Set(ownerMeta.adminMemberIDs ?? []).union([creatorMemberID])
         let removedMemberIDs = Set(ownerMeta.removedMemberIDs ?? [])
@@ -105,15 +116,25 @@ enum MemberSnapshotAuthorization {
             }
         }
 
-        let presentMemberIDs = Set(structurallyValid.map { $0.snapshot.authorMemberID })
+        // Records left behind by users who are no longer share participants are
+        // inert legacy data. Ignoring them lets public-share migration and the
+        // normal Leave Club flow converge without weakening checks on records
+        // written by identities that still have access.
+        let activeEnvelopes = batch.snapshots.filter { envelope in
+            envelope.provenance.creatorUserRecordName == batch.ownerUserRecordName
+                || envelope.provenance.creatorUserRecordName
+                    .map(batch.approvedParticipantUserRecordNames.contains) == true
+        }
+        let activeStructurallyValid = activeEnvelopes.filter(isStructurallyValid)
+        let presentMemberIDs = Set(activeStructurallyValid.map { $0.snapshot.authorMemberID })
         let missingBoundRecordNames = bindings.keys
             .filter { !removedMemberIDs.contains($0) && !presentMemberIDs.contains($0) }
             .map { recordPrefix + $0 }
-        let collidingRecordNames = stableObjectOwnershipCollisions(in: structurallyValid)
+        let collidingRecordNames = stableObjectOwnershipCollisions(in: activeStructurallyValid)
 
         var accepted: [MemberShareSnapshot] = []
         var rejected: [String] = []
-        for envelope in batch.snapshots {
+        for envelope in activeEnvelopes {
             let snapshot = envelope.snapshot
             let creator = envelope.provenance.creatorUserRecordName
             let isBound = creator != nil && bindings[snapshot.authorMemberID] == creator
@@ -140,7 +161,7 @@ enum MemberSnapshotAuthorization {
 
     private static func metadataVersion(_ snapshot: MemberShareSnapshot) -> Date {
         guard let meta = snapshot.clubMeta else { return .distantPast }
-        return meta.metadataUpdatedAt ?? meta.createdAt
+        return meta.metadataUpdatedAt ?? snapshot.capturedAt
     }
 
     /// A stable base-object ID belongs to exactly one authenticated snapshot

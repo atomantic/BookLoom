@@ -1417,6 +1417,55 @@ final class SharedClubSnapshotTests: XCTestCase {
         XCTAssertEqual(club.shareParticipantCount, 2)
     }
 
+    func test_mergeUsesCaptureTimeForLegacyClubMetaWithoutMutationVersion() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-LegacyMeta", in: context)
+        let createdAt = Date(timeIntervalSince1970: 1_000)
+        let stale = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 2_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: .init(
+                name: "Old Name",
+                createdAt: createdAt,
+                cloudZoneName: "BookClub-LegacyMeta",
+                shareParticipantCount: 4,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: [],
+                removedMemberIDs: [],
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+        let fresh = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 3_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: .init(
+                name: "Fresh Name",
+                createdAt: createdAt,
+                cloudZoneName: "BookClub-LegacyMeta",
+                shareParticipantCount: 2,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: [],
+                removedMemberIDs: [],
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [stale, fresh],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        XCTAssertEqual(club.name, "Fresh Name")
+        XCTAssertEqual(club.shareParticipantCount, 2)
+        XCTAssertEqual(club.clubMetaUpdatedAt, fresh.capturedAt)
+    }
+
     func test_mergeIgnoresNonOwnerSnapshotsCarryingNoClubMeta() throws {
         let context = try makeContext()
         let club = try makeJoinedClub(zone: "BookClub-NoMetaAdoption", in: context)
