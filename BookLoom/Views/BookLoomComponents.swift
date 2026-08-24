@@ -168,7 +168,7 @@ struct StarRatingPicker: View {
                 } label: {
                     Image(systemName: index <= stars ? "star.fill" : "star")
                         .foregroundStyle(BookLoomStyle.gold)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(index) star\(index == 1 ? "" : "s")")

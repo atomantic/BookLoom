@@ -12,6 +12,7 @@ struct NewClubFormView: View {
     let onCreated: ((BookClub) -> Void)?
 
     @State private var name: String = ""
+    @State private var saveErrorMessage: String?
 
     init(
         onCancel: (() -> Void)? = nil,
@@ -71,9 +72,21 @@ struct NewClubFormView: View {
                     .disabled(trimmedName.isEmpty)
             }
         }
+        .alert("Couldn't Create Club", isPresented: saveErrorPresented) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveErrorMessage ?? "Please try again.")
+        }
     }
 
     private var trimmedName: String { name.trimmed }
+
+    private var saveErrorPresented: Binding<Bool> {
+        Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )
+    }
 
     private func createClub() {
         guard let name = name.trimmedOrNil else { return }
@@ -88,7 +101,15 @@ struct NewClubFormView: View {
             }
         }
         context.insert(club)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            // Remove only this failed insertion; rolling back the shared context
+            // could discard unrelated edits that another view has not saved yet.
+            context.delete(club)
+            saveErrorMessage = "Your club wasn't created. Try again. If the problem continues, close and reopen BookLoom."
+            return
+        }
         if let onCreated {
             onCreated(club)
         } else {

@@ -302,28 +302,34 @@ private struct LegacyShareMigrationView: View {
     let onMigrate: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "exclamationmark.shield.fill")
-                .font(.largeTitle)
-                .foregroundStyle(.tint)
-            Text("Secure \"\(clubName)\" Invitations")
-                .font(.title3.bold())
-                .multilineTextAlignment(.center)
-            Text("This club still uses a legacy public link. Migrate it before inviting anyone else so only people the creator specifies can join and write club data.")
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-            Button(action: onMigrate) {
-                Label("Migrate to Private Invitations", systemImage: "lock.fill")
+        ScrollView {
+            VStack(spacing: 14) {
+                Image(systemName: "exclamationmark.shield.fill")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.tint)
+                Text("Secure \"\(clubName)\" Invitations")
+                    .font(.title3.bold())
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("This club still uses a legacy public link. Migrate it before inviting anyone else so only people the creator specifies can join and write club data.")
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: onMigrate) {
+                    Label("Migrate to Private Invitations", systemImage: "lock.fill")
+                }
+                .buttonStyle(BookLoomProminentButtonStyle())
+                .disabled(isLoading)
+                Text("Existing members will need a new private invitation. Their already-published contributions remain in the club.")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(BookLoomProminentButtonStyle())
-            .disabled(isLoading)
-            Text("Existing members will need a new private invitation. Their already-published contributions remain in the club.")
-                .font(.footnote)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 20)
+            .padding(.horizontal, 20)
+            .padding(.vertical)
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity)
         }
-        .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .bookLoomScreenBackground()
     }

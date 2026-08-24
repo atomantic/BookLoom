@@ -72,7 +72,7 @@ private struct ImportInboxRow: View {
                 Image(systemName: "trash")
                     .font(.callout)
                     .foregroundStyle(BookLoomStyle.coral)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
