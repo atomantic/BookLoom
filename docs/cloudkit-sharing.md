@@ -16,7 +16,7 @@
 1. Install a signed TestFlight or Development build that contains `CKSharingSupported = true`.
 2. Create a club and tap Invite Members once while signed into iCloud.
 3. Open CloudKit Console for `iCloud.net.shadowpuppet.PlotLoom`.
-4. Confirm the Development schema contains `BookClubShareRoot` with `clubName`, `snapshotData`, and `snapshotUpdatedAt`.
+4. Confirm the Development schema contains `BookClubShareRoot` with `clubName` and `clubCreatedAt`, plus `MemberShareSnapshot` with `snapshotData`, `snapshotUpdatedAt`, `memberID`, and `memberName`.
 5. Use Deploy Schema Changes to promote the schema to Production.
 6. Re-archive after schema/capability changes so signing profiles are refreshed.
 7. Smoke-test with two Apple IDs:
@@ -36,8 +36,8 @@
 
 ## Important Validation Boundary
 
-SwiftData `.automatic` CloudKit sync still handles a person's private database sync. Cross-account club collaboration now uses the CKShare root as a compact source of truth for v1, with last-writer-wins snapshot updates. This is intentionally simpler than per-object CloudKit records; the two-account TestFlight smoke test should verify:
+SwiftData `.automatic` CloudKit sync still handles a person's private database sync. Cross-account collaboration uses one authenticated `MemberShareSnapshot` record per member, tied to the CKShare root. Clients fetch the complete record set, reject the entire batch if provenance or owner trust is incomplete, and merge each member's self-attributed contributions by stable IDs and operation timestamps. The two-account TestFlight smoke test should verify:
 
 - accepted invites show the real club name, current read, proposals, history, meetings, polls, ratings, notes, prompts, and locally cached cover images after onboarding;
 - edits from both owner and recipient publish and refresh after navigating away/back or relaunching;
-- concurrent edits do not corrupt the snapshot payload. Last writer wins is acceptable for v1, but data loss is not.
+- concurrent edits from different members remain present after both clients refresh; competing operations on the same item resolve by their documented timestamps without corrupting or dropping unrelated contributions.

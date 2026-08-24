@@ -135,9 +135,8 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
     // MARK: - Owner-side: create or fetch share
 
     /// Creates (or returns the existing) CKShare for `club`. The share URL
-    /// can then be surfaced via `UICloudSharingController` (iOS) or copied to
-    /// the pasteboard (macOS). Re-runs are idempotent — calling twice returns
-    /// the same share.
+    /// can then be surfaced through the platform's private-recipient sharing
+    /// UI. Re-runs are idempotent — calling twice returns the same share.
     func createOrFetchShare(for club: BookClub, context: ModelContext, ownerMemberID: String, ownerName: String) async throws -> CKShare {
         guard Features.cloudKitSharing else {
             throw SharingError.featureDisabled
@@ -306,11 +305,14 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
         guard share.publicPermission != .none else { return share }
         share.publicPermission = .none
         let result = try await privateDB.modifyRecords(saving: [share], deleting: [])
-        let saved = if case .success(let record) = result.saveResults[share.recordID],
-                       let savedShare = record as? CKShare {
-            savedShare
+        let resolution = try ShareSaveResultResolver.resolve(
+            saveResults: result.saveResults,
+            fallback: share
+        )
+        let saved = if resolution.needsHydration {
+            (try? await privateDB.record(for: resolution.share.recordID) as? CKShare) ?? resolution.share
         } else {
-            (try? await privateDB.record(for: share.recordID) as? CKShare) ?? share
+            resolution.share
         }
         club.inviteURLString = ""
         club.shareParticipantCount = Self.acceptedParticipantCount(in: saved)

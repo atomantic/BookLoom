@@ -25,8 +25,8 @@ struct ClubManagementView: View {
         let unnamedCount = max(0, club.displayedMemberCount - members.count)
         let localID = memberIdentity.memberID
         let canManageClub = club.isAdmin(memberID: localID)
-        let canDelete = club.isCreator(memberID: localID)
-        let canManageAdmins = canDelete
+        let canDelete = club.isOwner
+        let canManageAdmins = club.isOwner
         let canInvite = club.isOwner
 
         List {
@@ -314,7 +314,7 @@ private struct ClubInfoCard: View {
                     }
                 }
             } else {
-                Text("Only the club creator can rename the club.")
+                Text("Only the club creator or an admin can rename the club.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

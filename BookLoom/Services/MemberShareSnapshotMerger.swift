@@ -12,7 +12,10 @@ extension MemberShareSnapshotStore {
         localMemberID: String
     ) throws {
         // 1. Apply club meta from the snapshot that carries it (the owner's).
-        if let meta = snapshots.compactMap(\.clubMeta).max(by: { $0.shareParticipantCount < $1.shareParticipantCount }) {
+        if let meta = snapshots
+            .filter({ $0.clubMeta != nil })
+            .max(by: { $0.capturedAt < $1.capturedAt })?
+            .clubMeta {
             if club.name != meta.name { club.name = meta.name }
             let nextNameUpdatedAt = meta.nameUpdatedAt ?? club.nameUpdatedAt
             if club.nameUpdatedAt != nextNameUpdatedAt { club.nameUpdatedAt = nextNameUpdatedAt }

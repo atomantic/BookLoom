@@ -78,7 +78,7 @@ enum ShareAcceptance {
                 logger.info("✅ Accepted share — joined '\(info.title, privacy: .public)' (zone \(info.zoneName, privacy: .public))")
                 // Owner published the share root *after* `acceptShare` returned —
                 // give CloudKit a beat to materialize the shared zone before
-                // `fetchMemberSnapshots` makes its query. Without this, the
+                // `fetchMemberSnapshotBatch` makes its query. Without this, the
                 // first refresh returns no results and the joined club stays
                 // empty until the user pulls to refresh.
                 try? await Task.sleep(for: .seconds(1))

@@ -568,7 +568,9 @@ enum ClubAdminService {
         localMemberID: String,
         localMemberName: String
     ) throws {
-        guard !memberID.isEmpty, memberID != club.creatorMemberID else { return }
+        guard club.isOwner,
+              !memberID.isEmpty,
+              memberID != club.creatorMemberID else { return }
         club.removeMember(memberID: memberID)
         try SharedClubSync.saveAndPublish(
             context: context,
@@ -600,6 +602,7 @@ enum ClubAdminService {
         localMemberID: String,
         localMemberName: String
     ) throws {
+        guard club.isOwner else { return }
         club.setAdmin(isAdmin, memberID: memberID)
         try SharedClubSync.saveAndPublish(
             context: context,

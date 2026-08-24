@@ -41,6 +41,22 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-attacker"])
     }
 
+    func test_rejectsSnapshotClaimingMemberIDBoundToDifferentCloudKitUser() {
+        let forged = memberSnapshot("member-victim")
+        let batch = batch(
+            ownerBindings: [
+                binding("member-owner", "cloud-owner"),
+                binding("member-victim", "cloud-victim")
+            ],
+            additional: [envelope(forged, creator: "cloud-attacker")]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(batch, existingBindings: [:], isShareOwner: false)
+
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID), ["member-owner"])
+        XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-victim"])
+    }
+
     func test_rejectsRecordOverwrittenByDifferentCloudKitUser() {
         let overwritten = envelope(
             memberSnapshot("member-sam"),
