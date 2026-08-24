@@ -21,6 +21,7 @@ import SwiftData
 final class ClubActionCoordinator {
     private let context: ModelContext
     private let memberIdentity: MemberIdentity
+    private(set) var mutationError: LibraryMutationError?
 
     init(context: ModelContext, memberIdentity: MemberIdentity) {
         self.context = context
@@ -72,6 +73,7 @@ final class ClubActionCoordinator {
     /// there aren't enough proposals to vote on. The caller is responsible for
     /// any navigation.
     func openOrCreatePoll(in club: BookClub, activePoll: SelectionPoll?, proposed: [BookSubmission]) -> SelectionPoll? {
+        mutationError = nil
         if let activePoll {
             return activePoll
         }
@@ -85,8 +87,7 @@ final class ClubActionCoordinator {
         poll.createdByMemberID = localMemberID
         context.insert(poll)
         club.addSelectionPoll(poll)
-        saveClubChanges(club)
-        return poll
+        return saveClubChanges(club) ? poll : nil
     }
 
     // MARK: - Deletion
@@ -114,8 +115,7 @@ final class ClubActionCoordinator {
     /// the move succeeded so the view can switch tabs.
     func moveSubmissionToImports(_ submission: BookSubmission, inbox: GoodreadsImportInbox, in club: BookClub) -> Bool {
         guard inbox.moveSubmissionToShelf(submission, context: context) else { return false }
-        saveClubChanges(club)
-        return true
+        return saveClubChanges(club)
     }
 
     // MARK: - Personal library
@@ -155,26 +155,38 @@ final class ClubActionCoordinator {
         return try? context.fetch(descriptor).first
     }
 
-    private func savePersonalLibraryChanges() {
+    @discardableResult
+    private func savePersonalLibraryChanges() -> Bool {
         do {
-            try context.save()
+            try LibraryMutationService.savePersonalLibraryChanges(context: context)
+            mutationError = nil
+            return true
         } catch {
-            assertionFailure("Failed to save personal library changes: \(error.localizedDescription)")
+            mutationError = normalized(error, operation: "save this book to your Shelf")
+            return false
         }
     }
 
     // MARK: - Persistence
 
-    private func saveClubChanges(_ club: BookClub) {
+    @discardableResult
+    private func saveClubChanges(_ club: BookClub) -> Bool {
         do {
-            try SharedClubSync.saveAndPublish(
-                context: context,
+            try LibraryMutationService.saveClubChanges(
                 club: club,
-                localMemberID: localMemberID,
-                localMemberName: localMemberName
+                memberID: localMemberID,
+                memberName: localMemberName,
+                context: context
             )
+            mutationError = nil
+            return true
         } catch {
-            assertionFailure("Failed to save club changes: \(error.localizedDescription)")
+            mutationError = normalized(error, operation: "save the club changes")
+            return false
         }
+    }
+
+    private func normalized(_ error: Error, operation: String) -> LibraryMutationError {
+        error as? LibraryMutationError ?? LibraryMutationError(operation: operation, underlying: error)
     }
 }

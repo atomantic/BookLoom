@@ -15,6 +15,7 @@ struct DesktopLibraryView: View {
     @State private var filter: LibraryBookFilter = .all
     @State private var presentedSidebar: DesktopLibrarySidebar?
     @State private var pendingDeleteBook: LibraryBook?
+    @State private var mutationError: LibraryMutationError?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -100,6 +101,11 @@ struct DesktopLibraryView: View {
             }
         } message: {
             Text("This removes the book and its private shelf notes from this device and iCloud.")
+        }
+        .alert("Shelf Change Failed", isPresented: .presence(of: $mutationError)) {
+            Button("OK") { mutationError = nil }
+        } message: {
+            Text(mutationError?.localizedDescription ?? "The Shelf change couldn't be saved.")
         }
         .onAppear {
             refreshShelf()
@@ -217,11 +223,13 @@ struct DesktopLibraryView: View {
             return
         }
 
-        let book = LibraryBook.fromPendingImport(item)
-        context.insert(book)
-        goodreadsInbox.remove(item.url)
-        saveContext()
-        selectedBookID = book.persistentModelID
+        do {
+            let book = try LibraryMutationService.savePendingImport(item, context: context)
+            goodreadsInbox.remove(item.url)
+            selectedBookID = book.persistentModelID
+        } catch {
+            presentMutationError(error)
+        }
     }
 
     private func deleteBooks(_ offsets: IndexSet) {
@@ -240,48 +248,36 @@ struct DesktopLibraryView: View {
         let nextSelection = filteredBooks
             .first { !idsToDelete.contains($0.persistentModelID) }?
             .persistentModelID
-        books.forEach(context.delete)
-        saveContext()
-        selectedBookID = nextSelection
+        do {
+            try LibraryMutationService.delete(books, context: context)
+            selectedBookID = nextSelection
+        } catch {
+            presentMutationError(error)
+        }
     }
 
     private func saveNewBook(_ draft: AddBookDraft, action: AddBookComposerAction) throws -> LibraryBook {
-        let book = draft.makeLibraryBook()
-        context.insert(book)
-
-        switch action {
-        case .libraryOnly:
-            try context.save()
-        case .clubProposed, .clubCompleted:
-            guard let activeClub else {
-                try context.save()
-                return book
-            }
-            let status: BookSubmissionStatus = action == .clubCompleted ? .completed : .proposed
-            let submission = draft.makeSubmission(
-                memberID: memberIdentity.memberID,
-                memberName: memberIdentity.name,
-                status: status
-            )
-            activeClub.addSubmission(submission)
-            context.insert(submission)
-            try SharedClubSync.saveAndPublish(
-                context: context,
-                club: activeClub,
-                localMemberID: memberIdentity.memberID,
-                localMemberName: memberIdentity.name
-            )
-        }
-
-        return book
+        try LibraryMutationService.addBook(
+            from: draft,
+            action: action,
+            activeClub: activeClub,
+            memberID: memberIdentity.memberID,
+            memberName: memberIdentity.name,
+            context: context
+        )
     }
 
     private func saveContext() {
         do {
-            try context.save()
+            try LibraryMutationService.savePersonalLibraryChanges(context: context)
         } catch {
-            assertionFailure("Failed to save library changes: \(error.localizedDescription)")
+            presentMutationError(error)
         }
+    }
+
+    private func presentMutationError(_ error: Error) {
+        mutationError = error as? LibraryMutationError
+            ?? LibraryMutationError(operation: "save your Shelf changes", underlying: error)
     }
 }
 

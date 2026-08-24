@@ -10,6 +10,7 @@ struct LibraryBookDetailView: View {
     @State private var priceText: String
     @State private var showingMetadataSearch = false
     @State private var showingCoverZoom = false
+    @State private var mutationError: LibraryMutationError?
 
     private var editor: LibraryBookEditor { LibraryBookEditor(book) }
 
@@ -56,6 +57,11 @@ struct LibraryBookDetailView: View {
             ) {
                 showingCoverZoom = false
             }
+        }
+        .alert("Shelf Change Failed", isPresented: .presence(of: $mutationError)) {
+            Button("OK") { mutationError = nil }
+        } message: {
+            Text(mutationError?.localizedDescription ?? "The book couldn't be saved.")
         }
     }
 
@@ -220,9 +226,11 @@ struct LibraryBookDetailView: View {
         editor.applyPrice(from: priceText)
         book.updatedAt = .now
         do {
-            try context.save()
+            try LibraryMutationService.savePersonalLibraryChanges(context: context)
         } catch {
-            assertionFailure("Failed to save library book: \(error.localizedDescription)")
+            mutationError = error as? LibraryMutationError
+                ?? LibraryMutationError(operation: "save this book", underlying: error)
+            priceText = LibraryBookEditor.priceText(for: book)
         }
     }
 
