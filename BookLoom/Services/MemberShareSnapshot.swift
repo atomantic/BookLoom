@@ -9,7 +9,7 @@ import Foundation
 /// supported owner-broadcast and silently dropped any contributions from
 /// non-owner participants.
 struct MemberShareSnapshot: Codable, Equatable, Sendable {
-    static let schemaVersion = 3
+    static let schemaVersion = 5
 
     let schemaVersion: Int
     let capturedAt: Date
@@ -86,8 +86,43 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
         /// Other devices use this to ignore re-published snapshots from a
         /// removed member. Optional for backward compatibility.
         let removedMemberIDs: [String]?
+        /// Owner-signed identity bindings. A member ID is accepted only when
+        /// the enclosing record's CloudKit creator matches this mapping.
+        let memberIdentityBindings: [MemberIdentityBinding]?
+        let metadataUpdatedAt: Date?
         let inviteURLString: String?
         let nameUpdatedAt: Date?
+
+        init(
+            name: String,
+            createdAt: Date,
+            cloudZoneName: String,
+            shareParticipantCount: Int,
+            creatorMemberID: String?,
+            adminMemberIDs: [String]?,
+            removedMemberIDs: [String]?,
+            memberIdentityBindings: [MemberIdentityBinding]? = nil,
+            metadataUpdatedAt: Date? = nil,
+            inviteURLString: String?,
+            nameUpdatedAt: Date?
+        ) {
+            self.name = name
+            self.createdAt = createdAt
+            self.cloudZoneName = cloudZoneName
+            self.shareParticipantCount = shareParticipantCount
+            self.creatorMemberID = creatorMemberID
+            self.adminMemberIDs = adminMemberIDs
+            self.removedMemberIDs = removedMemberIDs
+            self.memberIdentityBindings = memberIdentityBindings
+            self.metadataUpdatedAt = metadataUpdatedAt
+            self.inviteURLString = inviteURLString
+            self.nameUpdatedAt = nameUpdatedAt
+        }
+    }
+
+    struct MemberIdentityBinding: Codable, Equatable, Sendable {
+        let memberID: String
+        let cloudKitUserRecordName: String
     }
 
     struct NameProposal: Codable, Equatable, Sendable {

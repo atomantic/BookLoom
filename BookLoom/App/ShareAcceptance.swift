@@ -55,21 +55,33 @@ enum ShareAcceptance {
             joined.shareIsActive = true
             joined.shareParticipantCount = max(1, info.participantCount)
 
-            if !info.memberSnapshots.isEmpty {
+            let authorization = MemberSnapshotAuthorization.authorize(
+                info.memberSnapshotBatch,
+                existingBindings: joined.memberIdentityBindings,
+                isShareOwner: false
+            )
+            joined.memberIdentityBindings = bindingsAfterAuthorization(
+                existing: joined.memberIdentityBindings,
+                authorization: authorization
+            )
+
+            if authorization.isTrustEstablished,
+               authorization.rejectedRecordNames.isEmpty,
+               !authorization.snapshots.isEmpty {
                 try MemberShareSnapshotStore.merge(
-                    snapshots: info.memberSnapshots,
+                    snapshots: authorization.snapshots,
                     into: joined,
                     context: context,
                     localMemberID: localMemberID
                 )
                 try context.save()
-                logger.info("✅ Accepted share — imported '\(joined.name, privacy: .public)' from \(info.memberSnapshots.count) member snapshot(s)")
+                logger.info("✅ Accepted share — imported '\(joined.name, privacy: .public)' from \(authorization.snapshots.count) authenticated member snapshot(s)")
             } else {
                 try context.save()
                 logger.info("✅ Accepted share — joined '\(info.title, privacy: .public)' (zone \(info.zoneName, privacy: .public))")
                 // Owner published the share root *after* `acceptShare` returned —
                 // give CloudKit a beat to materialize the shared zone before
-                // `fetchMemberSnapshots` makes its query. Without this, the
+                // `fetchMemberSnapshotBatch` makes its query. Without this, the
                 // first refresh returns no results and the joined club stays
                 // empty until the user pulls to refresh.
                 try? await Task.sleep(for: .seconds(1))
@@ -93,5 +105,15 @@ enum ShareAcceptance {
         } catch {
             logger.error("⚠️ Share accept failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// A just-accepted share may not have materialized its owner record yet.
+    /// Preserve a previously authenticated map on re-accept instead of replacing
+    /// it with the fail-closed empty result from an inconclusive fetch.
+    static func bindingsAfterAuthorization(
+        existing: [String: String],
+        authorization: MemberSnapshotAuthorizationResult
+    ) -> [String: String] {
+        authorization.isTrustEstablished ? authorization.bindings : existing
     }
 }

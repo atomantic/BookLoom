@@ -83,29 +83,30 @@ extension BookClub {
     }
 }
 
-enum StatusOverrideStore {
-    static let prefix = "net.shadowpuppet.BookLoom.statusOverrides."
+private struct ZoneOverrideStore<Entry: Codable> {
+    let prefix: String
+    let supersedes: (Entry, Entry) -> Bool
 
-    static func entries(forZone zone: String) -> [StatusOverrideEntry] {
+    func entries(forZone zone: String) -> [Entry] {
         guard !zone.isEmpty,
               let data = UserDefaults.standard.data(forKey: prefix + zone),
-              let entries = try? JSONDecoder().decode([StatusOverrideEntry].self, from: data) else {
+              let entries = try? JSONDecoder().decode([Entry].self, from: data) else {
             return []
         }
         return entries
     }
 
-    static func append(_ entry: StatusOverrideEntry, forZone zone: String) {
+    func append(_ entry: Entry, forZone zone: String) {
         guard !zone.isEmpty else { return }
         var current = entries(forZone: zone)
-        current.removeAll { $0.submissionSelectionID == entry.submissionSelectionID && $0.actorMemberID == entry.actorMemberID }
+        current.removeAll { supersedes(entry, $0) }
         current.append(entry)
         if let data = try? JSONEncoder().encode(current) {
             UserDefaults.standard.set(data, forKey: prefix + zone)
         }
     }
 
-    static func pruneEntries(forZone zone: String, where shouldRemove: (StatusOverrideEntry) -> Bool) {
+    func pruneEntries(forZone zone: String, where shouldRemove: (Entry) -> Bool) {
         guard !zone.isEmpty else { return }
         let kept = entries(forZone: zone).filter { !shouldRemove($0) }
         if let data = try? JSONEncoder().encode(kept) {
@@ -113,80 +114,72 @@ enum StatusOverrideStore {
         }
     }
 
-    static func clear(forZone zone: String) {
+    func clear(forZone zone: String) {
         guard !zone.isEmpty else { return }
         UserDefaults.standard.removeObject(forKey: prefix + zone)
     }
 }
 
+enum StatusOverrideStore {
+    static let prefix = "net.shadowpuppet.BookLoom.statusOverrides."
+    private static var store: ZoneOverrideStore<StatusOverrideEntry> {
+        ZoneOverrideStore(prefix: prefix) {
+            $0.submissionSelectionID == $1.submissionSelectionID && $0.actorMemberID == $1.actorMemberID
+        }
+    }
+
+    static func entries(forZone zone: String) -> [StatusOverrideEntry] { store.entries(forZone: zone) }
+    static func append(_ entry: StatusOverrideEntry, forZone zone: String) { store.append(entry, forZone: zone) }
+    static func pruneEntries(forZone zone: String, where shouldRemove: (StatusOverrideEntry) -> Bool) { store.pruneEntries(forZone: zone, where: shouldRemove) }
+    static func clear(forZone zone: String) { store.clear(forZone: zone) }
+}
+
 enum SubmissionDetailsOverrideStore {
     static let prefix = "net.shadowpuppet.BookLoom.submissionDetailsOverrides."
+    private static var store: ZoneOverrideStore<SubmissionDetailsOverrideEntry> {
+        ZoneOverrideStore(prefix: prefix) {
+            $0.submissionSelectionID == $1.submissionSelectionID && $0.actorMemberID == $1.actorMemberID
+        }
+    }
 
     static func entries(forZone zone: String) -> [SubmissionDetailsOverrideEntry] {
-        guard !zone.isEmpty,
-              let data = UserDefaults.standard.data(forKey: prefix + zone),
-              let entries = try? JSONDecoder().decode([SubmissionDetailsOverrideEntry].self, from: data) else {
-            return []
-        }
-        return entries
+        store.entries(forZone: zone)
     }
 
     static func append(_ entry: SubmissionDetailsOverrideEntry, forZone zone: String) {
-        guard !zone.isEmpty else { return }
-        var current = entries(forZone: zone)
-        current.removeAll { $0.submissionSelectionID == entry.submissionSelectionID && $0.actorMemberID == entry.actorMemberID }
-        current.append(entry)
-        if let data = try? JSONEncoder().encode(current) {
-            UserDefaults.standard.set(data, forKey: prefix + zone)
-        }
+        store.append(entry, forZone: zone)
     }
 
     static func pruneEntries(forZone zone: String, where shouldRemove: (SubmissionDetailsOverrideEntry) -> Bool) {
-        guard !zone.isEmpty else { return }
-        let kept = entries(forZone: zone).filter { !shouldRemove($0) }
-        if let data = try? JSONEncoder().encode(kept) {
-            UserDefaults.standard.set(data, forKey: prefix + zone)
-        }
+        store.pruneEntries(forZone: zone, where: shouldRemove)
     }
 
     static func clear(forZone zone: String) {
-        guard !zone.isEmpty else { return }
-        UserDefaults.standard.removeObject(forKey: prefix + zone)
+        store.clear(forZone: zone)
     }
 }
 
 enum SubmissionDeletionStore {
     static let prefix = "net.shadowpuppet.BookLoom.submissionDeletions."
+    private static var store: ZoneOverrideStore<SubmissionDeletionEntry> {
+        ZoneOverrideStore(prefix: prefix) {
+            $0.submissionSelectionID == $1.submissionSelectionID && $0.actorMemberID == $1.actorMemberID
+        }
+    }
 
     static func entries(forZone zone: String) -> [SubmissionDeletionEntry] {
-        guard !zone.isEmpty,
-              let data = UserDefaults.standard.data(forKey: prefix + zone),
-              let entries = try? JSONDecoder().decode([SubmissionDeletionEntry].self, from: data) else {
-            return []
-        }
-        return entries
+        store.entries(forZone: zone)
     }
 
     static func append(_ entry: SubmissionDeletionEntry, forZone zone: String) {
-        guard !zone.isEmpty else { return }
-        var current = entries(forZone: zone)
-        current.removeAll { $0.submissionSelectionID == entry.submissionSelectionID && $0.actorMemberID == entry.actorMemberID }
-        current.append(entry)
-        if let data = try? JSONEncoder().encode(current) {
-            UserDefaults.standard.set(data, forKey: prefix + zone)
-        }
+        store.append(entry, forZone: zone)
     }
 
     static func pruneEntries(forZone zone: String, where shouldRemove: (SubmissionDeletionEntry) -> Bool) {
-        guard !zone.isEmpty else { return }
-        let kept = entries(forZone: zone).filter { !shouldRemove($0) }
-        if let data = try? JSONEncoder().encode(kept) {
-            UserDefaults.standard.set(data, forKey: prefix + zone)
-        }
+        store.pruneEntries(forZone: zone, where: shouldRemove)
     }
 
     static func clear(forZone zone: String) {
-        guard !zone.isEmpty else { return }
-        UserDefaults.standard.removeObject(forKey: prefix + zone)
+        store.clear(forZone: zone)
     }
 }

@@ -7,13 +7,14 @@ import CloudKit
 @MainActor
 protocol ClubSharingProviding {
     func createOrFetchShare(for club: BookClub, context: ModelContext, ownerMemberID: String, ownerName: String) async throws -> CKShare
+    func migrateShareToPrivate(_ share: CKShare, for club: BookClub) async throws -> CKShare
     func cloudKitContainer() -> CKContainer
 }
 
 extension CloudKitSharingService: ClubSharingProviding {}
 
 /// Sheet presented when the owner taps "Invite Members". Splits behavior
-/// between iOS (native UICloudSharingController) and macOS (copy-link UX).
+/// between the native iOS controller and macOS private-recipient share picker.
 /// When `Features.cloudKitSharing` is off, shows a "coming soon" placeholder
 /// and never touches CloudKit.
 struct InviteView: View {
@@ -26,8 +27,8 @@ struct InviteView: View {
 
     @State private var share: CKShare? = nil
     @State private var loadError: InviteLoadError? = nil
-    @State private var didCopyURL: Bool = false
     @State private var isLoading: Bool = false
+    @State private var showingMigrationConfirmation = false
 
     init(club: BookClub, sharingService: ClubSharingProviding = CloudKitSharingService.shared) {
         self.club = club
@@ -47,6 +48,18 @@ struct InviteView: View {
                     }
                 }
                 .task { await loadShare() }
+                .confirmationDialog(
+                    "Make invitations private?",
+                    isPresented: $showingMigrationConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Migrate and Re-invite Members", role: .destructive) {
+                        Task { await migrateLegacyShare() }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Anyone currently joined through the public link will be disconnected and must be invited again by name, email address, or phone number. Their published club contributions remain available to the creator.")
+                }
         }
     }
 
@@ -55,37 +68,17 @@ struct InviteView: View {
         if !Features.cloudKitSharing {
             comingSoonView
         } else if !club.isOwner {
-            inviteLinkView
+            InviteStatusView(
+                systemImage: "lock.fill",
+                title: "Invitations are creator only",
+                message: "Ask the club creator to invite each new member privately through iCloud."
+            )
         } else if let loadError {
             errorView(loadError)
         } else if let share {
             shareView(share)
         } else {
             PreparingInviteView()
-        }
-    }
-
-    @ViewBuilder
-    private var inviteLinkView: some View {
-        let canManage = club.isAdmin(memberID: memberIdentity.memberID)
-        if let url = URL(string: club.inviteURLString), canManage {
-            CopyInviteLinkView(
-                clubName: club.name,
-                url: url,
-                didCopy: $didCopyURL
-            )
-        } else if canManage {
-            InviteStatusView(
-                systemImage: "link",
-                title: "Invite link not available yet",
-                message: "The creator hasn't published a shareable link yet. Once they open Invite Members in this club, the link appears here so you can invite others."
-            )
-        } else {
-            InviteStatusView(
-                systemImage: "lock.fill",
-                title: "Invitations are creator + admin only",
-                message: "Ask the club creator to promote you to admin if you'd like to invite new members."
-            )
         }
     }
 
@@ -142,33 +135,29 @@ struct InviteView: View {
 
     @ViewBuilder
     private func shareView(_ share: CKShare) -> some View {
-        #if os(iOS)
-        CloudSharingControllerView(
-            share: share,
-            container: sharingService.cloudKitContainer()
-        )
-        .ignoresSafeArea()
-        #else
-        macShareView(share)
-        #endif
-    }
-
-    #if os(macOS)
-    @ViewBuilder
-    private func macShareView(_ share: CKShare) -> some View {
-        if let url = share.url {
-            CopyInviteLinkView(clubName: club.name, url: url, didCopy: $didCopyURL)
-                .frame(minWidth: 460, minHeight: 300)
+        if share.publicPermission != .none {
+            LegacyShareMigrationView(
+                clubName: club.name,
+                isLoading: isLoading,
+                onMigrate: { showingMigrationConfirmation = true }
+            )
         } else {
-            InviteStatusView(
-                systemImage: "person.2.badge.plus",
-                title: "Share \"\(club.name)\"",
-                message: "Share URL not yet available — try again in a moment."
+            #if os(iOS)
+            CloudSharingControllerView(
+                share: share,
+                container: sharingService.cloudKitContainer()
+            )
+            .ignoresSafeArea()
+            #else
+            MacCloudSharingPickerView(
+                clubName: club.name,
+                share: share,
+                container: sharingService.cloudKitContainer()
             )
             .frame(minWidth: 460, minHeight: 300)
+            #endif
         }
     }
-    #endif
 
     private func loadShare(force: Bool = false) async {
         guard Features.cloudKitSharing, club.isOwner else { return }
@@ -190,6 +179,19 @@ struct InviteView: View {
             self.share = s
         } catch {
             self.loadError = InviteLoadError.from(error)
+        }
+    }
+
+    private func migrateLegacyShare() async {
+        guard let share else { return }
+        isLoading = true
+        loadError = nil
+        defer { isLoading = false }
+        do {
+            self.share = try await sharingService.migrateShareToPrivate(share, for: club)
+            try? context.save()
+        } catch {
+            loadError = InviteLoadError.from(error)
         }
     }
 }
@@ -294,38 +296,30 @@ enum InviteLoadError: Equatable {
     }
 }
 
-private struct CopyInviteLinkView: View {
+private struct LegacyShareMigrationView: View {
     let clubName: String
-    let url: URL
-    @Binding var didCopy: Bool
+    let isLoading: Bool
+    let onMigrate: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                Image(systemName: "link.circle.fill")
+                Image(systemName: "exclamationmark.shield.fill")
                     .font(.system(size: 36))
                     .foregroundStyle(.tint)
-                Text("Invite to \"\(clubName)\"")
+                Text("Secure \"\(clubName)\" Invitations")
                     .font(.title3.bold())
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(url.absoluteString)
-                    .font(.callout.monospaced())
+                Text("This club still uses a legacy public link. Migrate it before inviting anyone else so only people the creator specifies can join and write club data.")
                     .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity)
-                    .bookLoomCard(padding: 12)
-                Button {
-                    Pasteboard.copy(url.absoluteString)
-                    didCopy = true
-                } label: {
-                    Label(
-                        didCopy ? "Copied!" : "Copy Invite Link",
-                        systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc"
-                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: onMigrate) {
+                    Label("Migrate to Private Invitations", systemImage: "lock.fill")
                 }
                 .buttonStyle(BookLoomProminentButtonStyle())
-                Text("Send this link via Messages, email, or any channel. The recipient must be signed into iCloud and have BookLoom installed. Only the club creator can revoke or re-issue links.")
+                .disabled(isLoading)
+                Text("Existing members will need a new private invitation. Their already-published contributions remain in the club.")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.tertiary)
@@ -362,17 +356,6 @@ private struct InviteStatusView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .bookLoomScreenBackground()
-    }
-}
-
-enum Pasteboard {
-    static func copy(_ string: String) {
-        #if os(iOS)
-        UIPasteboard.general.string = string
-        #elseif os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(string, forType: .string)
-        #endif
     }
 }
 

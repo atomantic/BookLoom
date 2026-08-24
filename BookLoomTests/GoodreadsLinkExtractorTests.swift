@@ -21,7 +21,10 @@ final class GoodreadsLinkExtractorTests: XCTestCase {
 
     func test_acceptsNonWWWHost() throws {
         let url = URL(string: "https://goodreads.com/book/show/12345")!
-        XCTAssertNotNil(GoodreadsLinkExtractor.extract(from: url))
+        XCTAssertEqual(
+            GoodreadsLinkExtractor.extract(from: url)?.absoluteString,
+            "https://www.goodreads.com/book/show/12345"
+        )
     }
 
     func test_rejectsNonGoodreadsURL() throws {

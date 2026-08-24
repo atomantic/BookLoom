@@ -7,6 +7,34 @@ import AppKit
 
 private let appLogger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "App")
 
+enum ModelContainerStorage: Equatable {
+    case persistentCloudKit
+    case memory
+}
+
+@MainActor
+protocol ModelContainerBuilding {
+    func makeContainer(schema: Schema, storage: ModelContainerStorage) throws -> ModelContainer
+}
+
+@MainActor
+struct ProductionModelContainerFactory: ModelContainerBuilding {
+    func makeContainer(schema: Schema, storage: ModelContainerStorage) throws -> ModelContainer {
+        let configuration: ModelConfiguration
+        switch storage {
+        case .persistentCloudKit:
+            configuration = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: false,
+                cloudKitDatabase: .automatic
+            )
+        case .memory:
+            configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        }
+        return try ModelContainer(for: schema, configurations: [configuration])
+    }
+}
+
 @main
 struct BookLoomApp: App {
     #if os(iOS)
@@ -25,11 +53,15 @@ struct BookLoomApp: App {
     @Environment(\.openWindow) private var openWindow
     #endif
     @AppStorage(AppAppearance.storageKey) private var appAppearanceRaw = AppAppearance.system.rawValue
+    private let cloudRefreshCoordinator = CloudRefreshCoordinator()
+
+    private let modelBootstrap: ModelBootstrap
 
     init() {
         LegacyDefaultsMigration.migrateBookLoomKeys()
         let importInboxDefaults = AppLaunchOptions.isSampleDataEnabled ? UserDefaults.standard : SharedImportInbox.defaults
         _goodreadsInbox = State(initialValue: GoodreadsImportInbox(defaults: importInboxDefaults))
+        modelBootstrap = Self.makeModelBootstrap()
 
         #if DEBUG
         if CloudKitSchemaPrimer.isRequested {
@@ -44,7 +76,7 @@ struct BookLoomApp: App {
     /// `openWindow(id:)` (Dock click, Show Main Window) and restored reliably.
     private static let mainWindowID = "main"
 
-    private static let appSchema = Schema([
+    static let appSchema = Schema([
         BookClub.self,
         BookSubmission.self,
         LibraryBook.self,
@@ -57,38 +89,24 @@ struct BookLoomApp: App {
         DiscussionPrompt.self,
     ])
 
-    var sharedModelContainer: ModelContainer = {
-        if AppLaunchOptions.isSampleDataEnabled {
-            let configuration = ModelConfiguration(
-                schema: Self.appSchema,
-                isStoredInMemoryOnly: true
-            )
-            let container = try! ModelContainer(for: Self.appSchema, configurations: [configuration])
-            ScreenshotSampleData.populate(container: container)
-            return container
-        }
-
-        let configuration = ModelConfiguration(
-            schema: Self.appSchema,
-            isStoredInMemoryOnly: false,
-            cloudKitDatabase: .automatic
+    private static func makeModelBootstrap() -> ModelBootstrap {
+        ModelBootstrap.make(
+            schema: appSchema,
+            sampleDataEnabled: AppLaunchOptions.isSampleDataEnabled,
+            factory: ProductionModelContainerFactory(),
+            populateSampleData: ScreenshotSampleData.populate
         )
-        do {
-            return try ModelContainer(for: Self.appSchema, configurations: [configuration])
-        } catch {
-            appLogger.error("⚠️ ModelContainer init failed: \(error.localizedDescription, privacy: .public) — falling back to in-memory")
-            let memoryConfig = ModelConfiguration(schema: Self.appSchema, isStoredInMemoryOnly: true)
-            do {
-                return try ModelContainer(for: Self.appSchema, configurations: [memoryConfig])
-            } catch let fallbackError {
-                fatalError("Failed to create ModelContainer: \(fallbackError) (original error: \(error))")
-            }
-        }
-    }()
+    }
+
+    private var sharedModelContainer: ModelContainer { modelBootstrap.container }
 
     var body: some Scene {
         WindowGroup("BookLoom", id: Self.mainWindowID) {
-            RootView()
+            if modelBootstrap.presentation == .recovery,
+               let errorMessage = modelBootstrap.errorMessage {
+                ModelStoreRecoveryView(errorMessage: errorMessage)
+            } else {
+                RootView()
                 .environment(memberIdentity)
                 .environment(activeClubStore)
                 .environment(goodreadsInbox)
@@ -122,6 +140,7 @@ struct BookLoomApp: App {
 
                     SchemaPrimeDataCleanup.removeSchemaPrimeData(from: sharedModelContainer.mainContext)
                     CoverDataCleanup.clearPersistedCoverData(in: sharedModelContainer.mainContext)
+                    await BookLoomDataReset.retryPendingCloudKitCleanup(context: sharedModelContainer.mainContext)
                     await drainAcceptedShares()
                     await CloudKitChangeNotifications.configureIfNeeded()
                     await SharedClubSync.synchronizeSharedClubs(
@@ -137,13 +156,10 @@ struct BookLoomApp: App {
                 }
                 .onChange(of: cloudKitChangeInbox.pendingChangeCount) { _, _ in
                     Task { @MainActor in
-                        await CloudKitChangeNotifications.refreshSharedClubs(
-                            in: sharedModelContainer.mainContext,
-                            localMemberID: memberIdentity.memberID,
-                            localMemberName: memberIdentity.name
-                        )
+                        await refreshCloudChanges()
                     }
                 }
+            }
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
@@ -174,10 +190,15 @@ struct BookLoomApp: App {
         // macOS-conventional menu item works without removing the tab that
         // iOS relies on.
         Settings {
-            SettingsView()
-                .environment(memberIdentity)
-                .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
-                .modelContainer(sharedModelContainer)
+            if modelBootstrap.presentation == .recovery,
+               let errorMessage = modelBootstrap.errorMessage {
+                ModelStoreRecoveryView(errorMessage: errorMessage)
+            } else {
+                SettingsView()
+                    .environment(memberIdentity)
+                    .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
+                    .modelContainer(sharedModelContainer)
+            }
         }
         #endif
     }
@@ -195,6 +216,82 @@ struct BookLoomApp: App {
                 localMemberName: memberIdentity.name
             )
         }
+    }
+
+    @MainActor
+    private func refreshCloudChanges() async {
+        await cloudRefreshCoordinator.request {
+            await CloudKitChangeNotifications.refreshSharedClubs(
+                in: sharedModelContainer.mainContext,
+                localMemberID: memberIdentity.memberID,
+                localMemberName: memberIdentity.name
+            )
+        }
+    }
+}
+
+struct ModelBootstrap {
+    enum Presentation: Equatable {
+        case library
+        case recovery
+    }
+
+    let container: ModelContainer
+    let errorMessage: String?
+
+    var presentation: Presentation {
+        errorMessage == nil ? .library : .recovery
+    }
+
+    @MainActor
+    static func make(
+        schema: Schema,
+        sampleDataEnabled: Bool,
+        factory: any ModelContainerBuilding,
+        populateSampleData: (ModelContainer) -> Void = { _ in }
+    ) -> ModelBootstrap {
+        if sampleDataEnabled {
+            do {
+                let container = try factory.makeContainer(schema: schema, storage: .memory)
+                populateSampleData(container)
+                return ModelBootstrap(container: container, errorMessage: nil)
+            } catch {
+                fatalError("Failed to create sample ModelContainer: \(error)")
+            }
+        }
+
+        do {
+            return ModelBootstrap(
+                container: try factory.makeContainer(schema: schema, storage: .persistentCloudKit),
+                errorMessage: nil
+            )
+        } catch {
+            appLogger.fault("ModelContainer init failed: \(error.localizedDescription, privacy: .public)")
+            // A temporary container exists only so SwiftUI can render the
+            // blocking recovery screen. RootView is never mounted, preventing
+            // edits that would appear to save but disappear on relaunch.
+            do {
+                return ModelBootstrap(
+                    container: try factory.makeContainer(schema: schema, storage: .memory),
+                    errorMessage: error.localizedDescription
+                )
+            } catch let fallbackError {
+                fatalError("Failed to create ModelContainer: \(fallbackError) (original error: \(error))")
+            }
+        }
+    }
+}
+
+private struct ModelStoreRecoveryView: View {
+    let errorMessage: String
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("BookLoom couldn't open your library", systemImage: "externaldrive.badge.exclamationmark")
+        } description: {
+            Text("Your library is read-only and unavailable because its database could not be opened. Quit BookLoom, make sure this device has free storage and iCloud Drive is available, then reopen the app.\n\n\(errorMessage)")
+        }
+        .padding(32)
     }
 }
 

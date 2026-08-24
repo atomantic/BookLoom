@@ -147,8 +147,8 @@ private struct MainTabs: View {
         switch url.host() {
         case BookLoomURL.Host.screenshot:
             guard AppLaunchOptions.isSampleDataEnabled else { return }
-            let route = url.pathComponents.filter { $0 != "/" }.first ?? ScreenshotRoute.books.rawValue
-            navigateToScreenshotRoute(route)
+            let rawRoute = url.pathComponents.filter { $0 != "/" }.first ?? ScreenshotRoute.books.rawValue
+            navigateToScreenshotRoute(ScreenshotRoute(rawValueOrBooks: rawRoute))
         case BookLoomURL.Host.import:
             handleImportURL(url)
         default:
@@ -213,7 +213,7 @@ private struct MainTabs: View {
     /// Resolves the club-derived navigation targets for `route` and hands them to
     /// the coordinator, which owns the actual tab/path mutations. Setting the
     /// active club (a side effect on `ActiveClubStore`) stays here in the view.
-    private func navigateToScreenshotRoute(_ route: String) {
+    private func navigateToScreenshotRoute(_ route: ScreenshotRoute) {
         let club = visibleClubs.first
         if let club {
             activeClubStore.setActiveClub(club)
@@ -259,7 +259,7 @@ private struct GoodreadsImportPresentation<ImportContent: View>: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        if AppLaunchOptions.screenshotRoute == ScreenshotRoute.import.rawValue {
+        if AppLaunchOptions.screenshotRoute?.usesFullScreenImport == true {
             content.fullScreenCover(item: $item, content: importContent)
         } else {
             content.sheet(item: $item, content: importContent)

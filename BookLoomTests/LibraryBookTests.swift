@@ -133,3 +133,44 @@ final class LibraryBookTests: XCTestCase {
         XCTAssertEqual(book.sourceURLString, sourceURL.absoluteString)
     }
 }
+
+final class MemberIdentityMatchTests: XCTestCase {
+    func test_nonEmptyStableIDTakesPrecedenceOverDisplayName() {
+        XCTAssertTrue(MemberIdentityMatch.matches(
+            storedMemberID: "member-alex",
+            storedMemberName: "Old Name",
+            memberID: "member-alex",
+            memberName: "New Name"
+        ))
+        XCTAssertFalse(MemberIdentityMatch.matches(
+            storedMemberID: "member-sam",
+            storedMemberName: "Alex",
+            memberID: "member-alex",
+            memberName: "Alex"
+        ))
+    }
+
+    func test_legacyNameFallbackOnlyAppliesWhenStoredIDIsEmpty() {
+        XCTAssertTrue(MemberIdentityMatch.matches(
+            storedMemberID: "",
+            storedMemberName: "Alex",
+            memberID: "member-alex",
+            memberName: "Alex"
+        ))
+        XCTAssertFalse(MemberIdentityMatch.matches(
+            storedMemberID: "member-sam",
+            storedMemberName: "Alex",
+            memberID: "",
+            memberName: "Alex"
+        ))
+    }
+
+    func test_emptyCurrentIDStillMatchesLegacyName() {
+        XCTAssertTrue(MemberIdentityMatch.matches(
+            storedMemberID: "",
+            storedMemberName: "Alex",
+            memberID: "",
+            memberName: "Alex"
+        ))
+    }
+}

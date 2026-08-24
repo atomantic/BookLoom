@@ -15,6 +15,7 @@ struct LibraryTabView: View {
     @State private var showingNewBook = false
     @State private var selectedBook: LibraryBook?
     @State private var pendingDeleteBook: LibraryBook?
+    @State private var mutationError: LibraryMutationError?
 
     private var books: [LibraryBook] { pagination?.books ?? [] }
     private var canLoadMore: Bool { pagination?.canLoadMore ?? true }
@@ -164,6 +165,11 @@ struct LibraryTabView: View {
         } message: {
             Text("This removes the book and its private shelf notes from this device and iCloud.")
         }
+        .alert("Shelf Change Failed", isPresented: .presence(of: $mutationError)) {
+            Button("OK") { mutationError = nil }
+        } message: {
+            Text(mutationError?.localizedDescription ?? "The Shelf change couldn't be saved.")
+        }
     }
 
     private var selectedBookIsPresented: Binding<Bool> {
@@ -264,10 +270,13 @@ struct LibraryTabView: View {
             goodreadsInbox.remove(item.url)
             return
         }
-        context.insert(LibraryBook.fromPendingImport(item))
-        goodreadsInbox.remove(item.url)
-        saveContext()
-        resetAndLoad()
+        do {
+            _ = try LibraryMutationService.savePendingImport(item, context: context)
+            goodreadsInbox.remove(item.url)
+            resetAndLoad()
+        } catch {
+            presentMutationError(error)
+        }
     }
 
     private func confirmDeleteBook() {
@@ -281,11 +290,15 @@ struct LibraryTabView: View {
         if selectedBook?.persistentModelID == deletedID {
             selectedBook = nil
         }
-        let shouldBackfill = pagination?.remove(id: deletedID) ?? false
-        context.delete(book)
-        saveContext()
-        if shouldBackfill {
-            pagination?.loadMore()
+        do {
+            try LibraryMutationService.delete([book], context: context)
+            let shouldBackfill = pagination?.remove(id: deletedID) ?? false
+            if shouldBackfill {
+                pagination?.loadMore()
+            }
+        } catch {
+            presentMutationError(error)
+            resetAndLoad()
         }
     }
 
@@ -297,69 +310,42 @@ struct LibraryTabView: View {
             return .alreadyAdded(activeClub.name)
         }
 
-        let submission = BookSubmission(
-            title: book.title,
-            author: book.author,
-            isbn: book.isbn,
-            bookDescription: book.bookDescription,
-            publishedYear: book.publishedYear,
-            coverURL: book.coverURL,
-            externalProvider: book.externalProvider,
-            externalID: book.externalID,
-            submittedBy: memberIdentity.name,
-            submittedByMemberID: memberIdentity.memberID
-        )
-        activeClub.addSubmission(submission)
-        context.insert(submission)
         do {
-            try SharedClubSync.saveAndPublish(
-                context: context,
+            try LibraryMutationService.addToClub(
+                book,
                 club: activeClub,
-                localMemberID: memberIdentity.memberID,
-                localMemberName: memberIdentity.name
+                memberID: memberIdentity.memberID,
+                memberName: memberIdentity.name,
+                context: context
             )
             return .added(activeClub.name)
         } catch {
-            context.delete(submission)
             return .failed(error.localizedDescription)
         }
     }
 
     private func saveNewBook(_ draft: AddBookDraft, action: AddBookComposerAction) throws {
-        let book = draft.makeLibraryBook()
-        context.insert(book)
-
-        switch action {
-        case .libraryOnly:
-            try context.save()
-        case .clubProposed, .clubCompleted:
-            guard let activeClub else {
-                try context.save()
-                return
-            }
-            let status: BookSubmissionStatus = action == .clubCompleted ? .completed : .proposed
-            let submission = draft.makeSubmission(
-                memberID: memberIdentity.memberID,
-                memberName: memberIdentity.name,
-                status: status
-            )
-            activeClub.addSubmission(submission)
-            context.insert(submission)
-            try SharedClubSync.saveAndPublish(
-                context: context,
-                club: activeClub,
-                localMemberID: memberIdentity.memberID,
-                localMemberName: memberIdentity.name
-            )
-        }
+        _ = try LibraryMutationService.addBook(
+            from: draft,
+            action: action,
+            activeClub: activeClub,
+            memberID: memberIdentity.memberID,
+            memberName: memberIdentity.name,
+            context: context
+        )
     }
 
     private func saveContext() {
         do {
-            try context.save()
+            try LibraryMutationService.savePersonalLibraryChanges(context: context)
         } catch {
-            assertionFailure("Failed to save library changes: \(error.localizedDescription)")
+            presentMutationError(error)
         }
+    }
+
+    private func presentMutationError(_ error: Error) {
+        mutationError = error as? LibraryMutationError
+            ?? LibraryMutationError(operation: "save your Shelf changes", underlying: error)
     }
 }
 

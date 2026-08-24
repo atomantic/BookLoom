@@ -18,9 +18,11 @@ final class Rating {
     }
 
     func matches(memberID: String, memberName: String) -> Bool {
-        if !memberID.isEmpty, self.memberID == memberID {
-            return true
-        }
-        return self.memberID.isEmpty && self.memberName == memberName
+        MemberIdentityMatch.matches(
+            storedMemberID: self.memberID,
+            storedMemberName: self.memberName,
+            memberID: memberID,
+            memberName: memberName
+        )
     }
 }

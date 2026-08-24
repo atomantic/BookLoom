@@ -60,16 +60,6 @@ struct AddBookDraft {
 
     var trimmedTitle: String { title.trimmed }
 
-    var priceCents: Int? {
-        let trimmed = priceText.trimmed
-        guard !trimmed.isEmpty else { return nil }
-        let normalized = trimmed
-            .replacingOccurrences(of: "$", with: "")
-            .replacingOccurrences(of: ",", with: "")
-        guard let value = Double(normalized) else { return nil }
-        return Int((value * 100).rounded())
-    }
-
     mutating func apply(_ candidate: BookMetadataCandidate) {
         title = candidate.title
         author = candidate.authorLine
@@ -128,7 +118,16 @@ struct AddBookDraft {
             book.loanDueDate = nil
         }
         book.purchaseSource = purchaseSource.trimmed
-        book.purchasePriceCents = priceCents
+        switch CurrencyTextCodec.parse(priceText, currencyCode: book.purchaseCurrencyCode) {
+        case .empty:
+            book.purchasePriceCents = nil
+        case .cents(let cents):
+            book.purchasePriceCents = cents
+        case .invalid:
+            if !preservingExistingTracking {
+                book.purchasePriceCents = nil
+            }
+        }
         book.updatedAt = .now
     }
 
@@ -311,7 +310,12 @@ struct AddBookComposerView: View {
 
             DisclosureGroup("Purchase", isExpanded: $showingPurchaseDetails) {
                 VStack(spacing: 12) {
-                    BookLoomCompactTextField("Paid", text: $draft.priceText, placeholder: "$0.00", keyboard: .decimalPad)
+                    BookLoomCompactTextField(
+                        "Paid",
+                        text: $draft.priceText,
+                        placeholder: CurrencyTextCodec.editableText(for: 0),
+                        keyboard: .decimalPad
+                    )
                     BookLoomCompactTextField("Purchased from", text: $draft.purchaseSource)
                 }
                 .padding(.top, 12)
@@ -530,7 +534,11 @@ struct AddBookComposerView: View {
     private var purchaseCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: "Purchase")
-            TextField("Paid", text: $draft.priceText, prompt: Text("$0.00"))
+            TextField(
+                "Paid",
+                text: $draft.priceText,
+                prompt: Text(CurrencyTextCodec.editableText(for: 0))
+            )
             TextField("Purchased from", text: $draft.purchaseSource)
         }
         .bookLoomCard(padding: 12)

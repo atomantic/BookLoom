@@ -45,6 +45,33 @@ enum SyncOperation {
     case refresh
 }
 
+/// Coalesces refresh triggers while guaranteeing that only one refresh body
+/// mutates local state at a time. A trigger received during an active refresh
+/// schedules one follow-up pass with the newest operation.
+@MainActor
+final class CloudRefreshCoordinator {
+    private var isRunning = false
+    private var pending = false
+    private var latestOperation: (@MainActor () async -> Void)?
+
+    func request(_ operation: @escaping @MainActor () async -> Void) async {
+        latestOperation = operation
+        pending = true
+        guard !isRunning else { return }
+
+        isRunning = true
+        defer {
+            isRunning = false
+            latestOperation = nil
+        }
+        repeat {
+            pending = false
+            guard let latestOperation else { return }
+            await latestOperation()
+        } while pending
+    }
+}
+
 /// User-facing classification of a CloudKit sync failure. Hides raw CKError
 /// codes and produces copy a non-developer can act on. Transient/network
 /// failures render as a soft "offline" indicator rather than an alarming
@@ -170,18 +197,34 @@ extension ModelContext {
 @MainActor
 enum SharedClubSync {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "SharedClubSync")
+    private struct PublishRequest {
+        let club: BookClub
+        let context: ModelContext
+        let zoneName: String
+        let clubName: String
+        let target: MemberSnapshotSyncTarget
+        let localMemberID: String
+        let localMemberName: String
+        let service: any MemberSnapshotSyncing
+    }
+
+    private static var queuedPublishes: [String: PublishRequest] = [:]
+    private static var activePublishes: [String: Task<Void, Never>] = [:]
 
     /// Persist a context mutation made on the publish/refresh path, logging and
     /// recording a sync failure on error instead of swallowing it. These saves
     /// only carry bookkeeping (snapshot timestamps, participant counts, orphan
     /// deletes); a failure means in-memory state has diverged from disk, so we
     /// surface it via `SharedClubSyncStatus` rather than letting it vanish.
-    private static func saveOrLog(_ context: ModelContext, club: BookClub, what: String) {
+    @discardableResult
+    private static func saveOrLog(_ context: ModelContext, club: BookClub, what: String) -> Bool {
         do {
             try context.save()
+            return true
         } catch {
             SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .publish, error: error)
             logger.error("Failed to save \(what, privacy: .public) for shared club: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
@@ -200,9 +243,11 @@ enum SharedClubSync {
         _ club: BookClub,
         context: ModelContext,
         localMemberID: String,
-        localMemberName: String
+        localMemberName: String,
+        service: any MemberSnapshotSyncing = CloudKitSharingService.shared,
+        isEnabled: Bool = Features.cloudKitSharing
     ) {
-        guard Features.cloudKitSharing, club.shareIsActive else { return }
+        guard isEnabled, club.shareIsActive else { return }
         guard !localMemberID.isEmpty else {
             logger.error("Cannot publish snapshot for \(club.name, privacy: .private): localMemberID is empty")
             return
@@ -210,31 +255,71 @@ enum SharedClubSync {
         if CoverDataCleanup.clearPersistedCoverData(in: club) {
             saveOrLog(context, club: club, what: "cover-data cleanup")
         }
-        Task { @MainActor in
-            do {
-                if club.isShareOwner,
-                   let acceptedCount = try? await CloudKitSharingService.shared.fetchAcceptedParticipantCount(for: club),
-                   acceptedCount != club.shareParticipantCount {
-                    club.shareParticipantCount = acceptedCount
-                    saveOrLog(context, club: club, what: "participant-count update")
-                }
-                let snapshot = MemberShareSnapshotStore.snapshot(
-                    from: club,
-                    context: context,
-                    authorMemberID: localMemberID,
-                    authorName: localMemberName,
-                    includeClubMeta: club.isShareOwner
-                )
-                club.lastSharedSnapshotAt = snapshot.capturedAt
-                saveOrLog(context, club: club, what: "snapshot timestamp")
-                try await CloudKitSharingService.shared.publishMemberSnapshot(snapshot, for: club, localMemberID: localMemberID)
-                SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
-                logger.info("Published member snapshot for \(club.name, privacy: .private) by \(localMemberName, privacy: .private)")
-            } catch {
-                let description = CloudKitErrorDescriber.describe(error)
-                SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .publish, error: error)
-                logger.error("Member snapshot publish failed: \(description, privacy: .public)")
+        let zoneName = club.cloudZoneName
+        queuedPublishes[zoneName] = PublishRequest(
+            club: club,
+            context: context,
+            zoneName: zoneName,
+            clubName: club.name,
+            target: MemberSnapshotSyncTarget(club),
+            localMemberID: localMemberID,
+            localMemberName: localMemberName,
+            service: service
+        )
+        guard activePublishes[zoneName] == nil else { return }
+        activePublishes[zoneName] = Task { @MainActor in
+            await drainPublishes(for: zoneName)
+        }
+    }
+
+    private static func drainPublishes(for zoneName: String) async {
+        while let request = queuedPublishes.removeValue(forKey: zoneName) {
+            await publish(request)
+        }
+        activePublishes.removeValue(forKey: zoneName)
+    }
+
+    private static func publish(_ request: PublishRequest) async {
+        let club = request.club
+        guard club.modelContext != nil else {
+            return
+        }
+        do {
+            if club.isShareOwner,
+               let acceptedCount = try? await request.service.fetchAcceptedParticipantCount(target: request.target),
+               club.modelContext != nil,
+               acceptedCount != club.shareParticipantCount {
+                club.shareParticipantCount = acceptedCount
+                saveOrLog(request.context, club: club, what: "participant-count update")
             }
+            guard club.modelContext != nil else {
+                return
+            }
+            let snapshot = MemberShareSnapshotStore.snapshot(
+                from: club,
+                context: request.context,
+                authorMemberID: request.localMemberID,
+                authorName: request.localMemberName,
+                includeClubMeta: club.isShareOwner
+            )
+            try await request.service.publishMemberSnapshot(
+                snapshot,
+                target: request.target,
+                localMemberID: request.localMemberID
+            )
+            guard club.modelContext != nil else {
+                return
+            }
+            // Record completion only after CloudKit accepted this serialized
+            // publish; a stale/failed operation must not advance sync state.
+            club.lastSharedSnapshotAt = snapshot.capturedAt
+            guard saveOrLog(request.context, club: club, what: "snapshot timestamp") else { return }
+            SharedClubSyncStatus.shared.clearFailure(zoneName: request.zoneName)
+            logger.info("Published member snapshot for \(request.clubName, privacy: .private) by \(request.localMemberName, privacy: .private)")
+        } catch {
+            let description = CloudKitErrorDescriber.describe(error)
+            SharedClubSyncStatus.shared.recordFailure(zoneName: request.zoneName, operation: .publish, error: error)
+            logger.error("Member snapshot publish failed: \(description, privacy: .public)")
         }
     }
 
@@ -242,19 +327,25 @@ enum SharedClubSync {
         _ club: BookClub,
         context: ModelContext,
         localMemberID: String,
-        localMemberName: String
+        localMemberName: String,
+        service: any MemberSnapshotSyncing = CloudKitSharingService.shared,
+        isEnabled: Bool = Features.cloudKitSharing
     ) async {
-        guard Features.cloudKitSharing, club.shareIsActive else { return }
+        guard isEnabled, club.shareIsActive else { return }
+        let target = MemberSnapshotSyncTarget(club)
 
-        let remoteSnapshots: [MemberShareSnapshot]
+        let remoteBatch: MemberSnapshotBatch
         do {
-            remoteSnapshots = try await CloudKitSharingService.shared.fetchMemberSnapshots(for: club)
+            remoteBatch = try await service.fetchMemberSnapshotBatch(target: target)
         } catch {
             if CKZoneAvailability.classify(error) == .zoneRemoved {
                 // The owner has deleted the club, or we've been removed from
                 // the share. Drop the orphan local row so the UI clears.
-                logger.info("Shared zone for \(club.name, privacy: .private) is gone — removing local club")
-                SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
+                let zoneName = club.cloudZoneName
+                let clubName = club.name
+                logger.info("Shared zone for \(clubName, privacy: .private) is gone — removing local club")
+                SharedClubSyncStatus.shared.clearFailure(zoneName: zoneName)
+                queuedPublishes.removeValue(forKey: zoneName)
                 context.delete(club)
                 saveOrLog(context, club: club, what: "orphan-club delete")
             } else {
@@ -264,12 +355,34 @@ enum SharedClubSync {
             }
             return
         }
-        SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
+        guard club.modelContext != nil else { return }
+        SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
 
         do {
+            let authorization = MemberSnapshotAuthorization.authorize(
+                remoteBatch,
+                existingBindings: club.memberIdentityBindings,
+                isShareOwner: club.isShareOwner
+            )
+            guard authorization.isTrustEstablished,
+                  authorization.rejectedRecordNames.isEmpty else {
+                let error = MemberSnapshotAuthorizationError(
+                    rejectedRecordNames: authorization.rejectedRecordNames
+                )
+                SharedClubSyncStatus.shared.recordFailure(
+                    zoneName: club.cloudZoneName,
+                    operation: .refresh,
+                    error: error
+                )
+                logger.error("Snapshot authorization failed for \(club.name, privacy: .private): \(error.localizedDescription, privacy: .public)")
+                return
+            }
             // Always include the local member's freshly-built snapshot in the
             // merge so locally-authored items survive the additive reconcile
-            // even if they haven't reached CloudKit yet.
+            // even if they haven't reached CloudKit yet. Capture it before
+            // advancing the binding clock: the merge must first reconcile any
+            // newer owner metadata instead of publishing stale local metadata
+            // with an artificially newer version.
             let localSnapshot = MemberShareSnapshotStore.snapshot(
                 from: club,
                 context: context,
@@ -277,19 +390,46 @@ enum SharedClubSync {
                 authorName: localMemberName,
                 includeClubMeta: club.isShareOwner
             )
-            let merged = remoteSnapshots.filter { $0.authorMemberID != localMemberID } + [localSnapshot]
+            // Keep the authenticated remote snapshot for the local author in
+            // the input as well. The local snapshot comes last and therefore
+            // wins content upserts, while a newer remote owner metadata clock
+            // can still reconcile canonical admin/removal/name state first.
+            let merged = authorization.snapshots + [localSnapshot]
             try MemberShareSnapshotStore.merge(
                 snapshots: merged,
                 into: club,
                 context: context,
                 localMemberID: localMemberID
             )
-            if let acceptedCount = try? await CloudKitSharingService.shared.fetchAcceptedParticipantCount(for: club),
+            if club.memberIdentityBindings != authorization.bindings {
+                club.memberIdentityBindings = authorization.bindings
+                if club.isShareOwner {
+                    let now = Date.now
+                    club.clubMetaUpdatedAt = now > club.clubMetaUpdatedAt
+                        ? now
+                        : club.clubMetaUpdatedAt.addingTimeInterval(0.001)
+                }
+            }
+            if let acceptedCount = try? await service.fetchAcceptedParticipantCount(target: target),
+               club.modelContext != nil,
                acceptedCount != club.shareParticipantCount {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(context, club: club, what: "participant-count update")
             }
-            logger.info("Merged \(remoteSnapshots.count) member snapshot(s) for \(club.name, privacy: .private)")
+            if authorization.bindingsChanged {
+                saveOrLog(context, club: club, what: "member identity bindings")
+                if club.isShareOwner {
+                    publishIfNeeded(
+                        club,
+                        context: context,
+                        localMemberID: localMemberID,
+                        localMemberName: localMemberName,
+                        service: service,
+                        isEnabled: isEnabled
+                    )
+                }
+            }
+            logger.info("Merged \(authorization.snapshots.count) authenticated member snapshot(s) for \(club.name, privacy: .private)")
         } catch {
             // A merge failure now includes a failed local fetch/save (see
             // MemberShareSnapshotStore.merge). Surface it instead of silently
@@ -298,6 +438,10 @@ enum SharedClubSync {
             SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .refresh, error: error)
             logger.error("Member snapshot merge failed: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
         }
+    }
+
+    static func waitForPendingPublishes(zoneName: String) async {
+        await activePublishes[zoneName]?.value
     }
 
     static func refreshIfNeeded(
@@ -353,25 +497,51 @@ enum SharedClubSync {
     /// user has asked for it to go away, and the most common failure mode
     /// here is "zone already deleted" which is the desired end state anyway.
     static func cleanupBeforeDelete(_ club: BookClub, localMemberID: String) async {
-        let zoneName = club.cloudZoneName
-        SharedClubSyncStatus.shared.clearFailure(zoneName: zoneName)
-        StatusOverrideStore.clear(forZone: zoneName)
-        SubmissionDetailsOverrideStore.clear(forZone: zoneName)
-        SubmissionDeletionStore.clear(forZone: zoneName)
+        await cleanupBeforeDelete(ClubCleanupTarget(club), localMemberID: localMemberID)
+    }
 
-        guard Features.cloudKitSharing, club.shareIsActive else { return }
+    static func cleanupBeforeDelete(_ target: ClubCleanupTarget, localMemberID: String) async {
         do {
-            if club.isOwner {
-                try await CloudKitSharingService.shared.deleteSharedZone(for: club)
-            } else {
-                try await CloudKitSharingService.shared.leaveShare(
-                    for: club,
-                    localMemberID: localMemberID
-                )
-            }
+            try await cleanupBeforeDeleteThrowing(target, localMemberID: localMemberID)
         } catch {
-            logger.error("CloudKit cleanup for \(club.name, privacy: .private) failed (continuing with local delete): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+            logger.error("CloudKit cleanup for \(target.clubName, privacy: .private) failed (continuing with local delete): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
         }
+    }
+
+    static func cleanupBeforeDeleteThrowing(_ target: ClubCleanupTarget, localMemberID: String) async throws {
+        SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
+        StatusOverrideStore.clear(forZone: target.zoneName)
+        SubmissionDetailsOverrideStore.clear(forZone: target.zoneName)
+        SubmissionDeletionStore.clear(forZone: target.zoneName)
+        queuedPublishes.removeValue(forKey: target.zoneName)
+
+        guard Features.cloudKitSharing, target.shareIsActive else { return }
+        if target.isOwner {
+            try await CloudKitSharingService.shared.deleteSharedZone(zoneName: target.zoneName)
+        } else {
+            try await CloudKitSharingService.shared.leaveShare(
+                zoneName: target.zoneName,
+                ownerUserRecordName: target.ownerUserRecordName,
+                localMemberID: localMemberID
+            )
+        }
+    }
+}
+
+struct ClubCleanupTarget: Codable, Equatable, Sendable {
+    let zoneName: String
+    let clubName: String
+    let ownerUserRecordName: String?
+    let shareIsActive: Bool
+
+    var isOwner: Bool { ownerUserRecordName == nil }
+
+    @MainActor
+    init(_ club: BookClub) {
+        zoneName = club.cloudZoneName
+        clubName = club.name
+        ownerUserRecordName = club.ownerUserRecordName
+        shareIsActive = club.shareIsActive
     }
 }
 
@@ -413,8 +583,11 @@ enum ClubAdminService {
         localMemberID: String,
         localMemberName: String
     ) throws {
-        guard !memberID.isEmpty, memberID != club.creatorMemberID else { return }
+        guard club.isOwner,
+              !memberID.isEmpty,
+              memberID != club.creatorMemberID else { return }
         club.removeMember(memberID: memberID)
+        club.clubMetaUpdatedAt = .now
         try SharedClubSync.saveAndPublish(
             context: context,
             club: club,
@@ -445,7 +618,9 @@ enum ClubAdminService {
         localMemberID: String,
         localMemberName: String
     ) throws {
+        guard club.isOwner else { return }
         club.setAdmin(isAdmin, memberID: memberID)
+        club.clubMetaUpdatedAt = .now
         try SharedClubSync.saveAndPublish(
             context: context,
             club: club,
@@ -468,6 +643,7 @@ enum ClubAdminService {
               trimmed != club.name else { return false }
         club.name = trimmed
         club.nameUpdatedAt = .now
+        if club.isOwner { club.clubMetaUpdatedAt = club.nameUpdatedAt }
         try SharedClubSync.saveAndPublish(
             context: context,
             club: club,
@@ -487,6 +663,7 @@ enum ClubAdminService {
               !localMemberID.isEmpty
         else { return }
         club.creatorMemberID = localMemberID
+        club.clubMetaUpdatedAt = .now
         do {
             try context.save()
         } catch {

@@ -148,6 +148,25 @@ final class ClubAdminServiceTests: XCTestCase {
         XCTAssertTrue(club.isAdmin(memberID: "member-eve"), "The creator always counts as admin and can't be demoted")
     }
 
+    func test_setAdmin_participantCannotChangeOwnerPublishedAdminList() throws {
+        let context = try makeContext()
+        let club = makeOwnedActiveClub(creator: "member-owner")
+        club.ownerUserRecordName = "cloud-owner"
+        context.insert(club)
+        try context.save()
+
+        try ClubAdminService.setAdmin(
+            true,
+            memberID: "member-attacker",
+            in: club,
+            context: context,
+            localMemberID: "member-attacker",
+            localMemberName: "Attacker"
+        )
+
+        XCTAssertFalse(club.isAdmin(memberID: "member-attacker"))
+    }
+
     // MARK: - removeMember
 
     func test_removeMember_marksMemberRemovedAndStripsAdmin() throws {
@@ -205,6 +224,24 @@ final class ClubAdminServiceTests: XCTestCase {
         )
 
         XCTAssertTrue(club.removedMemberIDs.isEmpty, "An empty memberID is a no-op")
+    }
+
+    func test_removeMember_participantCannotChangeOwnerPublishedRemovalList() throws {
+        let context = try makeContext()
+        let club = makeOwnedActiveClub(creator: "member-owner")
+        club.ownerUserRecordName = "cloud-owner"
+        context.insert(club)
+        try context.save()
+
+        try ClubAdminService.removeMember(
+            "member-victim",
+            from: club,
+            context: context,
+            localMemberID: "member-attacker",
+            localMemberName: "Attacker"
+        )
+
+        XCTAssertFalse(club.removedMemberIDs.contains("member-victim"))
     }
 
     // MARK: - backfillCreatorIfNeeded
