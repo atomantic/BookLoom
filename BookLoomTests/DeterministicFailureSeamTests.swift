@@ -361,7 +361,7 @@ private final class ControlledSnapshotService: MemberSnapshotSyncing {
     }
 
     func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
-        MemberSnapshotBatch(ownerUserRecordName: "owner-user", snapshots: [])
+        MemberSnapshotBatch(ownerUserRecordName: "owner-user", approvedParticipantUserRecordNames: ["owner-user"], snapshots: [])
     }
     func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 1 }
 

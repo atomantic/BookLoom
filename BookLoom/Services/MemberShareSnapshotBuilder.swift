@@ -147,6 +147,9 @@ enum MemberShareSnapshotStore {
                 memberIdentityBindings: club.memberIdentityBindings
                     .map { MemberShareSnapshot.MemberIdentityBinding(memberID: $0.key, cloudKitUserRecordName: $0.value) }
                     .sorted { $0.memberID < $1.memberID },
+                metadataUpdatedAt: club.clubMetaUpdatedAt > .distantPast
+                    ? club.clubMetaUpdatedAt
+                    : club.createdAt,
                 inviteURLString: nil,
                 nameUpdatedAt: club.nameUpdatedAt > .distantPast ? club.nameUpdatedAt : nil
             )

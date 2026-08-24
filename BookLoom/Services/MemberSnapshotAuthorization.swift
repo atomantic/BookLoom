@@ -13,6 +13,9 @@ struct ProvenancedMemberSnapshot: Equatable, Sendable {
 
 struct MemberSnapshotBatch: Equatable, Sendable {
     let ownerUserRecordName: String
+    /// CloudKit identities the owner has explicitly admitted to the private
+    /// share. An unbound snapshot can be enrolled only for one of these users.
+    let approvedParticipantUserRecordNames: Set<String>
     let snapshots: [ProvenancedMemberSnapshot]
 }
 
@@ -52,7 +55,7 @@ enum MemberSnapshotAuthorization {
                 envelope.provenance.creatorUserRecordName == batch.ownerUserRecordName
                     && envelope.snapshot.clubMeta != nil
             }
-            .max { $0.snapshot.capturedAt < $1.snapshot.capturedAt }
+            .max { metadataVersion($0.snapshot) < metadataVersion($1.snapshot) }
 
         guard let ownerEnvelope, let ownerMeta = ownerEnvelope.snapshot.clubMeta else {
             return MemberSnapshotAuthorizationResult(
@@ -84,18 +87,29 @@ enum MemberSnapshotAuthorization {
 
         let creatorMemberID = ownerMeta.creatorMemberID?.trimmedOrNil ?? ownerMemberID
         let authorizedAdmins = Set(ownerMeta.adminMemberIDs ?? []).union([creatorMemberID])
+        let removedMemberIDs = Set(ownerMeta.removedMemberIDs ?? [])
+        let protectedMemberIDs = authorizedAdmins.union(removedMemberIDs).union(bindings.keys)
 
         if isShareOwner {
-            // Existing public shares migrate when the owner next syncs. Only
-            // pristine, self-attributed records can be enrolled; an overwritten
-            // record has a different last modifier and was filtered above.
+            // The owner adding a specified CloudKit participant is the approval
+            // handshake for that Apple ID. Only a pristine record from an
+            // approved participant may introduce a fresh, non-privileged local
+            // member ID; existing/admin/removed IDs can never be claimed.
             for envelope in structurallyValid where envelope.snapshot.clubMeta == nil {
                 let memberID = envelope.snapshot.authorMemberID
                 guard bindings[memberID] == nil,
+                      !protectedMemberIDs.contains(memberID),
+                      envelope.provenance.creatorUserRecordName.map(batch.approvedParticipantUserRecordNames.contains) == true,
                       isPayloadAuthorized(envelope.snapshot, authorizedAdmins: authorizedAdmins) else { continue }
                 bindings[memberID] = envelope.provenance.creatorUserRecordName
             }
         }
+
+        let presentMemberIDs = Set(structurallyValid.map { $0.snapshot.authorMemberID })
+        let missingBoundRecordNames = bindings.keys
+            .filter { !removedMemberIDs.contains($0) && !presentMemberIDs.contains($0) }
+            .map { recordPrefix + $0 }
+        let collidingRecordNames = stableObjectOwnershipCollisions(in: structurallyValid)
 
         var accepted: [MemberShareSnapshot] = []
         var rejected: [String] = []
@@ -111,6 +125,9 @@ enum MemberSnapshotAuthorization {
                 rejected.append(envelope.provenance.recordName)
             }
         }
+        rejected.append(contentsOf: missingBoundRecordNames)
+        rejected.append(contentsOf: collidingRecordNames)
+        rejected = Array(Set(rejected)).sorted()
 
         return MemberSnapshotAuthorizationResult(
             snapshots: accepted,
@@ -119,6 +136,38 @@ enum MemberSnapshotAuthorization {
             bindingsChanged: bindings != existingBindings,
             isTrustEstablished: true
         )
+    }
+
+    private static func metadataVersion(_ snapshot: MemberShareSnapshot) -> Date {
+        guard let meta = snapshot.clubMeta else { return .distantPast }
+        return meta.metadataUpdatedAt ?? meta.createdAt
+    }
+
+    /// A stable base-object ID belongs to exactly one authenticated snapshot
+    /// author. References such as votes and RSVPs may target another member's
+    /// object, but submissions, prompts, polls, and meetings may not redefine it.
+    private static func stableObjectOwnershipCollisions(
+        in envelopes: [ProvenancedMemberSnapshot]
+    ) -> [String] {
+        var owners: [String: (memberID: String, recordName: String)] = [:]
+        var rejected = Set<String>()
+        for envelope in envelopes {
+            let memberID = envelope.snapshot.authorMemberID
+            let recordName = envelope.provenance.recordName
+            let keys = envelope.snapshot.submissions.map { "submission:\($0.selectionID)" }
+                + envelope.snapshot.prompts.map { "prompt:\($0.promptID)" }
+                + envelope.snapshot.polls.map { "poll:\($0.pollID)" }
+                + envelope.snapshot.meetings.map { "meeting:\($0.meetingID)" }
+            for key in keys where !key.hasSuffix(":") {
+                if let prior = owners[key], prior.memberID != memberID {
+                    rejected.insert(prior.recordName)
+                    rejected.insert(recordName)
+                } else {
+                    owners[key] = (memberID, recordName)
+                }
+            }
+        }
+        return rejected.sorted()
     }
 
     private static func isStructurallyValid(_ envelope: ProvenancedMemberSnapshot) -> Bool {

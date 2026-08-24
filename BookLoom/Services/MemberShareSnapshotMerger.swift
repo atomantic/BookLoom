@@ -14,7 +14,7 @@ extension MemberShareSnapshotStore {
         // 1. Apply club meta from the snapshot that carries it (the owner's).
         if let meta = snapshots
             .filter({ $0.clubMeta != nil })
-            .max(by: { $0.capturedAt < $1.capturedAt })?
+            .max(by: { clubMetaVersion($0) < clubMetaVersion($1) })?
             .clubMeta {
             if club.name != meta.name { club.name = meta.name }
             let nextNameUpdatedAt = meta.nameUpdatedAt ?? club.nameUpdatedAt
@@ -36,6 +36,8 @@ extension MemberShareSnapshotStore {
                 let nextRemoved = Set(removed.filter { !$0.isEmpty })
                 if club.removedMemberIDs != nextRemoved { club.removedMemberIDs = nextRemoved }
             }
+            let nextMetaUpdatedAt = meta.metadataUpdatedAt ?? meta.createdAt
+            if club.clubMetaUpdatedAt != nextMetaUpdatedAt { club.clubMetaUpdatedAt = nextMetaUpdatedAt }
             // Identity bindings are applied only by
             // `MemberSnapshotAuthorization`, after CloudKit provenance has
             // authenticated this metadata. Applying decoded values here would
@@ -53,6 +55,9 @@ extension MemberShareSnapshotStore {
         if let latestProposal, latestProposal.updatedAt > club.nameUpdatedAt {
             club.name = latestProposal.name
             club.nameUpdatedAt = latestProposal.updatedAt
+            if club.isOwner, club.clubMetaUpdatedAt < latestProposal.updatedAt {
+                club.clubMetaUpdatedAt = latestProposal.updatedAt
+            }
         }
         club.shareIsActive = true
 
@@ -386,6 +391,11 @@ extension MemberShareSnapshotStore {
     }
 
     // MARK: - Merge helpers
+
+    private static func clubMetaVersion(_ snapshot: MemberShareSnapshot) -> Date {
+        guard let meta = snapshot.clubMeta else { return .distantPast }
+        return meta.metadataUpdatedAt ?? meta.createdAt
+    }
 
     /// Reconcile a per-parent collection (ratings on submissions, votes on
     /// polls, RSVPs on meetings, etc.) against the canonical payloads. The

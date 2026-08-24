@@ -1364,14 +1364,14 @@ final class SharedClubSnapshotTests: XCTestCase {
 
     // MARK: - clubMeta selection (step 1)
 
-    func test_mergeAdoptsClubMetaFromLatestOwnerSnapshot() throws {
+    func test_mergeAdoptsClubMetaFromLatestMutationVersion() throws {
         let context = try makeContext()
         let club = try makeJoinedClub(zone: "BookClub-MetaTiebreak", in: context)
 
         // A stale owner snapshot reports a higher participant count, which
         // must not let stale admin/removal metadata outrank a newer snapshot.
         let stale = MemberShareSnapshot(
-            capturedAt: Date(timeIntervalSince1970: 5_000),
+            capturedAt: Date(timeIntervalSince1970: 7_000),
             authorMemberID: "member-alex",
             authorName: "Alex",
             clubMeta: MemberShareSnapshot.ClubMeta(
@@ -1382,6 +1382,7 @@ final class SharedClubSnapshotTests: XCTestCase {
                 creatorMemberID: "member-alex",
                 adminMemberIDs: [],
                 removedMemberIDs: [],
+                metadataUpdatedAt: Date(timeIntervalSince1970: 2_000),
                 inviteURLString: nil,
                 nameUpdatedAt: nil
             )
@@ -1399,6 +1400,7 @@ final class SharedClubSnapshotTests: XCTestCase {
                 creatorMemberID: "member-alex",
                 adminMemberIDs: [],
                 removedMemberIDs: [],
+                metadataUpdatedAt: Date(timeIntervalSince1970: 3_000),
                 inviteURLString: nil,
                 nameUpdatedAt: nil
             )
@@ -1411,7 +1413,7 @@ final class SharedClubSnapshotTests: XCTestCase {
             localMemberID: "member-eve"
         )
 
-        XCTAssertEqual(club.name, "New Name", "the latest authenticated owner metadata wins")
+        XCTAssertEqual(club.name, "New Name", "a recaptured stale snapshot must not outrank a newer metadata mutation")
         XCTAssertEqual(club.shareParticipantCount, 2)
     }
 

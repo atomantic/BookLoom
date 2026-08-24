@@ -379,6 +379,7 @@ enum SharedClubSync {
             }
             if club.memberIdentityBindings != authorization.bindings {
                 club.memberIdentityBindings = authorization.bindings
+                if club.isShareOwner { club.clubMetaUpdatedAt = .now }
             }
             // Always include the local member's freshly-built snapshot in the
             // merge so locally-authored items survive the additive reconcile
@@ -572,6 +573,7 @@ enum ClubAdminService {
               !memberID.isEmpty,
               memberID != club.creatorMemberID else { return }
         club.removeMember(memberID: memberID)
+        club.clubMetaUpdatedAt = .now
         try SharedClubSync.saveAndPublish(
             context: context,
             club: club,
@@ -604,6 +606,7 @@ enum ClubAdminService {
     ) throws {
         guard club.isOwner else { return }
         club.setAdmin(isAdmin, memberID: memberID)
+        club.clubMetaUpdatedAt = .now
         try SharedClubSync.saveAndPublish(
             context: context,
             club: club,
@@ -626,6 +629,7 @@ enum ClubAdminService {
               trimmed != club.name else { return false }
         club.name = trimmed
         club.nameUpdatedAt = .now
+        if club.isOwner { club.clubMetaUpdatedAt = club.nameUpdatedAt }
         try SharedClubSync.saveAndPublish(
             context: context,
             club: club,
@@ -645,6 +649,7 @@ enum ClubAdminService {
               !localMemberID.isEmpty
         else { return }
         club.creatorMemberID = localMemberID
+        club.clubMetaUpdatedAt = .now
         do {
             try context.save()
         } catch {

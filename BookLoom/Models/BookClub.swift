@@ -55,6 +55,11 @@ final class BookClub {
     /// per-device member ID used inside BookLoom payloads.
     var memberIdentityBindingsJSON: String = "{}"
 
+    /// Owner-controlled mutation clock for security-sensitive club metadata
+    /// (identity bindings, admins, removals, and the canonical name). Unlike a
+    /// snapshot capture timestamp, this advances only when that state changes.
+    var clubMetaUpdatedAt: Date = Date.distantPast
+
     var inviteURLString: String = ""
 
     /// Tie-break clock for `name`: the latest of the owner's `ClubMeta` rename

@@ -218,6 +218,7 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
         )) ?? MemberSnapshotBatch(
             ownerUserRecordName: metadata.share.owner.userIdentity.userRecordID?.recordName
                 ?? metadata.share.recordID.zoneID.ownerName,
+            approvedParticipantUserRecordNames: Self.approvedParticipantUserRecordNames(in: metadata.share),
             snapshots: []
         )
         let clubName = clubName(from: rootRecord)
@@ -555,8 +556,16 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
         )
         return MemberSnapshotBatch(
             ownerUserRecordName: share.owner.userIdentity.userRecordID?.recordName ?? zoneID.ownerName,
+            approvedParticipantUserRecordNames: Self.approvedParticipantUserRecordNames(in: share),
             snapshots: snapshots
         )
+    }
+
+    private static func approvedParticipantUserRecordNames(in share: CKShare) -> Set<String> {
+        Set(share.participants.compactMap { participant in
+            guard participant.role == .owner || participant.acceptanceStatus == .accepted else { return nil }
+            return participant.userIdentity.userRecordID?.recordName
+        })
     }
 
     static func fetchProvenancedMemberSnapshots(

@@ -6,7 +6,7 @@ import XCTest
 /// shared CloudKit zone. A decode failure on a record written by an older or
 /// newer client silently drops that member's contributions, so these tests
 /// pin both encode→decode losslessness and tolerant decoding of legacy
-/// payloads that predate the optional fields added through schemaVersion 4.
+/// payloads that predate the optional fields added through schemaVersion 5.
 final class MemberShareSnapshotCodableTests: XCTestCase {
     private func makeFullyPopulatedSnapshot() -> MemberShareSnapshot {
         MemberShareSnapshot(

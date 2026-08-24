@@ -136,7 +136,10 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         let result = MemberSnapshotAuthorization.authorize(batch, existingBindings: [:], isShareOwner: false)
 
         XCTAssertEqual(result.snapshots.map(\.authorMemberID), ["member-owner"])
-        XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-sam"])
+        XCTAssertEqual(
+            Set(result.rejectedRecordNames),
+            ["MemberSnapshot-member-admin", "MemberSnapshot-member-sam"]
+        )
     }
 
     func test_ownerMigratesPristineLegacyMemberBinding() {
@@ -150,6 +153,56 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         XCTAssertEqual(result.bindings, ["member-owner": "cloud-owner", "member-sam": "cloud-sam"])
         XCTAssertTrue(result.bindingsChanged)
         XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-owner", "member-sam"])
+    }
+
+    func test_ownerDoesNotEnrollSnapshotFromUnapprovedCloudKitParticipant() {
+        let candidate = envelope(memberSnapshot("member-sam"), creator: "cloud-sam")
+        let original = batch(ownerBindings: nil, additional: [candidate])
+        let unapproved = MemberSnapshotBatch(
+            ownerUserRecordName: original.ownerUserRecordName,
+            approvedParticipantUserRecordNames: ["cloud-owner"],
+            snapshots: original.snapshots
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(unapproved, existingBindings: [:], isShareOwner: true)
+
+        XCTAssertNil(result.bindings["member-sam"])
+        XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-sam"])
+    }
+
+    func test_missingOwnerBoundMemberRecordFailsClosed() {
+        let batch = batch(
+            ownerBindings: [binding("member-owner", "cloud-owner"), binding("member-sam", "cloud-sam")],
+            additional: []
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(batch, existingBindings: [:], isShareOwner: false)
+
+        XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-sam"])
+    }
+
+    func test_rejectsStableObjectIDClaimedByDifferentAuthors() {
+        let ownerPoll = pollSnapshot(memberID: "member-owner", pollID: "poll-shared")
+        let memberPoll = pollSnapshot(memberID: "member-sam", pollID: "poll-shared")
+        let owner = MemberShareSnapshot(
+            authorMemberID: "member-owner",
+            authorName: "Owner",
+            clubMeta: ownerMeta(
+                creatorMemberID: "member-owner",
+                removedMemberIDs: [],
+                bindings: [binding("member-owner", "cloud-owner"), binding("member-sam", "cloud-sam")]
+            ),
+            polls: ownerPoll.polls
+        )
+        let batch = MemberSnapshotBatch(
+            ownerUserRecordName: "cloud-owner",
+            approvedParticipantUserRecordNames: ["cloud-owner", "cloud-sam"],
+            snapshots: [envelope(owner, creator: "cloud-owner"), envelope(memberPoll, creator: "cloud-sam")]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(batch, existingBindings: [:], isShareOwner: false)
+
+        XCTAssertEqual(Set(result.rejectedRecordNames), ["MemberSnapshot-member-owner", "MemberSnapshot-member-sam"])
     }
 
     func test_nonAdminRenameProposalIsRejected() {
@@ -170,7 +223,11 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
 
     func test_missingOwnerTrustRootFailsClosed() {
         let member = envelope(memberSnapshot("member-sam"), creator: "cloud-sam")
-        let batch = MemberSnapshotBatch(ownerUserRecordName: "cloud-owner", snapshots: [member])
+        let batch = MemberSnapshotBatch(
+            ownerUserRecordName: "cloud-owner",
+            approvedParticipantUserRecordNames: ["cloud-owner", "cloud-sam"],
+            snapshots: [member]
+        )
 
         let result = MemberSnapshotAuthorization.authorize(batch, existingBindings: [:], isShareOwner: false)
 
@@ -197,12 +254,36 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         )
         return MemberSnapshotBatch(
             ownerUserRecordName: "cloud-owner",
+            approvedParticipantUserRecordNames: Set(
+                ([envelope(owner, creator: "cloud-owner")] + additional)
+                    .compactMap(\.provenance.creatorUserRecordName)
+            ),
             snapshots: [envelope(owner, creator: "cloud-owner")] + additional
         )
     }
 
     private func memberSnapshot(_ memberID: String) -> MemberShareSnapshot {
         MemberShareSnapshot(authorMemberID: memberID, authorName: memberID)
+    }
+
+    private func pollSnapshot(memberID: String, pollID: String) -> MemberShareSnapshot {
+        MemberShareSnapshot(
+            authorMemberID: memberID,
+            authorName: memberID,
+            polls: [
+                .init(
+                    pollID: pollID,
+                    createdByMemberID: memberID,
+                    title: "Next Book",
+                    createdAt: .now,
+                    closesAt: nil,
+                    statusRaw: "open",
+                    isAnonymousResults: false,
+                    candidateIDsRaw: "",
+                    winnerSubmissionID: ""
+                )
+            ]
+        )
     }
 
     private func ownerMeta(

@@ -9,7 +9,7 @@ import Foundation
 /// supported owner-broadcast and silently dropped any contributions from
 /// non-owner participants.
 struct MemberShareSnapshot: Codable, Equatable, Sendable {
-    static let schemaVersion = 4
+    static let schemaVersion = 5
 
     let schemaVersion: Int
     let capturedAt: Date
@@ -89,6 +89,7 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
         /// Owner-signed identity bindings. A member ID is accepted only when
         /// the enclosing record's CloudKit creator matches this mapping.
         let memberIdentityBindings: [MemberIdentityBinding]?
+        let metadataUpdatedAt: Date?
         let inviteURLString: String?
         let nameUpdatedAt: Date?
 
@@ -101,6 +102,7 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
             adminMemberIDs: [String]?,
             removedMemberIDs: [String]?,
             memberIdentityBindings: [MemberIdentityBinding]? = nil,
+            metadataUpdatedAt: Date? = nil,
             inviteURLString: String?,
             nameUpdatedAt: Date?
         ) {
@@ -112,6 +114,7 @@ struct MemberShareSnapshot: Codable, Equatable, Sendable {
             self.adminMemberIDs = adminMemberIDs
             self.removedMemberIDs = removedMemberIDs
             self.memberIdentityBindings = memberIdentityBindings
+            self.metadataUpdatedAt = metadataUpdatedAt
             self.inviteURLString = inviteURLString
             self.nameUpdatedAt = nameUpdatedAt
         }
