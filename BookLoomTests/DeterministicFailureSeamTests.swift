@@ -360,7 +360,9 @@ private final class ControlledSnapshotService: MemberSnapshotSyncing {
         activePublishes -= 1
     }
 
-    func fetchMemberSnapshots(target: MemberSnapshotSyncTarget) async throws -> [MemberShareSnapshot] { [] }
+    func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
+        MemberSnapshotBatch(ownerUserRecordName: "owner-user", approvedParticipantUserRecordNames: ["owner-user"], snapshots: [])
+    }
     func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 1 }
 
     func releaseFirstPublish() {

@@ -46,7 +46,7 @@ final class CloudKitSchemaPrimeTests: XCTestCase {
 
         let share = CKShare(rootRecord: root)
         share[CKShare.SystemFieldKey.title] = "Book Club: Schema Prime" as CKRecordValue
-        share.publicPermission = .readWrite
+        share.publicPermission = .none
 
         _ = try await db.modifyRecords(saving: [root, memberRecord, share], deleting: [])
 

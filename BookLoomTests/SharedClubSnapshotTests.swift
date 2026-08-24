@@ -505,7 +505,7 @@ final class SharedClubSnapshotTests: XCTestCase {
         XCTAssertEqual(club.name, "Sunday Pages", "Non-admin members should not be able to rename via nameProposal")
     }
 
-    func test_inviteURLPropagatesThroughClubMeta() throws {
+    func test_legacyInviteURLIsNotPropagatedThroughClubMeta() throws {
         let context = try makeContext()
         let club = BookClub(name: "Sunday Pages")
         club.cloudZoneName = "BookClub-Test"
@@ -539,7 +539,7 @@ final class SharedClubSnapshotTests: XCTestCase {
             localMemberID: "member-lena"
         )
 
-        XCTAssertEqual(club.inviteURLString, inviteURL, "Invite URL from owner's clubMeta should land on member device for admins to copy")
+        XCTAssertTrue(club.inviteURLString.isEmpty, "Reusable legacy invite URLs must not propagate to member devices")
     }
 
     func test_coverDataCleanupRemovesPersistedImageBytes() throws {
@@ -1362,30 +1362,32 @@ final class SharedClubSnapshotTests: XCTestCase {
         XCTAssertEqual(rsvps.first?.bringingNote, "Wine")
     }
 
-    // MARK: - clubMeta tiebreaker (step 1)
+    // MARK: - clubMeta selection (step 1)
 
-    func test_mergeAdoptsClubMetaFromSnapshotWithMostParticipants() throws {
+    func test_mergeAdoptsClubMetaFromLatestMutationVersion() throws {
         let context = try makeContext()
         let club = try makeJoinedClub(zone: "BookClub-MetaTiebreak", in: context)
 
-        // A stale owner snapshot reporting an old name and 2 participants.
+        // A stale owner snapshot reports a higher participant count, which
+        // must not let stale admin/removal metadata outrank a newer snapshot.
         let stale = MemberShareSnapshot(
-            capturedAt: Date(timeIntervalSince1970: 5_000),
+            capturedAt: Date(timeIntervalSince1970: 7_000),
             authorMemberID: "member-alex",
             authorName: "Alex",
             clubMeta: MemberShareSnapshot.ClubMeta(
                 name: "Old Name",
                 createdAt: Date(timeIntervalSince1970: 1_000),
                 cloudZoneName: "BookClub-MetaTiebreak",
-                shareParticipantCount: 2,
+                shareParticipantCount: 5,
                 creatorMemberID: "member-alex",
                 adminMemberIDs: [],
                 removedMemberIDs: [],
+                metadataUpdatedAt: Date(timeIntervalSince1970: 2_000),
                 inviteURLString: nil,
                 nameUpdatedAt: nil
             )
         )
-        // A fresher owner snapshot reporting more participants and the new name.
+        // A fresher owner snapshot reports the new canonical state.
         let fresh = MemberShareSnapshot(
             capturedAt: Date(timeIntervalSince1970: 6_000),
             authorMemberID: "member-alex",
@@ -1394,7 +1396,56 @@ final class SharedClubSnapshotTests: XCTestCase {
                 name: "New Name",
                 createdAt: Date(timeIntervalSince1970: 1_000),
                 cloudZoneName: "BookClub-MetaTiebreak",
-                shareParticipantCount: 5,
+                shareParticipantCount: 2,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: [],
+                removedMemberIDs: [],
+                metadataUpdatedAt: Date(timeIntervalSince1970: 3_000),
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [stale, fresh],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        XCTAssertEqual(club.name, "New Name", "a recaptured stale snapshot must not outrank a newer metadata mutation")
+        XCTAssertEqual(club.shareParticipantCount, 2)
+    }
+
+    func test_mergeUsesCaptureTimeForLegacyClubMetaWithoutMutationVersion() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-LegacyMeta", in: context)
+        let createdAt = Date(timeIntervalSince1970: 1_000)
+        let stale = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 2_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: .init(
+                name: "Old Name",
+                createdAt: createdAt,
+                cloudZoneName: "BookClub-LegacyMeta",
+                shareParticipantCount: 4,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: [],
+                removedMemberIDs: [],
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+        let fresh = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 3_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: .init(
+                name: "Fresh Name",
+                createdAt: createdAt,
+                cloudZoneName: "BookClub-LegacyMeta",
+                shareParticipantCount: 2,
                 creatorMemberID: "member-alex",
                 adminMemberIDs: [],
                 removedMemberIDs: [],
@@ -1410,8 +1461,9 @@ final class SharedClubSnapshotTests: XCTestCase {
             localMemberID: "member-eve"
         )
 
-        XCTAssertEqual(club.name, "New Name", "clubMeta with the most participants wins the tiebreaker")
-        XCTAssertEqual(club.shareParticipantCount, 5)
+        XCTAssertEqual(club.name, "Fresh Name")
+        XCTAssertEqual(club.shareParticipantCount, 2)
+        XCTAssertEqual(club.clubMetaUpdatedAt, fresh.capturedAt)
     }
 
     func test_mergeIgnoresNonOwnerSnapshotsCarryingNoClubMeta() throws {

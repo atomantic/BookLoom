@@ -15,15 +15,8 @@ import XCTest
 ///   * `saveAndPublish`'s synchronous cover-data cleanup + save, which runs
 ///     regardless of the feature flag;
 ///   * `synchronizeSharedClubs`'s fetch-then-iterate over the local store;
+///   * authorization failures abort before local merge mutations;
 ///   * `SharedClubSyncStatus`'s record/clear/dedup coordination.
-///
-/// BLOCKED (needs a production seam): the success/failure branches inside the
-/// publish/refresh `Task` — participant-count reconcile, snapshot publish,
-/// fetch+merge, orphan-zone delete — all dispatch through
-/// `CloudKitSharingService.shared`, a concrete singleton. Verifying those
-/// branches requires injecting a `CloudKitSharingService` protocol stub
-/// (issue #47's "longer-term" suggestion). That injection is a production
-/// change and is intentionally NOT made here.
 @MainActor
 final class SharedClubSyncCoordinationTests: XCTestCase {
     // Status assertions key on each club's random `cloudZoneName` (a fresh
@@ -101,6 +94,98 @@ final class SharedClubSyncCoordinationTests: XCTestCase {
 
         let surviving = try context.fetch(FetchDescriptor<BookClub>())
         XCTAssertEqual(surviving.map(\.persistentModelID), [clubID])
+    }
+
+    /// A missing provenance-verified owner snapshot must fail the whole batch
+    /// before the canonical merge can interpret the absence of remote rows as
+    /// deletions. This protects existing content when an attacker overwrites,
+    /// hides, or replaces records in a legacy public share.
+    func test_refreshIfNeeded_rejectsUntrustedBatchWithoutMutatingLocalRows() async throws {
+        let context = try makeContext()
+        let club = makeActiveSharedClub()
+        let submission = BookSubmission(title: "Keep Me", coverURL: "")
+        context.insert(club)
+        context.insert(submission)
+        club.addSubmission(submission)
+        try context.save()
+        let submissionID = submission.persistentModelID
+
+        await SharedClubSync.refreshIfNeeded(
+            club,
+            context: context,
+            localMemberID: "member-eve",
+            localMemberName: "Eve",
+            service: UntrustedBatchSnapshotService(),
+            isEnabled: true
+        )
+
+        let surviving = try context.fetch(FetchDescriptor<BookSubmission>())
+        XCTAssertEqual(surviving.map(\.persistentModelID), [submissionID])
+        XCTAssertNotNil(SharedClubSyncStatus.shared.issue(for: club))
+    }
+
+    func test_refreshIfNeeded_reconcilesRemoteOwnerMetaBeforePublishingNewBinding() async throws {
+        let context = try makeContext()
+        let club = makeActiveSharedClub(name: "Stale Local Name")
+        club.creatorMemberID = "member-owner"
+        club.adminMemberIDs = ["member-stale-admin"]
+        club.memberIdentityBindings = ["member-owner": "cloud-owner"]
+        club.clubMetaUpdatedAt = Date(timeIntervalSince1970: 2_000)
+        context.insert(club)
+        try context.save()
+
+        let remoteOwner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 3_000),
+            authorMemberID: "member-owner",
+            authorName: "Owner",
+            clubMeta: .init(
+                name: "Fresh Remote Name",
+                createdAt: club.createdAt,
+                cloudZoneName: club.cloudZoneName,
+                shareParticipantCount: 2,
+                creatorMemberID: "member-owner",
+                adminMemberIDs: ["member-fresh-admin"],
+                removedMemberIDs: ["member-departed"],
+                memberIdentityBindings: [.init(memberID: "member-owner", cloudKitUserRecordName: "cloud-owner")],
+                metadataUpdatedAt: Date(timeIntervalSince1970: 3_000),
+                inviteURLString: nil,
+                nameUpdatedAt: Date(timeIntervalSince1970: 3_000)
+            )
+        )
+        let remoteMember = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 3_100),
+            authorMemberID: "member-sam",
+            authorName: "Sam"
+        )
+        let service = CapturingAuthorizedBatchSnapshotService(
+            batch: MemberSnapshotBatch(
+                ownerUserRecordName: "cloud-owner",
+                approvedParticipantUserRecordNames: ["cloud-owner", "cloud-sam"],
+                snapshots: [
+                    envelope(remoteOwner, creator: "cloud-owner"),
+                    envelope(remoteMember, creator: "cloud-sam")
+                ]
+            )
+        )
+
+        await SharedClubSync.refreshIfNeeded(
+            club,
+            context: context,
+            localMemberID: "member-owner",
+            localMemberName: "Owner",
+            service: service,
+            isEnabled: true
+        )
+        await SharedClubSync.waitForPendingPublishes(zoneName: club.cloudZoneName)
+
+        XCTAssertEqual(club.name, "Fresh Remote Name")
+        XCTAssertEqual(club.adminMemberIDs, ["member-fresh-admin"])
+        XCTAssertEqual(club.removedMemberIDs, ["member-departed"])
+        XCTAssertEqual(club.memberIdentityBindings["member-sam"], "cloud-sam")
+        let publishedMeta = try XCTUnwrap(service.publishedSnapshots.last?.clubMeta)
+        XCTAssertEqual(publishedMeta.name, "Fresh Remote Name")
+        XCTAssertEqual(Set(publishedMeta.adminMemberIDs ?? []), ["member-fresh-admin"])
+        XCTAssertEqual(Set(publishedMeta.removedMemberIDs ?? []), ["member-departed"])
     }
 
     // MARK: - saveAndPublish synchronous half
@@ -239,4 +324,55 @@ final class SharedClubSyncCoordinationTests: XCTestCase {
         )
         return ModelContext(container)
     }
+
+    private func envelope(
+        _ snapshot: MemberShareSnapshot,
+        creator: String
+    ) -> ProvenancedMemberSnapshot {
+        ProvenancedMemberSnapshot(
+            snapshot: snapshot,
+            provenance: .init(
+                recordName: "MemberSnapshot-\(snapshot.authorMemberID)",
+                creatorUserRecordName: creator,
+                lastModifiedUserRecordName: creator
+            )
+        )
+    }
+}
+
+private final class UntrustedBatchSnapshotService: MemberSnapshotSyncing {
+    func publishMemberSnapshot(
+        _ snapshot: MemberShareSnapshot,
+        target: MemberSnapshotSyncTarget,
+        localMemberID: String
+    ) async throws {}
+
+    func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
+        MemberSnapshotBatch(ownerUserRecordName: "owner-user", approvedParticipantUserRecordNames: ["owner-user"], snapshots: [])
+    }
+
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 0 }
+}
+
+private final class CapturingAuthorizedBatchSnapshotService: MemberSnapshotSyncing {
+    let batch: MemberSnapshotBatch
+    var publishedSnapshots: [MemberShareSnapshot] = []
+
+    init(batch: MemberSnapshotBatch) {
+        self.batch = batch
+    }
+
+    func publishMemberSnapshot(
+        _ snapshot: MemberShareSnapshot,
+        target: MemberSnapshotSyncTarget,
+        localMemberID: String
+    ) async throws {
+        publishedSnapshots.append(snapshot)
+    }
+
+    func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
+        batch
+    }
+
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 2 }
 }

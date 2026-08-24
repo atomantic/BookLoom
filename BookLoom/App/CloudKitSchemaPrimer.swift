@@ -86,7 +86,7 @@ enum CloudKitSchemaPrimer {
 
         let share = CKShare(rootRecord: root)
         share[CKShare.SystemFieldKey.title] = "Book Club: \(SchemaPrimeIdentity.clubName)" as CKRecordValue
-        share.publicPermission = .readWrite
+        share.publicPermission = .none
 
         _ = try await db.modifyRecords(saving: [root, memberRecord, share], deleting: [])
         log("Saved CKShare schema-prime records in zone \(zone.zoneID.zoneName)")

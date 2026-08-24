@@ -334,9 +334,9 @@ enum SharedClubSync {
         guard isEnabled, club.shareIsActive else { return }
         let target = MemberSnapshotSyncTarget(club)
 
-        let remoteSnapshots: [MemberShareSnapshot]
+        let remoteBatch: MemberSnapshotBatch
         do {
-            remoteSnapshots = try await service.fetchMemberSnapshots(target: target)
+            remoteBatch = try await service.fetchMemberSnapshotBatch(target: target)
         } catch {
             if CKZoneAvailability.classify(error) == .zoneRemoved {
                 // The owner has deleted the club, or we've been removed from
@@ -359,9 +359,30 @@ enum SharedClubSync {
         SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
 
         do {
+            let authorization = MemberSnapshotAuthorization.authorize(
+                remoteBatch,
+                existingBindings: club.memberIdentityBindings,
+                isShareOwner: club.isShareOwner
+            )
+            guard authorization.isTrustEstablished,
+                  authorization.rejectedRecordNames.isEmpty else {
+                let error = MemberSnapshotAuthorizationError(
+                    rejectedRecordNames: authorization.rejectedRecordNames
+                )
+                SharedClubSyncStatus.shared.recordFailure(
+                    zoneName: club.cloudZoneName,
+                    operation: .refresh,
+                    error: error
+                )
+                logger.error("Snapshot authorization failed for \(club.name, privacy: .private): \(error.localizedDescription, privacy: .public)")
+                return
+            }
             // Always include the local member's freshly-built snapshot in the
             // merge so locally-authored items survive the additive reconcile
-            // even if they haven't reached CloudKit yet.
+            // even if they haven't reached CloudKit yet. Capture it before
+            // advancing the binding clock: the merge must first reconcile any
+            // newer owner metadata instead of publishing stale local metadata
+            // with an artificially newer version.
             let localSnapshot = MemberShareSnapshotStore.snapshot(
                 from: club,
                 context: context,
@@ -369,20 +390,46 @@ enum SharedClubSync {
                 authorName: localMemberName,
                 includeClubMeta: club.isShareOwner
             )
-            let merged = remoteSnapshots.filter { $0.authorMemberID != localMemberID } + [localSnapshot]
+            // Keep the authenticated remote snapshot for the local author in
+            // the input as well. The local snapshot comes last and therefore
+            // wins content upserts, while a newer remote owner metadata clock
+            // can still reconcile canonical admin/removal/name state first.
+            let merged = authorization.snapshots + [localSnapshot]
             try MemberShareSnapshotStore.merge(
                 snapshots: merged,
                 into: club,
                 context: context,
                 localMemberID: localMemberID
             )
+            if club.memberIdentityBindings != authorization.bindings {
+                club.memberIdentityBindings = authorization.bindings
+                if club.isShareOwner {
+                    let now = Date.now
+                    club.clubMetaUpdatedAt = now > club.clubMetaUpdatedAt
+                        ? now
+                        : club.clubMetaUpdatedAt.addingTimeInterval(0.001)
+                }
+            }
             if let acceptedCount = try? await service.fetchAcceptedParticipantCount(target: target),
                club.modelContext != nil,
                acceptedCount != club.shareParticipantCount {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(context, club: club, what: "participant-count update")
             }
-            logger.info("Merged \(remoteSnapshots.count) member snapshot(s) for \(club.name, privacy: .private)")
+            if authorization.bindingsChanged {
+                saveOrLog(context, club: club, what: "member identity bindings")
+                if club.isShareOwner {
+                    publishIfNeeded(
+                        club,
+                        context: context,
+                        localMemberID: localMemberID,
+                        localMemberName: localMemberName,
+                        service: service,
+                        isEnabled: isEnabled
+                    )
+                }
+            }
+            logger.info("Merged \(authorization.snapshots.count) authenticated member snapshot(s) for \(club.name, privacy: .private)")
         } catch {
             // A merge failure now includes a failed local fetch/save (see
             // MemberShareSnapshotStore.merge). Surface it instead of silently
@@ -536,8 +583,11 @@ enum ClubAdminService {
         localMemberID: String,
         localMemberName: String
     ) throws {
-        guard !memberID.isEmpty, memberID != club.creatorMemberID else { return }
+        guard club.isOwner,
+              !memberID.isEmpty,
+              memberID != club.creatorMemberID else { return }
         club.removeMember(memberID: memberID)
+        club.clubMetaUpdatedAt = .now
         try SharedClubSync.saveAndPublish(
             context: context,
             club: club,
@@ -568,7 +618,9 @@ enum ClubAdminService {
         localMemberID: String,
         localMemberName: String
     ) throws {
+        guard club.isOwner else { return }
         club.setAdmin(isAdmin, memberID: memberID)
+        club.clubMetaUpdatedAt = .now
         try SharedClubSync.saveAndPublish(
             context: context,
             club: club,
@@ -591,6 +643,7 @@ enum ClubAdminService {
               trimmed != club.name else { return false }
         club.name = trimmed
         club.nameUpdatedAt = .now
+        if club.isOwner { club.clubMetaUpdatedAt = club.nameUpdatedAt }
         try SharedClubSync.saveAndPublish(
             context: context,
             club: club,
@@ -610,6 +663,7 @@ enum ClubAdminService {
               !localMemberID.isEmpty
         else { return }
         club.creatorMemberID = localMemberID
+        club.clubMetaUpdatedAt = .now
         do {
             try context.save()
         } catch {
