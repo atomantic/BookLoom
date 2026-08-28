@@ -323,15 +323,17 @@ enum SharedClubSync {
         }
     }
 
+    @discardableResult
     static func refreshIfNeeded(
         _ club: BookClub,
         context: ModelContext,
         localMemberID: String,
         localMemberName: String,
         service: any MemberSnapshotSyncing = CloudKitSharingService.shared,
-        isEnabled: Bool = Features.cloudKitSharing
-    ) async {
-        guard isEnabled, club.shareIsActive else { return }
+        isEnabled: Bool = Features.cloudKitSharing,
+        removeUnavailableClub: Bool = true
+    ) async -> Bool {
+        guard isEnabled, club.shareIsActive else { return true }
         let target = MemberSnapshotSyncTarget(club)
 
         let remoteBatch: MemberSnapshotBatch
@@ -339,6 +341,10 @@ enum SharedClubSync {
             remoteBatch = try await service.fetchMemberSnapshotBatch(target: target)
         } catch {
             if CKZoneAvailability.classify(error) == .zoneRemoved {
+                guard removeUnavailableClub else {
+                    logger.info("Newly accepted shared zone for \(club.name, privacy: .private) is still materializing")
+                    return true
+                }
                 // The owner has deleted the club, or we've been removed from
                 // the share. Drop the orphan local row so the UI clears.
                 let zoneName = club.cloudZoneName
@@ -348,14 +354,15 @@ enum SharedClubSync {
                 queuedPublishes.removeValue(forKey: zoneName)
                 context.delete(club)
                 saveOrLog(context, club: club, what: "orphan-club delete")
+                return false
             } else {
                 let description = CloudKitErrorDescriber.describe(error)
                 SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .refresh, error: error)
                 logger.error("Member snapshot refresh failed: \(description, privacy: .public)")
             }
-            return
+            return true
         }
-        guard club.modelContext != nil else { return }
+        guard club.modelContext != nil else { return true }
         SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
 
         do {
@@ -375,7 +382,7 @@ enum SharedClubSync {
                     error: error
                 )
                 logger.error("Snapshot authorization failed for \(club.name, privacy: .private): \(error.localizedDescription, privacy: .public)")
-                return
+                return false
             }
             // Always include the local member's freshly-built snapshot in the
             // merge so locally-authored items survive the additive reconcile
@@ -438,6 +445,7 @@ enum SharedClubSync {
             SharedClubSyncStatus.shared.recordFailure(zoneName: club.cloudZoneName, operation: .refresh, error: error)
             logger.error("Member snapshot merge failed: \(CloudKitErrorDescriber.describe(error), privacy: .public)")
         }
+        return true
     }
 
     static func waitForPendingPublishes(zoneName: String) async {

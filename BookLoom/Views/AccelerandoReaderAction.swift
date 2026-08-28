@@ -28,7 +28,11 @@ struct AccelerandoReaderAction: View {
         .sheet(isPresented: $showingReader) {
             if let downloadedBook {
                 NavigationStack {
-                    RapidReaderView(text: downloadedBook.text, title: book.displayTitle)
+                    RapidReaderView(
+                        text: downloadedBook.text,
+                        title: book.displayTitle,
+                        sections: downloadedBook.sections
+                    )
                 }
             }
         }
