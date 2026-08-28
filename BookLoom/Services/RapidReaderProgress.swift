@@ -1,5 +1,25 @@
 import Foundation
 
+struct RapidReaderSection: Identifiable, Equatable, Sendable {
+    enum Kind: String, Sendable {
+        case part
+        case chapter
+
+        var label: String {
+            rawValue.capitalized
+        }
+    }
+
+    let id: String
+    let title: String
+    let kind: Kind
+    let wordIndex: Int
+
+    var displayTitle: String {
+        "\(kind.label) · \(title)"
+    }
+}
+
 struct RapidReaderProgress: Codable, Equatable {
     let wordIndex: Int
     let wordCount: Int
@@ -82,7 +102,28 @@ struct RapidReaderProgressStore {
     }
 
     static func words(in text: String) -> [String] {
-        text.split(whereSeparator: \.isWhitespace).map(String.init)
+        var words: [String] = []
+        var pendingPrefix = ""
+
+        for substring in text.split(whereSeparator: \.isWhitespace) {
+            let value = String(substring)
+            if isPunctuationOrSymbolOnly(value) {
+                if isOpeningPunctuationOnly(value) || words.isEmpty {
+                    pendingPrefix += value
+                } else {
+                    words[words.count - 1] += value
+                }
+                continue
+            }
+
+            words.append(pendingPrefix + value)
+            pendingPrefix = ""
+        }
+
+        if !pendingPrefix.isEmpty, !words.isEmpty {
+            words[words.count - 1] += pendingPrefix
+        }
+        return words
     }
 
     static func remainingSeconds(wordIndex: Int, wordCount: Int, currentWordCount: Int = 1, wpm: Int) -> TimeInterval {
@@ -133,6 +174,17 @@ struct RapidReaderProgressStore {
 
     static func clampWPM(_ wpm: Int) -> Int {
         min(maximumWPM, max(minimumWPM, wpm))
+    }
+
+    private static func isPunctuationOrSymbolOnly(_ value: String) -> Bool {
+        !value.isEmpty && value.unicodeScalars.allSatisfy {
+            CharacterSet.punctuationCharacters.contains($0) || CharacterSet.symbols.contains($0)
+        }
+    }
+
+    private static func isOpeningPunctuationOnly(_ value: String) -> Bool {
+        let opening = CharacterSet(charactersIn: "([{<\"'“‘«‹「『¿¡")
+        return !value.isEmpty && value.unicodeScalars.allSatisfy { opening.contains($0) }
     }
 
     private struct Envelope: Codable {

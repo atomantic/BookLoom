@@ -3,6 +3,7 @@ import SwiftUI
 struct RapidReaderView: View {
     let text: String
     let title: String
+    let sections: [RapidReaderSection]
     private let progressStore: RapidReaderProgressStore
 
     @Environment(\.dismiss) private var dismiss
@@ -19,10 +20,12 @@ struct RapidReaderView: View {
     init(
         text: String,
         title: String = AccelerandoBook.title,
+        sections: [RapidReaderSection] = [],
         progressStore: RapidReaderProgressStore = RapidReaderProgressStore()
     ) {
         self.text = text
         self.title = title
+        self.sections = sections.sorted { $0.wordIndex < $1.wordIndex }
         self.progressStore = progressStore
         let words = RapidReaderProgressStore.words(in: text)
         let saved = progressStore.read(text: text)
@@ -36,11 +39,20 @@ struct RapidReaderView: View {
 
     private var currentWordCount: Int {
         guard wordIndex < words.count else { return 0 }
-        return min(chunkSize, words.count - wordIndex)
+        return currentChunkWords.count
+    }
+
+    private var currentChunkWords: [String] {
+        let candidates = Array(words.dropFirst(wordIndex).prefix(max(1, chunkSize)))
+        guard chunkSize == 2, candidates.count == 2 else {
+            return Array(candidates.prefix(1))
+        }
+        let phrase = candidates.joined(separator: " ")
+        return phrase.count <= 20 ? candidates : Array(candidates.prefix(1))
     }
 
     private var currentChunk: String {
-        words[wordIndex..<min(words.count, wordIndex + max(1, chunkSize))].joined(separator: " ")
+        currentChunkWords.joined(separator: " ")
     }
 
     private var playheadProgress: Double {
@@ -58,6 +70,10 @@ struct RapidReaderView: View {
             currentWordCount: currentWordCount,
             wpm: wpm
         )
+    }
+
+    private var currentSection: RapidReaderSection? {
+        sections.last { $0.wordIndex <= wordIndex }
     }
 
     var body: some View {
@@ -94,6 +110,7 @@ struct RapidReaderView: View {
         .onDisappear {
             saveProgress()
         }
+#if os(macOS)
         .onKeyPress(keys: [.space, .leftArrow, .rightArrow, "b", "r"], phases: .down) { keyPress in
             if keyPress.key == .space {
                 togglePlaying()
@@ -110,6 +127,7 @@ struct RapidReaderView: View {
             }
             return .handled
         }
+#endif
     }
 
     private var playbackTaskID: String {
@@ -158,7 +176,7 @@ struct RapidReaderView: View {
                     Rectangle()
                         .fill(BookLoomStyle.plum.opacity(0.35))
                         .frame(width: 1)
-                    FocalWordView(chunk: currentChunk)
+                    FocalWordView(words: currentChunkWords)
                         .frame(maxWidth: proxy.size.width - 32)
                 }
             }
@@ -222,8 +240,19 @@ struct RapidReaderView: View {
                 .pickerStyle(.segmented)
                 .onChange(of: chunkSize) { _, _ in saveProgress() }
 
+                if !sections.isEmpty {
+                    Menu {
+                        Button("Beginning") { jumpToSection("") }
+                        ForEach(sections) { section in
+                            Button(section.displayTitle) { jumpToSection(section.id) }
+                        }
+                    } label: {
+                        Label(currentSection?.displayTitle ?? "Beginning", systemImage: "list.number")
+                    }
+                }
+
                 HStack(alignment: .firstTextBaseline) {
-                    Text("\(min(words.count, wordIndex + currentWordCount)) / \(words.count) words")
+                    Text("\(min(words.count, wordIndex + 1))\(currentWordCount > 1 ? "–\(min(words.count, wordIndex + currentWordCount))" : "") / \(words.count) words")
                         .monospacedDigit()
                     Spacer()
                     Label("\(RapidReaderProgressStore.formatRemainingTime(remainingSeconds)) left", systemImage: "clock")
@@ -237,9 +266,11 @@ struct RapidReaderView: View {
                         .foregroundStyle(BookLoomStyle.sage)
                         .font(.subheadline.weight(.medium))
                 } else {
+#if os(macOS)
                     Text("Space: play/pause · ←/→: seek 30 seconds · B: bookmark · R: restart")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+#endif
                 }
 
                 if title.caseInsensitiveCompare(AccelerandoBook.title) == .orderedSame {
@@ -304,6 +335,13 @@ struct RapidReaderView: View {
         isPlaying = wasPlaying
     }
 
+    private func jumpToSection(_ sectionID: String) {
+        isPlaying = false
+        wordIndex = sections.first(where: { $0.id == sectionID })?.wordIndex ?? 0
+        hasCompleted = false
+        saveCurrentPosition()
+    }
+
     private func seek(toProgress progress: Double) {
         let lastWordIndex = max(0, words.count - 1)
         wordIndex = min(lastWordIndex, max(0, Int((progress * Double(lastWordIndex)).rounded())))
@@ -358,51 +396,72 @@ struct RapidReaderView: View {
     }
 
     private func endsSentence(_ word: String) -> Bool {
-        word.range(of: #"[.!?…]\"?$"#, options: .regularExpression) != nil
+        word.range(of: #"[.!?…]["'”’»」』)\]]*$"#, options: .regularExpression) != nil
     }
 
     private func endsClause(_ word: String) -> Bool {
-        word.range(of: #"[,;:)]\"?$"#, options: .regularExpression) != nil
+        word.range(of: #"[,;:]["'”’»」』)\]]*$"#, options: .regularExpression) != nil
     }
 }
 
 private struct FocalWordView: View {
-    let chunk: String
+    let words: [String]
 
     var body: some View {
-        let parts = chunk.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        let focalPart = parts.count == 2 && parts[1].count > parts[0].count ? 1 : 0
-        let word = parts[safe: focalPart] ?? ""
-        let focalIndex = focalIndex(for: word)
-        let left = String(word.prefix(focalIndex))
-        let focal = String(word.dropFirst(focalIndex).prefix(1))
-        let right = String(word.dropFirst(min(word.count, focalIndex + 1)))
-        let leftText = parts.count == 2 && focalPart == 1 ? "\(parts[0]) \(left)" : left
-        let rightText = parts.count == 2 && focalPart == 0 ? "\(right) \(parts[1])" : right
+        let display = focalDisplay
 
         return HStack(spacing: 0) {
-            Text(leftText)
+            Text(display.left)
                 .frame(maxWidth: .infinity, alignment: .trailing)
-            Text(focal)
+            Text(display.focal)
                 .foregroundStyle(BookLoomStyle.coral)
-            Text(rightText)
+            Text(display.right)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.system(size: 42, weight: .medium, design: .monospaced))
         .minimumScaleFactor(0.45)
         .lineLimit(1)
         .padding(.horizontal, 12)
-        .accessibilityLabel(chunk)
+        .accessibilityLabel(words.joined(separator: " "))
+    }
+
+    private var focalDisplay: (left: String, focal: String, right: String) {
+        guard !words.isEmpty else { return ("", "", "") }
+        let midpoint = Double(max(0, words.joined(separator: " ").count - 1)) / 2
+        let focalPart = words.count > 1
+            && abs(Double(focalOffset(for: 1)) - midpoint) < abs(Double(focalOffset(for: 0)) - midpoint)
+            ? 1
+            : 0
+        let word = words[focalPart]
+        let index = focalIndex(for: word)
+        let characters = Array(word)
+        let left = String(characters.prefix(index))
+        let focal = index < characters.count ? String(characters[index]) : ""
+        let right = index + 1 < characters.count ? String(characters.dropFirst(index + 1)) : ""
+        let leftText = words.prefix(focalPart).joined(separator: " ") + (focalPart > 0 ? " " : "") + left
+        let rightText = right + (focalPart + 1 < words.count ? " " + words.dropFirst(focalPart + 1).joined(separator: " ") : "")
+        return (leftText, focal, rightText)
     }
 
     private func focalIndex(for word: String) -> Int {
-        switch word.count {
-        case ...1: return 0
-        case 2...5: return 1
-        case 6...9: return 2
-        case 10...13: return 3
-        default: return 4
+        let characters = Array(word)
+        let contentIndexes = characters.indices.filter { characters[$0].isLetter || characters[$0].isNumber }
+        let contentCount = contentIndexes.count
+        guard contentCount > 0 else { return 0 }
+        let target: Int
+        switch contentCount {
+        case ...1: target = 0
+        case 2...5: target = 1
+        case 6...9: target = 2
+        case 10...13: target = 3
+        default: target = 4
         }
+        return contentIndexes[min(target, contentCount - 1)]
+    }
+
+    private func focalOffset(for index: Int) -> Int {
+        let prefixLength = words.prefix(index).joined(separator: " ").count + (index > 0 ? 1 : 0)
+        return prefixLength + focalIndex(for: words[index])
     }
 }
 

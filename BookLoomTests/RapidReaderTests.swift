@@ -22,6 +22,41 @@ final class RapidReaderTests: XCTestCase {
         XCTAssertFalse(text.contains("not book text"))
     }
 
+    func test_readerWordsFoldDanglingPunctuationIntoReadableFrames() {
+        XCTAssertEqual(
+            RapidReaderProgressStore.words(in: #"She said " hello," then paused…"#),
+            ["She", "said", #""hello,""#, "then", "paused…"]
+        )
+        XCTAssertEqual(
+            RapidReaderProgressStore.words(in: "wait — really?"),
+            ["wait—", "really?"]
+        )
+    }
+
+    func test_accelerandoSectionsUseReaderWordOffsets() throws {
+        let html = """
+        <header>site masthead</header>
+        <div id="book">
+        <p>A novel by Charles Stross</p>
+        <p>Creative Commons Attribution-NonCommercial-NoDerivs 2.5</p>
+        <h2><a name="PART1">PART 1: Start</a></h2>
+        <p>Opening text.</p>
+        <h3><a name="ChapterOne">Chapter 1: Alpha</a></h3>
+        <p>Chapter text.</p>
+        </div>
+        """
+
+        let data = Data(html.utf8)
+        let text = try XCTUnwrap(AccelerandoBookService.extractText(from: data))
+        let sections = AccelerandoBookService.extractSections(from: data)
+
+        XCTAssertEqual(sections.map(\.title), ["PART 1: Start", "Chapter 1: Alpha"])
+        XCTAssertEqual(sections.map(\.kind), [.part, .chapter])
+        XCTAssertEqual(sections.first?.wordIndex, 9)
+        XCTAssertEqual(sections.last?.wordIndex, 14)
+        XCTAssertEqual(RapidReaderProgressStore.words(in: text)[sections.last?.wordIndex ?? 0], "Chapter")
+    }
+
     func test_accelerandoHTMLExtractionRejectsUnrecognizedPage() {
         XCTAssertNil(AccelerandoBookService.extractText(from: Data("<html>error</html>".utf8)))
     }
