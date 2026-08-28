@@ -1,8 +1,10 @@
 import SwiftUI
 import SwiftData
+import CloudKit
 
 struct RootView: View {
     @Environment(MemberIdentity.self) private var memberIdentity
+    @Environment(ShareAcceptanceQueue<CKShare.Metadata>.self) private var shareAcceptance
     @AppStorage(WelcomeReplay.storageKey) private var replayWelcome = false
 
     var body: some View {
@@ -14,6 +16,83 @@ struct RootView: View {
             }
         }
         .tint(BookLoomStyle.plum)
+        .overlay {
+            if shareAcceptance.state == .accepting {
+                ZStack {
+                    Color.black.opacity(0.2)
+                        .ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Joining book club…")
+                            .font(.headline)
+                    }
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .accessibilityElement(children: .combine)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .alert(shareAcceptance.alertTitle, isPresented: shareAcceptance.alertPresented) {
+            if case .failed(_, let retryable) = shareAcceptance.state {
+                if retryable {
+                    Button("Try Again") {
+                        shareAcceptance.retry()
+                    }
+                }
+                Button("Dismiss", role: .cancel) {
+                    shareAcceptance.dismiss()
+                }
+            } else {
+                Button("OK") {
+                    shareAcceptance.dismiss()
+                }
+            }
+        } message: {
+            Text(shareAcceptance.alertMessage)
+        }
+    }
+}
+
+private extension ShareAcceptanceQueue where Payload == CKShare.Metadata {
+    var alertTitle: String {
+        switch state {
+        case .succeeded:
+            "Book Club Joined"
+        case .failed:
+            "Couldn’t Join Book Club"
+        case .idle, .accepting:
+            ""
+        }
+    }
+
+    var alertMessage: String {
+        switch state {
+        case .succeeded(let clubName):
+            "You’re now a member of \(clubName)."
+        case .failed(let message, _):
+            message
+        case .idle, .accepting:
+            ""
+        }
+    }
+
+    var alertPresented: Binding<Bool> {
+        Binding(
+            get: {
+                switch self.state {
+                case .succeeded, .failed: true
+                case .idle, .accepting: false
+                }
+            },
+            set: { isPresented in
+                guard !isPresented else { return }
+                let presentedState = self.state
+                Task { @MainActor in
+                    self.dismissAlert(ifUnchangedFrom: presentedState)
+                }
+            }
+        )
     }
 }
 

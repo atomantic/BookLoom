@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CloudKit
 import os
 #if os(macOS)
 import AppKit
@@ -46,6 +47,9 @@ struct BookLoomApp: App {
     @State private var memberIdentity = MemberIdentity()
     @State private var activeClubStore = ActiveClubStore()
     @State private var goodreadsInbox: GoodreadsImportInbox
+    @State private var shareAcceptance = ShareAcceptanceQueue<CKShare.Metadata>(
+        identifier: ShareAcceptance.identifier
+    )
     private let acceptedShareInbox = AcceptedShareInbox.shared
     private let cloudKitChangeInbox = CloudKitChangeInbox.shared
     #if os(macOS)
@@ -110,6 +114,7 @@ struct BookLoomApp: App {
                 .environment(memberIdentity)
                 .environment(activeClubStore)
                 .environment(goodreadsInbox)
+                .environment(shareAcceptance)
                 .preferredColorScheme(AppAppearance.resolved(from: appAppearanceRaw).preferredColorScheme)
                 .modifier(ScreenshotAppearanceOverride())
                 .modifier(ScreenshotDynamicTypeOverride())
@@ -123,14 +128,10 @@ struct BookLoomApp: App {
                 .modifier(ScreenshotWindowFrameOverride())
                 #endif
                 .onContinueUserActivity(ShareAcceptance.activityType) { activity in
-                    guard let metadata = ShareAcceptance.metadata(from: activity) else { return }
-                    Task { @MainActor in
-                        await ShareAcceptance.handleAccept(
-                            metadata: metadata,
-                            context: sharedModelContainer.mainContext,
-                            localMemberID: memberIdentity.memberID,
-                            localMemberName: memberIdentity.name
-                        )
+                    guard Features.cloudKitSharing,
+                          let metadata = ShareAcceptance.metadata(from: activity) else { return }
+                    if !shareAcceptance.enqueue(metadata) {
+                        appLogger.debug("Ignored duplicate share-acceptance callback")
                     }
                 }
                 .task {
@@ -146,6 +147,7 @@ struct BookLoomApp: App {
                     SchemaPrimeDataCleanup.removeSchemaPrimeData(from: sharedModelContainer.mainContext)
                     CoverDataCleanup.clearPersistedCoverData(in: sharedModelContainer.mainContext)
                     await BookLoomDataReset.retryPendingCloudKitCleanup(context: sharedModelContainer.mainContext)
+                    configureShareAcceptance()
                     await drainAcceptedShares()
                     await CloudKitChangeNotifications.configureIfNeeded()
                     await SharedClubSync.synchronizeSharedClubs(
@@ -213,13 +215,33 @@ struct BookLoomApp: App {
         // Drain any shares that were accepted via the scene/app delegate before
         // SwiftUI was ready, and also shares that arrive after the first task.
         let pending = AcceptedShareInbox.shared.drain()
+        guard Features.cloudKitSharing else {
+            if !pending.isEmpty {
+                appLogger.info("Share acceptance is unavailable; discarded \(pending.count, privacy: .public) pending callback(s)")
+            }
+            return
+        }
         for metadata in pending {
-            await ShareAcceptance.handleAccept(
-                metadata: metadata,
-                context: sharedModelContainer.mainContext,
-                localMemberID: memberIdentity.memberID,
-                localMemberName: memberIdentity.name
-            )
+            if !shareAcceptance.enqueue(metadata) {
+                appLogger.debug("Ignored duplicate share-acceptance callback")
+            }
+        }
+    }
+
+    @MainActor
+    private func configureShareAcceptance() {
+        shareAcceptance.configure { metadata in
+            do {
+                return try await ShareAcceptance.handleAccept(
+                    metadata: metadata,
+                    context: sharedModelContainer.mainContext,
+                    localMemberID: memberIdentity.memberID,
+                    localMemberName: memberIdentity.name
+                )
+            } catch {
+                appLogger.error("⚠️ Share accept failed: \(error.localizedDescription, privacy: .public)")
+                throw error
+            }
         }
     }
 
