@@ -123,6 +123,11 @@ struct MobileLibraryBookDetailView: View {
                 currentCoverURL: book.coverURL,
                 onCoverChange: applyCoverChange
             )
+
+            if book.isAccelerando {
+                AccelerandoReaderAction(book: book, prominent: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .bookLoomCard(padding: 14)
         .frame(maxWidth: .infinity, alignment: .leading)

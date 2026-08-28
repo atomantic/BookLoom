@@ -335,6 +335,10 @@ private struct LibraryBookHero: View {
         }
         .buttonStyle(BookLoomSecondaryButtonStyle(tint: BookLoomStyle.indigo))
 
+        if book.isAccelerando {
+            AccelerandoReaderAction(book: book)
+        }
+
         ManualCoverPicker(
             identifier: book.libraryID,
             currentCoverURL: book.coverURL,
