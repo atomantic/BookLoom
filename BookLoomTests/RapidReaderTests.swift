@@ -70,6 +70,26 @@ final class RapidReaderTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
+    func test_progressSupportsFastReadingSpeeds() {
+        XCTAssertEqual(RapidReaderProgressStore.clampWPM(1_500), 1_500)
+        XCTAssertEqual(RapidReaderProgressStore.clampWPM(2_000), 1_500)
+    }
+
+    func test_seekWordIndexUsesThirtySecondsAtConfiguredWPMAndClamps() {
+        XCTAssertEqual(
+            RapidReaderProgressStore.seekWordIndex(from: 100, seconds: -30, wordCount: 1_000, wpm: 600),
+            0
+        )
+        XCTAssertEqual(
+            RapidReaderProgressStore.seekWordIndex(from: 100, seconds: 30, wordCount: 1_000, wpm: 600),
+            400
+        )
+        XCTAssertEqual(
+            RapidReaderProgressStore.seekWordIndex(from: 500, seconds: 30, wordCount: 600, wpm: 1_500),
+            599
+        )
+    }
+
     func test_remainingTimeAndLongCountdownFormatting() {
         XCTAssertEqual(
             RapidReaderProgressStore.remainingSeconds(wordIndex: 10, wordCount: 110, currentWordCount: 2, wpm: 100),
