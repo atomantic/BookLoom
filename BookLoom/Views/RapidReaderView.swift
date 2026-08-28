@@ -13,6 +13,7 @@ struct RapidReaderView: View {
     @State private var isPlaying: Bool
     @State private var lastSavedWordIndex: Int
     @State private var wasPlayingBeforeSeeking = false
+    @State private var isSeeking = false
     @State private var hasCompleted = false
 
     init(
@@ -44,8 +45,10 @@ struct RapidReaderView: View {
 
     private var playheadProgress: Double {
         guard !words.isEmpty else { return 0 }
-        guard words.count > 1 else { return 0 }
-        return Double(wordIndex) / Double(words.count - 1)
+        guard words.count > 1 else { return 1 }
+        if hasCompleted { return 1 }
+        let lastShownWordIndex = min(words.count - 1, wordIndex + max(0, currentWordCount - 1))
+        return Double(lastShownWordIndex) / Double(words.count - 1)
     }
 
     private var remainingSeconds: TimeInterval {
@@ -288,6 +291,7 @@ struct RapidReaderView: View {
     }
 
     private func seekByThirtySeconds(direction: Int) {
+        let wasPlaying = isPlaying
         isPlaying = false
         wordIndex = RapidReaderProgressStore.seekWordIndex(
             from: wordIndex,
@@ -297,15 +301,20 @@ struct RapidReaderView: View {
         )
         hasCompleted = false
         saveCurrentPosition()
+        isPlaying = wasPlaying
     }
 
     private func seek(toProgress progress: Double) {
         let lastWordIndex = max(0, words.count - 1)
         wordIndex = min(lastWordIndex, max(0, Int((progress * Double(lastWordIndex)).rounded())))
         hasCompleted = false
+        if !isSeeking {
+            saveCurrentPosition()
+        }
     }
 
     private func handlePlayheadEditingChanged(_ isEditing: Bool) {
+        isSeeking = isEditing
         if isEditing {
             wasPlayingBeforeSeeking = isPlaying
             isPlaying = false
