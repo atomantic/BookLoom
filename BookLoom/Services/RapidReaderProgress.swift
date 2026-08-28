@@ -13,6 +13,8 @@ struct RapidReaderProgress: Codable, Equatable {
 /// from UserDefaults.
 struct RapidReaderProgressStore {
     static let storageKey = "bookloom.rapid-reader-progress-v1"
+    static let minimumWPM = 100
+    static let maximumWPM = 1_500
     private static let version = 1
     private static let maxSavedDocuments = 20
 
@@ -88,6 +90,12 @@ struct RapidReaderProgressStore {
         return TimeInterval(remainingWords * 60) / TimeInterval(max(60, wpm))
     }
 
+    static func seekWordIndex(from wordIndex: Int, seconds: TimeInterval, wordCount: Int, wpm: Int) -> Int {
+        guard wordCount > 0 else { return 0 }
+        let wordsToSeek = Int((Double(clampWPM(wpm)) * seconds / 60).rounded())
+        return min(max(0, wordIndex + wordsToSeek), wordCount - 1)
+    }
+
     static func formatRemainingTime(_ seconds: TimeInterval) -> String {
         let totalSeconds = max(0, Int(seconds.rounded()))
         let hours = totalSeconds / 3_600
@@ -123,8 +131,8 @@ struct RapidReaderProgressStore {
         )
     }
 
-    private static func clampWPM(_ wpm: Int) -> Int {
-        min(1_000, max(100, wpm))
+    static func clampWPM(_ wpm: Int) -> Int {
+        min(maximumWPM, max(minimumWPM, wpm))
     }
 
     private struct Envelope: Codable {

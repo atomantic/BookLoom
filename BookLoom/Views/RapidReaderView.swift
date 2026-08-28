@@ -12,6 +12,7 @@ struct RapidReaderView: View {
     @State private var chunkSize: Int
     @State private var isPlaying: Bool
     @State private var lastSavedWordIndex: Int
+    @State private var wasPlayingBeforeSeeking = false
     @State private var hasCompleted = false
 
     init(
@@ -41,9 +42,10 @@ struct RapidReaderView: View {
         words[wordIndex..<min(words.count, wordIndex + max(1, chunkSize))].joined(separator: " ")
     }
 
-    private var progress: Double {
+    private var playheadProgress: Double {
         guard !words.isEmpty else { return 0 }
-        return Double(min(words.count, wordIndex + currentWordCount)) / Double(words.count)
+        guard words.count > 1 else { return 0 }
+        return Double(wordIndex) / Double(words.count - 1)
     }
 
     private var remainingSeconds: TimeInterval {
@@ -93,9 +95,9 @@ struct RapidReaderView: View {
             if keyPress.key == .space {
                 togglePlaying()
             } else if keyPress.key == .leftArrow {
-                pauseAndMove(by: -1)
+                seekByThirtySeconds(direction: -1)
             } else if keyPress.key == .rightArrow {
-                pauseAndMove(by: 1)
+                seekByThirtySeconds(direction: 1)
             } else if keyPress.characters.lowercased() == "b" {
                 saveProgress(force: true)
             } else if keyPress.characters.lowercased() == "r" {
@@ -160,11 +162,14 @@ struct RapidReaderView: View {
             .frame(minHeight: 190, idealHeight: 240, maxHeight: 300)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            ProgressView(value: progress)
+            Slider(value: Binding(
+                get: { playheadProgress },
+                set: { seek(toProgress: $0) }
+            ), in: 0...1, onEditingChanged: handlePlayheadEditingChanged)
                 .tint(BookLoomStyle.plum)
                 .padding(.horizontal, 16)
-                .accessibilityLabel("Reading progress")
-                .accessibilityValue("\(Int(progress * 100)) percent")
+                .accessibilityLabel("Reading position")
+                .accessibilityValue("\(Int(playheadProgress * 100)) percent")
         }
         .padding(.top, 16)
         .padding(.bottom, 10)
@@ -174,14 +179,14 @@ struct RapidReaderView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 10) {
-                    readerButton("Back 5", systemImage: "backward.fill", accessibility: "Back 5 words") {
-                        pauseAndMove(by: -5)
+                    readerButton("Back 30 seconds", systemImage: "backward.fill", accessibility: "Back 30 seconds") {
+                        seekByThirtySeconds(direction: -1)
                     }
                     readerButton(isPlaying ? "Pause" : "Play", systemImage: isPlaying ? "pause.fill" : "play.fill", accessibility: isPlaying ? "Pause reading" : "Play reading") {
                         togglePlaying()
                     }
-                    readerButton("Forward 5", systemImage: "forward.fill", accessibility: "Forward 5 words") {
-                        pauseAndMove(by: 5)
+                    readerButton("Forward 30 seconds", systemImage: "forward.fill", accessibility: "Forward 30 seconds") {
+                        seekByThirtySeconds(direction: 1)
                     }
                     readerButton("Restart", systemImage: "arrow.counterclockwise", accessibility: "Restart reading") {
                         restart()
@@ -202,7 +207,7 @@ struct RapidReaderView: View {
                     Slider(value: Binding(
                         get: { Double(wpm) },
                         set: { wpm = Int($0.rounded()) }
-                    ), in: 100...1_000, step: 25)
+                    ), in: Double(RapidReaderProgressStore.minimumWPM)...Double(RapidReaderProgressStore.maximumWPM), step: 25)
                     .tint(BookLoomStyle.plum)
                     .accessibilityLabel("Reading speed")
                 }
@@ -229,7 +234,7 @@ struct RapidReaderView: View {
                         .foregroundStyle(BookLoomStyle.sage)
                         .font(.subheadline.weight(.medium))
                 } else {
-                    Text("Space: play/pause · ←/→: move · B: bookmark · R: restart")
+                    Text("Space: play/pause · ←/→: seek 30 seconds · B: bookmark · R: restart")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -282,11 +287,45 @@ struct RapidReaderView: View {
         saveProgressIfNeeded()
     }
 
-    private func pauseAndMove(by offset: Int) {
+    private func seekByThirtySeconds(direction: Int) {
         isPlaying = false
-        wordIndex = min(max(0, wordIndex + offset), max(0, words.count - 1))
+        wordIndex = RapidReaderProgressStore.seekWordIndex(
+            from: wordIndex,
+            seconds: 30 * Double(direction),
+            wordCount: words.count,
+            wpm: wpm
+        )
         hasCompleted = false
-        saveProgress()
+        saveCurrentPosition()
+    }
+
+    private func seek(toProgress progress: Double) {
+        let lastWordIndex = max(0, words.count - 1)
+        wordIndex = min(lastWordIndex, max(0, Int((progress * Double(lastWordIndex)).rounded())))
+        hasCompleted = false
+    }
+
+    private func handlePlayheadEditingChanged(_ isEditing: Bool) {
+        if isEditing {
+            wasPlayingBeforeSeeking = isPlaying
+            isPlaying = false
+        } else {
+            saveCurrentPosition()
+            if wasPlayingBeforeSeeking {
+                isPlaying = true
+            }
+            wasPlayingBeforeSeeking = false
+        }
+    }
+
+    private func saveCurrentPosition() {
+        guard !hasCompleted else { return }
+        if wordIndex == 0 {
+            progressStore.clear(text: text)
+            lastSavedWordIndex = 0
+        } else {
+            saveProgress(force: true)
+        }
     }
 
     private func restart() {
