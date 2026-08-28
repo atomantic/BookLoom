@@ -37,6 +37,10 @@ enum AccelerandoBook {
             sourceURLString: sourceURL.absoluteString,
             addedAt: now
         )
+        // SwiftData's CloudKit record identity is not derived from arbitrary
+        // metadata. Keep the seeded entry's logical identity stable as an
+        // additional guard against two fresh devices installing it together.
+        book.libraryID = "bookloom-default-accelerando-v1"
         book.format = .ebook
         book.condition = .new
         book.shelfLocation = "Digital Shelf"
@@ -51,6 +55,26 @@ enum AccelerandoBook {
     @MainActor
     static func ensureOnShelf(context: ModelContext) throws -> LibraryBook? {
         let books = try context.fetch(FetchDescriptor<LibraryBook>())
+        let officialBooks = books
+            .filter { $0.externalProvider == provider && $0.externalID == identifier }
+            .sorted {
+                if $0.addedAt != $1.addedAt { return $0.addedAt < $1.addedAt }
+                return $0.libraryID < $1.libraryID
+            }
+        if let existing = officialBooks.first {
+            let duplicates = officialBooks.dropFirst()
+            if !duplicates.isEmpty {
+                duplicates.forEach(context.delete)
+                do {
+                    try context.save()
+                } catch {
+                    context.rollback()
+                    throw error
+                }
+            }
+            UserDefaults.standard.set(true, forKey: installationDefaultsKey)
+            return existing
+        }
         if let existing = books.first(where: matches) {
             UserDefaults.standard.set(true, forKey: installationDefaultsKey)
             return existing

@@ -79,7 +79,7 @@ struct RapidReaderView: View {
             guard isPlaying, !words.isEmpty, !hasCompleted else { return }
             let delay = delayForCurrentChunk
             do {
-                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000))
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             } catch {
                 return
             }
@@ -88,6 +88,22 @@ struct RapidReaderView: View {
         }
         .onDisappear {
             saveProgress()
+        }
+        .onKeyPress(keys: [.space, .leftArrow, .rightArrow, "b", "r"], phases: .down) { keyPress in
+            if keyPress.key == .space {
+                togglePlaying()
+            } else if keyPress.key == .leftArrow {
+                pauseAndMove(by: -1)
+            } else if keyPress.key == .rightArrow {
+                pauseAndMove(by: 1)
+            } else if keyPress.characters.lowercased() == "b" {
+                saveProgress(force: true)
+            } else if keyPress.characters.lowercased() == "r" {
+                restart()
+            } else {
+                return .ignored
+            }
+            return .handled
         }
     }
 
@@ -199,7 +215,7 @@ struct RapidReaderView: View {
                 .onChange(of: chunkSize) { _, _ in saveProgress() }
 
                 HStack(alignment: .firstTextBaseline) {
-                    Text("\(min(words.count, wordIndex + 1)) / \(words.count) words")
+                    Text("\(min(words.count, wordIndex + currentWordCount)) / \(words.count) words")
                         .monospacedDigit()
                     Spacer()
                     Label("\(RapidReaderProgressStore.formatRemainingTime(remainingSeconds)) left", systemImage: "clock")
@@ -287,7 +303,7 @@ struct RapidReaderView: View {
     }
 
     private func saveProgress(force: Bool = false) {
-        guard force || wordIndex > 0 else { return }
+        guard !hasCompleted, force || wordIndex > 0 else { return }
         if let _ = progressStore.write(text: text, wordIndex: wordIndex, wpm: wpm, chunkSize: chunkSize) {
             lastSavedWordIndex = wordIndex
         }

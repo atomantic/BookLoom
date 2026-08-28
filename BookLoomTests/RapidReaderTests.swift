@@ -101,6 +101,27 @@ final class RapidReaderTests: XCTestCase {
         XCTAssertTrue(first.countsAsOwned)
         XCTAssertEqual(first.sourceURLString, AccelerandoBook.sourceURL.absoluteString)
     }
+
+    @MainActor
+    func test_defaultAccelerandoDuplicatesAreReconciled() throws {
+        UserDefaults.standard.removeObject(forKey: AccelerandoBook.installationDefaultsKey)
+        defer { UserDefaults.standard.removeObject(forKey: AccelerandoBook.installationDefaultsKey) }
+        let container = try ModelContainer(
+            for: LibraryBook.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let first = try XCTUnwrap(AccelerandoBook.ensureOnShelf(context: context))
+        let duplicate = AccelerandoBook.makeShelfBook(now: first.addedAt.addingTimeInterval(1))
+        context.insert(duplicate)
+        try context.save()
+
+        let retained = try XCTUnwrap(AccelerandoBook.ensureOnShelf(context: context))
+        let books = try context.fetch(FetchDescriptor<LibraryBook>())
+
+        XCTAssertEqual(books.count, 1)
+        XCTAssertEqual(retained.persistentModelID, first.persistentModelID)
+    }
 }
 
 private final class TestURLProtocol: URLProtocol {
