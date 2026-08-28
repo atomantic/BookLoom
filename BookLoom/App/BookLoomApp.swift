@@ -134,6 +134,11 @@ struct BookLoomApp: App {
                     }
                 }
                 .task {
+                    // Make the free, author-hosted edition discoverable from
+                    // the Shelf on a fresh install. Existing Accelerando
+                    // entries are recognized so upgrades never duplicate one.
+                    _ = try? AccelerandoBook.ensureOnShelf(context: sharedModelContainer.mainContext)
+
                     #if DEBUG
                     await CloudKitSchemaPrimer.runIfRequested()
                     #endif

@@ -468,22 +468,8 @@ enum ScreenshotSampleData {
                 isOwned: false,
                 privateNotes: "Borrowed digitally; good enough to recommend, not a keeper copy."
             ),
-            makeLibraryBook(
-                title: "Accelerando",
-                author: "Charles Stross",
-                isbn: "9780441014156",
-                description: "Hoping to grab a paperback at the next indie sale.",
-                year: 2005,
-                coverID: 284259,
-                addedDaysAgo: 6,
-                shelfLocation: "",
-                format: .paperback,
-                condition: .new,
-                isSigned: false,
-                priceCents: 0,
-                isOwned: false,
-                isWishlist: true,
-                privateNotes: "Pair with Rapture of the Nerds for the cyberpunk theme."
+            AccelerandoBook.makeShelfBook(
+                now: Calendar.current.date(byAdding: .day, value: -6, to: .now) ?? .now
             ),
             makeLibraryBook(
                 title: "Murderbot",
