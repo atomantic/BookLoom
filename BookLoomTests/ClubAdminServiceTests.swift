@@ -316,7 +316,14 @@ final class ClubAdminServiceTests: XCTestCase {
         XCTAssertEqual(club.removedMemberIDs, revokedIDs)
         XCTAssertTrue(club.adminMemberIDs.isEmpty)
         XCTAssertTrue(club.knownMemberRoster.isEmpty)
-        XCTAssertTrue(club.memberIdentityBindings.isEmpty)
+        XCTAssertEqual(
+            club.memberIdentityBindings,
+            [
+                "member-sam-phone": "cloud-sam",
+                "member-sam-mac": "cloud-sam"
+            ],
+            "Removal keeps authenticated identity tombstones for a safe future re-invitation"
+        )
     }
 
     // MARK: - backfillCreatorIfNeeded

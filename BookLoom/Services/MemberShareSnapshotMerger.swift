@@ -9,7 +9,8 @@ extension MemberShareSnapshotStore {
         snapshots: [MemberShareSnapshot],
         into club: BookClub,
         context: ModelContext,
-        localMemberID: String
+        localMemberID: String,
+        reactivatedMemberIDs: Set<String> = []
     ) throws {
         // 1. Apply club meta from the snapshot that carries it (the owner's).
         if let metaSnapshot = snapshots
@@ -43,6 +44,16 @@ extension MemberShareSnapshotStore {
             // authenticated this metadata. Applying decoded values here would
             // also overwrite bindings the owner just enrolled during legacy
             // migration before they can be republished.
+        }
+
+        // Only owner-side authorization can supply these IDs, after proving
+        // that an accepted CloudKit participant matches the removed identity.
+        // Apply this after remote ClubMeta so a stale owner snapshot carrying
+        // the old tombstones cannot immediately overwrite the reactivation.
+        if club.isShareOwner, !reactivatedMemberIDs.isEmpty {
+            var nextRemoved = club.removedMemberIDs
+            nextRemoved.subtract(reactivatedMemberIDs)
+            club.removedMemberIDs = nextRemoved
         }
 
         let validProposers = club.adminMemberIDs.union(

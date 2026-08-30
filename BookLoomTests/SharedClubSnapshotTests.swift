@@ -490,6 +490,100 @@ final class SharedClubSnapshotTests: XCTestCase {
         XCTAssertNil(club.knownMemberRoster["member-kim-tablet"], "A removed person's other device IDs must also disappear")
     }
 
+    func test_ownerAuthorizedReinviteClearsTombstoneWithoutRestoringAdmin() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.cloudZoneName = "BookClub-Test"
+        club.shareIsActive = true
+        club.creatorMemberID = "member-alex"
+        club.adminMemberIDs = ["member-kim"]
+        club.memberIdentityBindings = [
+            "member-alex": "cloud-alex",
+            "member-kim": "cloud-kim"
+        ]
+        context.insert(club)
+        try context.save()
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            clubMeta: .init(
+                name: "Sunday Pages",
+                createdAt: Date(timeIntervalSince1970: 1_000),
+                cloudZoneName: "BookClub-Test",
+                shareParticipantCount: 2,
+                creatorMemberID: "member-alex",
+                adminMemberIDs: [],
+                removedMemberIDs: ["member-kim"],
+                memberIdentityBindings: [
+                    .init(memberID: "member-alex", cloudKitUserRecordName: "cloud-alex"),
+                    .init(memberID: "member-kim", cloudKitUserRecordName: "cloud-kim")
+                ],
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+        let returning = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 6_000),
+            authorMemberID: "member-kim",
+            authorName: "Kim",
+            submissions: [
+                .init(
+                    selectionID: "sel-returning",
+                    title: "The Return",
+                    author: "Kim",
+                    isbn: "",
+                    submittedBy: "Kim",
+                    submittedByMemberID: "member-kim",
+                    submittedAt: Date(timeIntervalSince1970: 5_500),
+                    initialStatusRaw: BookSubmissionStatus.proposed.rawValue,
+                    initialPickedAt: nil,
+                    initialCompletedAt: nil,
+                    bookDescription: "",
+                    publishedYear: nil,
+                    coverURL: "",
+                    externalProvider: "",
+                    externalID: ""
+                )
+            ]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, returning],
+            into: club,
+            context: context,
+            localMemberID: "member-alex",
+            reactivatedMemberIDs: ["member-kim"]
+        )
+
+        XCTAssertTrue(club.removedMemberIDs.isEmpty)
+        XCTAssertFalse(club.isAdmin(memberID: "member-kim"), "Rejoining never restores the prior admin role")
+        XCTAssertEqual(club.knownMemberRoster["member-kim"], "Kim")
+        let submissions = try context.fetch(FetchDescriptor<BookSubmission>())
+        XCTAssertEqual(submissions.map(\.selectionID), ["sel-returning"])
+    }
+
+    func test_participantMergeCannotClearOwnerRemovalTombstone() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.ownerUserRecordName = "cloud-owner"
+        club.shareIsActive = true
+        club.removedMemberIDs = ["member-kim"]
+        context.insert(club)
+        try context.save()
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [],
+            into: club,
+            context: context,
+            localMemberID: "member-sam",
+            reactivatedMemberIDs: ["member-kim"]
+        )
+
+        XCTAssertEqual(club.removedMemberIDs, ["member-kim"])
+    }
+
     func test_adminNameProposalAdoptedWhenNewerThanOwnerMeta() throws {
         let context = try makeContext()
         let club = BookClub(name: "Sunday Pages")

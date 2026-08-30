@@ -745,7 +745,8 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
                         provenance: MemberSnapshotProvenance(
                             recordName: record.recordID.recordName,
                             creatorUserRecordName: record.creatorUserRecordID?.recordName,
-                            lastModifiedUserRecordName: record.lastModifiedUserRecordID?.recordName
+                            lastModifiedUserRecordName: record.lastModifiedUserRecordID?.recordName,
+                            modificationDate: record.modificationDate
                         )
                     )
                 )

@@ -471,9 +471,12 @@ enum SharedClubSync {
                 snapshots: merged,
                 into: club,
                 context: context,
-                localMemberID: localMemberID
+                localMemberID: localMemberID,
+                reactivatedMemberIDs: authorization.reactivatedMemberIDs
             )
-            if bindingsChanged {
+            let membershipMetadataChanged = bindingsChanged
+                || !authorization.reactivatedMemberIDs.isEmpty
+            if membershipMetadataChanged {
                 if club.isShareOwner {
                     let now = Date.now
                     club.clubMetaUpdatedAt = now > club.clubMetaUpdatedAt
@@ -487,8 +490,8 @@ enum SharedClubSync {
                 club.shareParticipantCount = acceptedCount
                 saveOrLog(context, club: club, what: "participant-count update")
             }
-            if authorization.bindingsChanged {
-                saveOrLog(context, club: club, what: "member identity bindings")
+            if membershipMetadataChanged {
+                saveOrLog(context, club: club, what: "member identity membership")
                 if club.isShareOwner {
                     publishIfNeeded(
                         club,

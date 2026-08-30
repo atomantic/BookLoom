@@ -5,6 +5,22 @@ struct MemberSnapshotProvenance: Equatable, Sendable {
     let recordName: String
     let creatorUserRecordName: String?
     let lastModifiedUserRecordName: String?
+    /// CloudKit's server-assigned modification time. This lets the owner
+    /// distinguish a freshly republished snapshot after re-invitation from a
+    /// legacy record that merely survived an earlier removal.
+    let modificationDate: Date?
+
+    init(
+        recordName: String,
+        creatorUserRecordName: String?,
+        lastModifiedUserRecordName: String?,
+        modificationDate: Date? = nil
+    ) {
+        self.recordName = recordName
+        self.creatorUserRecordName = creatorUserRecordName
+        self.lastModifiedUserRecordName = lastModifiedUserRecordName
+        self.modificationDate = modificationDate
+    }
 }
 
 struct ProvenancedMemberSnapshot: Equatable, Sendable {
@@ -39,6 +55,10 @@ struct MemberSnapshotBatch: Equatable, Sendable {
 struct MemberSnapshotAuthorizationResult: Equatable, Sendable {
     let snapshots: [MemberShareSnapshot]
     let bindings: [String: String]
+    /// Owner-authorized removal tombstones that can be retired because the
+    /// same CloudKit identity has explicitly rejoined the share. Empty on
+    /// participant devices so only the share owner can reactivate membership.
+    let reactivatedMemberIDs: Set<String>
     let rejectedRecordNames: [String]
     let bindingsChanged: Bool
     let isTrustEstablished: Bool
@@ -99,6 +119,7 @@ enum MemberSnapshotAuthorization {
             return MemberSnapshotAuthorizationResult(
                 snapshots: [],
                 bindings: isShareOwner ? existingBindings : [:],
+                reactivatedMemberIDs: [],
                 rejectedRecordNames: snapshots.map(\.provenance.recordName),
                 bindingsChanged: false,
                 isTrustEstablished: false
@@ -130,38 +151,23 @@ enum MemberSnapshotAuthorization {
             bindings[envelope.snapshot.authorMemberID] = ownerUserRecordName
         }
 
-        // A participant who has left (or was removed directly in the system
-        // sharing UI) no longer has authority in this share. Retire all of that
-        // CloudKit identity's member IDs before checking for missing records.
-        // The owner binding remains anchored to the provenance-verified share
-        // owner even if CloudKit omits the owner from the participant array.
-        bindings = bindings.filter { memberID, userRecordName in
-            memberID == ownerMemberID
-                || userRecordName == ownerUserRecordName
-                || approvedParticipantUserRecordNames.contains(userRecordName)
-        }
-
         let creatorMemberID = ownerMeta.creatorMemberID?.trimmedOrNil ?? ownerMemberID
         let authorizedAdmins = Set(ownerMeta.adminMemberIDs ?? []).union([creatorMemberID])
         let removedMemberIDs = Set(ownerMeta.removedMemberIDs ?? [])
-        let protectedMemberIDs = removedMemberIDs.union(bindings.keys)
 
-        if isShareOwner {
-            // The owner adding a specified CloudKit participant is the approval
-            // handshake for that Apple ID. Only a pristine record from an
-            // approved participant may introduce a fresh local member ID.
-            // Existing and removed IDs can never be claimed; an admin ID from
-            // legacy owner metadata is enrolled here because the trusted owner
-            // both granted that role and admitted this CloudKit participant.
-            for envelope in structurallyValid
-            where envelope.provenance.creatorUserRecordName != ownerUserRecordName {
-                let memberID = envelope.snapshot.authorMemberID
-                guard bindings[memberID] == nil,
-                      !protectedMemberIDs.contains(memberID),
-                      envelope.provenance.creatorUserRecordName.map(approvedParticipantUserRecordNames.contains) == true,
-                      isPayloadAuthorized(envelope.snapshot, authorizedAdmins: authorizedAdmins) else { continue }
-                bindings[memberID] = envelope.provenance.creatorUserRecordName
-            }
+        // A participant who voluntarily left (or was removed directly in the
+        // system sharing UI) no longer has authority in this share. Retire that
+        // identity's active bindings. Deliberate in-app removals retain their
+        // tombstone bindings, however, so a future accepted invitation can be
+        // proven to belong to the same CloudKit identity and so every device ID
+        // for that removed person remains suppressed in the meantime.
+        // The owner binding remains anchored to the provenance-verified share
+        // owner even if CloudKit omits the owner from the participant array.
+        bindings = bindings.filter { memberID, userRecordName in
+            removedMemberIDs.contains(memberID)
+                || memberID == ownerMemberID
+                || userRecordName == ownerUserRecordName
+                || approvedParticipantUserRecordNames.contains(userRecordName)
         }
 
         // Records left behind by users who are no longer share participants are
@@ -175,8 +181,54 @@ enum MemberSnapshotAuthorization {
         }
         let activeStructurallyValid = activeEnvelopes.filter(isStructurallyValid)
         let presentMemberIDs = Set(activeStructurallyValid.map { $0.snapshot.authorMemberID })
+        var reactivatedMemberIDs = Set<String>()
+
+        if isShareOwner {
+            // The owner adding a specified CloudKit participant is the approval
+            // handshake for that Apple ID. Only a pristine record from an
+            // accepted participant may introduce a fresh local member ID. A
+            // retained tombstone can be reactivated only by its original bound
+            // CloudKit user. For build-63-and-earlier removals that discarded
+            // that binding, an exact-ID recovery additionally requires a
+            // server-dated record newer than the owner's removal metadata.
+            for envelope in activeStructurallyValid
+            where envelope.provenance.creatorUserRecordName != ownerUserRecordName {
+                let memberID = envelope.snapshot.authorMemberID
+                guard let creator = envelope.provenance.creatorUserRecordName,
+                      approvedParticipantUserRecordNames.contains(creator),
+                      isPayloadAuthorized(envelope.snapshot, authorizedAdmins: authorizedAdmins) else { continue }
+
+                if let boundCreator = bindings[memberID] {
+                    guard boundCreator == creator else { continue }
+                } else if removedMemberIDs.contains(memberID) {
+                    guard isFreshLegacyReinvite(envelope, newerThan: ownerEnvelope) else { continue }
+                    bindings[memberID] = creator
+                } else {
+                    bindings[memberID] = creator
+                }
+
+                // A returning person may publish under the same device ID or a
+                // new one. Clear every tombstone authenticated to that CloudKit
+                // identity, but never restore their old admin designation.
+                let matchingTombstones = removedMemberIDs.filter { bindings[$0] == creator }
+                reactivatedMemberIDs.formUnion(matchingTombstones)
+            }
+
+            // Start a fresh membership generation for each reactivated person:
+            // retain only device IDs whose records are present and valid now.
+            // Otherwise clearing an old tombstone would immediately turn an
+            // absent pre-removal device into a missing-bound-record failure.
+            let reactivatedUsers = Set(reactivatedMemberIDs.compactMap { bindings[$0] })
+            if !reactivatedUsers.isEmpty {
+                bindings = bindings.filter { memberID, userRecordName in
+                    !reactivatedUsers.contains(userRecordName) || presentMemberIDs.contains(memberID)
+                }
+            }
+        }
+
+        let effectiveRemovedMemberIDs = removedMemberIDs.subtracting(reactivatedMemberIDs)
         let missingBoundRecordNames = bindings.keys
-            .filter { !removedMemberIDs.contains($0) && !presentMemberIDs.contains($0) }
+            .filter { !effectiveRemovedMemberIDs.contains($0) && !presentMemberIDs.contains($0) }
             .map { recordPrefix + $0 }
         let collidingRecordNames = stableObjectOwnershipCollisions(in: activeStructurallyValid)
 
@@ -201,6 +253,7 @@ enum MemberSnapshotAuthorization {
         return MemberSnapshotAuthorizationResult(
             snapshots: accepted,
             bindings: bindings,
+            reactivatedMemberIDs: reactivatedMemberIDs,
             rejectedRecordNames: rejected,
             bindingsChanged: bindings != existingBindings,
             isTrustEstablished: true
@@ -225,7 +278,8 @@ enum MemberSnapshotAuthorization {
                 provenance: MemberSnapshotProvenance(
                     recordName: envelope.provenance.recordName,
                     creatorUserRecordName: normalize(envelope.provenance.creatorUserRecordName),
-                    lastModifiedUserRecordName: normalize(envelope.provenance.lastModifiedUserRecordName)
+                    lastModifiedUserRecordName: normalize(envelope.provenance.lastModifiedUserRecordName),
+                    modificationDate: envelope.provenance.modificationDate
                 )
             )
         }
@@ -245,6 +299,22 @@ enum MemberSnapshotAuthorization {
     private static func metadataVersion(_ snapshot: MemberShareSnapshot) -> Date {
         guard let meta = snapshot.clubMeta else { return .distantPast }
         return meta.metadataUpdatedAt ?? snapshot.capturedAt
+    }
+
+    /// Legacy removals did not preserve a CloudKit identity binding. The exact
+    /// member ID therefore acts as a recovery token only when the accepted
+    /// participant has freshly rewritten that record after the owner snapshot
+    /// carrying the tombstone. CloudKit server dates avoid trusting device
+    /// clock skew; capture times are retained as a compatibility fallback for
+    /// old/test records without hydrated system dates.
+    private static func isFreshLegacyReinvite(
+        _ envelope: ProvenancedMemberSnapshot,
+        newerThan ownerEnvelope: ProvenancedMemberSnapshot
+    ) -> Bool {
+        let candidateDate = envelope.provenance.modificationDate ?? envelope.snapshot.capturedAt
+        let ownerDate = ownerEnvelope.provenance.modificationDate
+            ?? metadataVersion(ownerEnvelope.snapshot)
+        return candidateDate > ownerDate
     }
 
     /// A stable base-object ID belongs to exactly one authenticated snapshot

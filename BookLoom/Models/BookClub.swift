@@ -53,6 +53,8 @@ final class BookClub {
     /// club. The owner's snapshot deletion drops their CloudKit record; this
     /// list is propagated through the owner's `ClubMeta` so every device skips
     /// re-applying any future re-published snapshot from a removed member.
+    /// Their identity binding remains as a tombstone until an accepted,
+    /// provenance-verified re-invitation starts a fresh membership generation.
     var removedMemberIDsJSON: String = "[]"
 
     /// Owner-authorized mapping from BookLoom member IDs to CloudKit user
@@ -220,7 +222,8 @@ final class BookClub {
 
     /// Owner-only operation. Marks `memberID` as removed, demotes them out of
     /// the admin set, and drops them from the local roster so the UI clears.
-    /// The creator can never be removed.
+    /// The creator can never be removed. Identity bindings intentionally stay
+    /// behind as authenticated tombstones for safe future re-invitation.
     func removeMember(memberID: String) {
         removeMembers(memberIDs: relatedMemberIDs(to: memberID))
     }
@@ -244,12 +247,6 @@ final class BookClub {
             roster.removeValue(forKey: memberID)
         }
         knownMemberRoster = roster
-
-        var bindings = memberIdentityBindings
-        for memberID in sanitized {
-            bindings.removeValue(forKey: memberID)
-        }
-        memberIdentityBindings = bindings
     }
 }
 

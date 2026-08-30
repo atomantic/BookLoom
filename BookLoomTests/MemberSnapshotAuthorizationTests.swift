@@ -309,6 +309,152 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         XCTAssertTrue(result.rejectedRecordNames.isEmpty)
     }
 
+    func test_ownerReactivatesRemovedIdentityAfterAcceptedReinvite() {
+        let bindings = [
+            binding("member-owner", "cloud-owner"),
+            binding("member-sam", "cloud-sam")
+        ]
+        let batch = batch(
+            ownerBindings: bindings,
+            removedMemberIDs: ["member-sam"],
+            additional: [envelope(memberSnapshot("member-sam"), creator: "cloud-sam")]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: ["member-owner": "cloud-owner", "member-sam": "cloud-sam"],
+            isShareOwner: true
+        )
+
+        XCTAssertEqual(result.reactivatedMemberIDs, ["member-sam"])
+        XCTAssertEqual(result.bindings["member-sam"], "cloud-sam")
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-owner", "member-sam"])
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+    }
+
+    func test_differentAcceptedIdentityCannotClaimRetainedRemovalTombstone() {
+        let batch = batch(
+            ownerBindings: [
+                binding("member-owner", "cloud-owner"),
+                binding("member-sam", "cloud-sam")
+            ],
+            removedMemberIDs: ["member-sam"],
+            additional: [envelope(memberSnapshot("member-sam"), creator: "cloud-other")]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: ["member-owner": "cloud-owner", "member-sam": "cloud-sam"],
+            isShareOwner: true
+        )
+
+        XCTAssertTrue(result.reactivatedMemberIDs.isEmpty)
+        XCTAssertEqual(result.bindings["member-sam"], "cloud-sam")
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID), ["member-owner"])
+        XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-sam"])
+    }
+
+    func test_ownerRepairsLegacyReinviteOnlyFromSnapshotNewerThanRemoval() {
+        let batch = batch(
+            ownerBindings: [binding("member-owner", "cloud-owner")],
+            removedMemberIDs: ["member-sam"],
+            ownerModificationDate: Date(timeIntervalSince1970: 1_000),
+            additional: [
+                envelope(
+                    memberSnapshot("member-sam"),
+                    creator: "cloud-sam",
+                    modificationDate: Date(timeIntervalSince1970: 2_000)
+                )
+            ]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: ["member-owner": "cloud-owner"],
+            isShareOwner: true
+        )
+
+        XCTAssertEqual(result.reactivatedMemberIDs, ["member-sam"])
+        XCTAssertEqual(result.bindings["member-sam"], "cloud-sam")
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+    }
+
+    func test_ownerRejectsStaleLegacyRecordLeftBehindBeforeReinvite() {
+        let batch = batch(
+            ownerBindings: [binding("member-owner", "cloud-owner")],
+            removedMemberIDs: ["member-sam"],
+            ownerModificationDate: Date(timeIntervalSince1970: 1_000),
+            additional: [
+                envelope(
+                    memberSnapshot("member-sam"),
+                    creator: "cloud-sam",
+                    modificationDate: Date(timeIntervalSince1970: 900)
+                )
+            ]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: ["member-owner": "cloud-owner"],
+            isShareOwner: true
+        )
+
+        XCTAssertTrue(result.reactivatedMemberIDs.isEmpty)
+        XCTAssertNil(result.bindings["member-sam"])
+        XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-sam"])
+    }
+
+    func test_participantCannotRetireOwnerRemovalTombstone() {
+        let batch = batch(
+            ownerBindings: [
+                binding("member-owner", "cloud-owner"),
+                binding("member-sam", "cloud-sam")
+            ],
+            removedMemberIDs: ["member-sam"],
+            additional: [envelope(memberSnapshot("member-sam"), creator: "cloud-sam")]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: ["member-owner": "cloud-owner", "member-sam": "cloud-sam"],
+            isShareOwner: false
+        )
+
+        XCTAssertTrue(result.reactivatedMemberIDs.isEmpty)
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-owner", "member-sam"])
+    }
+
+    func test_ownerReinviteOnNewDeviceStartsFreshMembershipGeneration() {
+        let batch = batch(
+            ownerBindings: [
+                binding("member-owner", "cloud-owner"),
+                binding("member-sam-phone", "cloud-sam"),
+                binding("member-sam-mac", "cloud-sam")
+            ],
+            removedMemberIDs: ["member-sam-phone", "member-sam-mac"],
+            additional: [envelope(memberSnapshot("member-sam-ipad"), creator: "cloud-sam")]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: [
+                "member-owner": "cloud-owner",
+                "member-sam-phone": "cloud-sam",
+                "member-sam-mac": "cloud-sam"
+            ],
+            isShareOwner: true
+        )
+
+        XCTAssertEqual(result.reactivatedMemberIDs, ["member-sam-phone", "member-sam-mac"])
+        XCTAssertEqual(
+            result.bindings,
+            ["member-owner": "cloud-owner", "member-sam-ipad": "cloud-sam"]
+        )
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-owner", "member-sam-ipad"])
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+    }
+
     func test_missingOwnerBoundMemberRecordFailsClosed() {
         let original = batch(
             ownerBindings: [binding("member-owner", "cloud-owner"), binding("member-sam", "cloud-sam")],
@@ -442,6 +588,8 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
     private func batch(
         ownerBindings: [MemberShareSnapshot.MemberIdentityBinding]?,
         admins: [String] = [],
+        removedMemberIDs: [String] = [],
+        ownerModificationDate: Date? = nil,
         additional: [ProvenancedMemberSnapshot]
     ) -> MemberSnapshotBatch {
         let owner = MemberShareSnapshot(
@@ -450,18 +598,23 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
             authorName: "Owner",
             clubMeta: ownerMeta(
                 creatorMemberID: "member-owner",
-                removedMemberIDs: [],
+                removedMemberIDs: removedMemberIDs,
                 admins: admins,
                 bindings: ownerBindings
             )
         )
+        let ownerEnvelope = envelope(
+            owner,
+            creator: "cloud-owner",
+            modificationDate: ownerModificationDate
+        )
         return MemberSnapshotBatch(
             ownerUserRecordName: "cloud-owner",
             approvedParticipantUserRecordNames: Set(
-                ([envelope(owner, creator: "cloud-owner")] + additional)
+                ([ownerEnvelope] + additional)
                     .compactMap(\.provenance.creatorUserRecordName)
             ),
-            snapshots: [envelope(owner, creator: "cloud-owner")] + additional
+            snapshots: [ownerEnvelope] + additional
         )
     }
 
@@ -516,14 +669,16 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
     private func envelope(
         _ snapshot: MemberShareSnapshot,
         creator: String,
-        modifier: String? = nil
+        modifier: String? = nil,
+        modificationDate: Date? = nil
     ) -> ProvenancedMemberSnapshot {
         ProvenancedMemberSnapshot(
             snapshot: snapshot,
             provenance: MemberSnapshotProvenance(
                 recordName: "MemberSnapshot-\(snapshot.authorMemberID)",
                 creatorUserRecordName: creator,
-                lastModifiedUserRecordName: modifier ?? creator
+                lastModifiedUserRecordName: modifier ?? creator,
+                modificationDate: modificationDate
             )
         )
     }

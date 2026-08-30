@@ -278,6 +278,87 @@ final class SharedClubSyncCoordinationTests: XCTestCase {
         XCTAssertEqual(Set(publishedMeta.removedMemberIDs ?? []), ["member-departed"])
     }
 
+    func test_refreshIfNeeded_reactivatesAcceptedReinviteAndPublishesCleanMetadata() async throws {
+        let context = try makeContext()
+        let club = makeActiveSharedClub(name: "Sunday Pages")
+        club.creatorMemberID = "member-owner"
+        club.adminMemberIDs = ["member-sam-phone"]
+        club.removedMemberIDs = ["member-sam-phone", "member-sam-mac"]
+        club.memberIdentityBindings = [
+            "member-owner": "cloud-owner",
+            "member-sam-phone": "cloud-sam",
+            "member-sam-mac": "cloud-sam"
+        ]
+        club.clubMetaUpdatedAt = Date(timeIntervalSince1970: 2_000)
+        context.insert(club)
+        try context.save()
+
+        let remoteOwner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 3_000),
+            authorMemberID: "member-owner",
+            authorName: "Owner",
+            clubMeta: .init(
+                name: "Sunday Pages",
+                createdAt: club.createdAt,
+                cloudZoneName: club.cloudZoneName,
+                shareParticipantCount: 2,
+                creatorMemberID: "member-owner",
+                adminMemberIDs: [],
+                removedMemberIDs: ["member-sam-phone", "member-sam-mac"],
+                memberIdentityBindings: [
+                    .init(memberID: "member-owner", cloudKitUserRecordName: "cloud-owner"),
+                    .init(memberID: "member-sam-phone", cloudKitUserRecordName: "cloud-sam"),
+                    .init(memberID: "member-sam-mac", cloudKitUserRecordName: "cloud-sam")
+                ],
+                metadataUpdatedAt: Date(timeIntervalSince1970: 3_000),
+                inviteURLString: nil,
+                nameUpdatedAt: Date(timeIntervalSince1970: 3_000)
+            )
+        )
+        let returningMember = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 3_100),
+            authorMemberID: "member-sam-ipad",
+            authorName: "Sam"
+        )
+        let service = CapturingAuthorizedBatchSnapshotService(
+            batch: MemberSnapshotBatch(
+                ownerUserRecordName: "cloud-owner",
+                approvedParticipantUserRecordNames: ["cloud-owner", "cloud-sam"],
+                snapshots: [
+                    envelope(remoteOwner, creator: "cloud-owner"),
+                    envelope(returningMember, creator: "cloud-sam")
+                ]
+            )
+        )
+
+        await SharedClubSync.refreshIfNeeded(
+            club,
+            context: context,
+            localMemberID: "member-owner",
+            localMemberName: "Owner",
+            service: service,
+            isEnabled: true
+        )
+        await SharedClubSync.waitForPendingPublishes(zoneName: club.cloudZoneName)
+
+        XCTAssertTrue(club.removedMemberIDs.isEmpty)
+        XCTAssertFalse(club.isAdmin(memberID: "member-sam-phone"))
+        XCTAssertEqual(
+            club.memberIdentityBindings,
+            ["member-owner": "cloud-owner", "member-sam-ipad": "cloud-sam"]
+        )
+        XCTAssertEqual(club.knownMemberRoster["member-sam-ipad"], "Sam")
+        let publishedMeta = try XCTUnwrap(service.publishedSnapshots.last?.clubMeta)
+        XCTAssertTrue((publishedMeta.removedMemberIDs ?? []).isEmpty)
+        XCTAssertEqual(
+            Dictionary(uniqueKeysWithValues: (publishedMeta.memberIdentityBindings ?? []).map {
+                ($0.memberID, $0.cloudKitUserRecordName)
+            }),
+            ["member-owner": "cloud-owner", "member-sam-ipad": "cloud-sam"]
+        )
+        XCTAssertFalse((publishedMeta.adminMemberIDs ?? []).contains("member-sam-phone"))
+    }
+
     // MARK: - saveAndPublish synchronous half
 
     /// `saveAndPublish` clears persisted cover bytes and persists before it
