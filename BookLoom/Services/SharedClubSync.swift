@@ -210,6 +210,7 @@ enum SharedClubSync {
 
     private static var queuedPublishes: [String: PublishRequest] = [:]
     private static var activePublishes: [String: Task<Void, Never>] = [:]
+    private static var activeRefreshes: [String: Task<Bool, Never>] = [:]
 
     /// Persist a context mutation made on the publish/refresh path, logging and
     /// recording a sync failure on error instead of swallowing it. These saves
@@ -334,7 +335,44 @@ enum SharedClubSync {
         removeUnavailableClub: Bool = true
     ) async -> Bool {
         guard isEnabled, club.shareIsActive else { return true }
+        let zoneName = club.cloudZoneName
+        if let activeRefresh = activeRefreshes[zoneName] {
+            return await activeRefresh.value
+        }
+        let refresh = Task { @MainActor in
+            await refreshBody(
+                club,
+                context: context,
+                localMemberID: localMemberID,
+                localMemberName: localMemberName,
+                service: service,
+                isEnabled: isEnabled,
+                removeUnavailableClub: removeUnavailableClub
+            )
+        }
+        activeRefreshes[zoneName] = refresh
+        let result = await refresh.value
+        activeRefreshes.removeValue(forKey: zoneName)
+        return result
+    }
+
+    private static func refreshBody(
+        _ club: BookClub,
+        context: ModelContext,
+        localMemberID: String,
+        localMemberName: String,
+        service: any MemberSnapshotSyncing,
+        isEnabled: Bool,
+        removeUnavailableClub: Bool
+    ) async -> Bool {
+        guard isEnabled, club.shareIsActive else { return true }
         let target = MemberSnapshotSyncTarget(club)
+
+        // Refreshes can arrive from the scene timer, a CloudKit push, or the
+        // page task independently of `synchronizeIfNeeded`. Never let one of
+        // those readers query while this zone's queued local snapshot is still
+        // being written.
+        await waitForPendingPublishes(zoneName: target.zoneName)
 
         let remoteBatch: MemberSnapshotBatch
         do {
@@ -467,13 +505,38 @@ enum SharedClubSync {
         _ club: BookClub,
         context: ModelContext,
         localMemberID: String,
-        localMemberName: String
+        localMemberName: String,
+        service: any MemberSnapshotSyncing = CloudKitSharingService.shared,
+        isEnabled: Bool = Features.cloudKitSharing
     ) async {
-        guard Features.cloudKitSharing, club.shareIsActive else { return }
-        // Publish kicks off its own Task internally, so it returns immediately
-        // and runs concurrently with the refresh fetch+merge.
-        publishIfNeeded(club, context: context, localMemberID: localMemberID, localMemberName: localMemberName)
-        await refreshIfNeeded(club, context: context, localMemberID: localMemberID, localMemberName: localMemberName)
+        guard isEnabled, club.shareIsActive else { return }
+        // A page-level synchronize must not enqueue its write behind a refresh
+        // that already started. Wait for that reader first, then publish and
+        // fetch as one ordered sequence.
+        if let activeRefresh = activeRefreshes[club.cloudZoneName] {
+            _ = await activeRefresh.value
+        }
+        // Publish is queued on a per-zone task. Wait for that task before
+        // fetching the zone: the first page appearance used to query while the
+        // owner/member snapshot was still being written, which made a healthy
+        // club intermittently surface a generic "Couldn't fetch" banner.
+        publishIfNeeded(
+            club,
+            context: context,
+            localMemberID: localMemberID,
+            localMemberName: localMemberName,
+            service: service,
+            isEnabled: isEnabled
+        )
+        await waitForPendingPublishes(zoneName: club.cloudZoneName)
+        await refreshIfNeeded(
+            club,
+            context: context,
+            localMemberID: localMemberID,
+            localMemberName: localMemberName,
+            service: service,
+            isEnabled: isEnabled
+        )
     }
 
     static func synchronizeIfNeeded(

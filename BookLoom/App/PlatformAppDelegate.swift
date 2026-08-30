@@ -35,6 +35,19 @@ final class BookLoomAppDelegate: NSObject, UIApplicationDelegate {
 final class BookLoomSceneDelegate: NSObject, UIWindowSceneDelegate {
     var window: UIWindow?
 
+    /// CloudKit delivers an invite accepted while the app is not running in
+    /// the scene connection options, before SwiftUI has mounted the root view.
+    /// Keep the metadata in the same inbox used by the running/suspended
+    /// callback so the acceptance queue can process it once the model context
+    /// exists.
+    func scene(_ scene: UIScene,
+               willConnectTo session: UISceneSession,
+               options connectionOptions: UIScene.ConnectionOptions) {
+        if let metadata = connectionOptions.cloudKitShareMetadata {
+            AcceptedShareInbox.shared.enqueue(metadata)
+        }
+    }
+
     func windowScene(_ windowScene: UIWindowScene,
                      userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
         AcceptedShareInbox.shared.enqueue(metadata)

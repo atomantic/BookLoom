@@ -148,6 +148,77 @@ final class DeterministicFailureSeamTests: XCTestCase {
         XCTAssertEqual(service.published.last?.clubMeta?.name, "Newest")
     }
 
+    func test_synchronizeWaitsForPublishBeforeFetching() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let club = BookClub(name: "Ordered sync")
+        club.shareIsActive = true
+        club.creatorMemberID = "local"
+        context.insert(club)
+        try context.save()
+        let service = PublishThenFetchSnapshotService()
+
+        let synchronization = Task { @MainActor in
+            await SharedClubSync.synchronizeIfNeeded(
+                club,
+                context: context,
+                localMemberID: "local",
+                localMemberName: "Reader",
+                service: service,
+                isEnabled: true
+            )
+        }
+
+        try await waitUntil { service.events == ["publish-start"] }
+        XCTAssertEqual(service.events, ["publish-start"])
+
+        service.releasePublish()
+        await synchronization.value
+
+        XCTAssertEqual(service.events, ["publish-start", "publish-end", "fetch"])
+    }
+
+    func test_refreshesForSameZoneCoalesceIntoOneFetch() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let club = BookClub(name: "Coalesced refresh")
+        club.shareIsActive = true
+        context.insert(club)
+        try context.save()
+        let service = GatedRefreshSnapshotService()
+
+        let first = Task { @MainActor in
+            await SharedClubSync.refreshIfNeeded(
+                club,
+                context: context,
+                localMemberID: "local",
+                localMemberName: "Reader",
+                service: service,
+                isEnabled: true
+            )
+        }
+        try await waitUntil { service.fetchCount == 1 }
+
+        let second = Task { @MainActor in
+            await SharedClubSync.refreshIfNeeded(
+                club,
+                context: context,
+                localMemberID: "local",
+                localMemberName: "Reader",
+                service: service,
+                isEnabled: true
+            )
+        }
+        await Task.yield()
+        service.releaseFetch()
+
+        _ = await first.value
+        _ = await second.value
+
+        XCTAssertEqual(service.fetchCount, 1)
+        XCTAssertEqual(service.maximumActiveFetches, 1)
+    }
+
     func test_publishCompletionDoesNotTouchClubDeletedWhileRequestWasInFlight() async throws {
         let container = try makeContainer()
         let context = container.mainContext
@@ -368,6 +439,70 @@ private final class ControlledSnapshotService: MemberSnapshotSyncing {
     func releaseFirstPublish() {
         firstContinuation?.resume()
         firstContinuation = nil
+    }
+}
+
+@MainActor
+private final class PublishThenFetchSnapshotService: MemberSnapshotSyncing {
+    private let publishGate = ManualGate()
+    private(set) var events: [String] = []
+
+    func publishMemberSnapshot(
+        _ snapshot: MemberShareSnapshot,
+        target: MemberSnapshotSyncTarget,
+        localMemberID: String
+    ) async throws {
+        events.append("publish-start")
+        await publishGate.wait()
+        events.append("publish-end")
+    }
+
+    func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
+        events.append("fetch")
+        return MemberSnapshotBatch(
+            ownerUserRecordName: "owner-user",
+            approvedParticipantUserRecordNames: ["owner-user"],
+            snapshots: []
+        )
+    }
+
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 1 }
+
+    func releasePublish() {
+        publishGate.release()
+    }
+}
+
+@MainActor
+private final class GatedRefreshSnapshotService: MemberSnapshotSyncing {
+    private let fetchGate = ManualGate()
+    private(set) var fetchCount = 0
+    private(set) var maximumActiveFetches = 0
+    private var activeFetches = 0
+
+    func publishMemberSnapshot(
+        _ snapshot: MemberShareSnapshot,
+        target: MemberSnapshotSyncTarget,
+        localMemberID: String
+    ) async throws {}
+
+    func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
+        fetchCount += 1
+        activeFetches += 1
+        maximumActiveFetches = max(maximumActiveFetches, activeFetches)
+        await fetchGate.wait()
+        activeFetches -= 1
+        return MemberSnapshotBatch(
+            ownerUserRecordName: "owner-user",
+            approvedParticipantUserRecordNames: ["owner-user"],
+            snapshots: []
+        )
+    }
+
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 1 }
+
+    func releaseFetch() {
+        fetchGate.release()
     }
 }
 

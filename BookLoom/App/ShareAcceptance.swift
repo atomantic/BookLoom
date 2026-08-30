@@ -30,6 +30,7 @@ final class ShareAcceptanceQueue<Payload> {
     private let identifier: (Payload) -> String
     private var operation: Operation?
     private var pending: [PendingShare] = []
+    private var activeOperation: Task<Void, Never>?
     /// Retains the just-completed ID until its success alert is acknowledged,
     /// closing the callback race without blocking a later, legitimate rejoin.
     private var succeededID: String?
@@ -85,6 +86,15 @@ final class ShareAcceptanceQueue<Payload> {
         dismiss()
     }
 
+    /// Wait for the share currently being imported. App startup uses this
+    /// before restoring already-accepted shared zones so both paths never
+    /// mutate the same SwiftData context concurrently.
+    func waitForActiveOperation() async {
+        while let activeOperation {
+            await activeOperation.value
+        }
+    }
+
     private func startIfPossible() {
         guard state == .idle,
               let operation,
@@ -93,7 +103,8 @@ final class ShareAcceptanceQueue<Payload> {
         }
 
         state = .accepting
-        Task { @MainActor [weak self] in
+        activeOperation = Task { @MainActor [weak self] in
+            defer { self?.activeOperation = nil }
             do {
                 let clubName = try await operation(current.payload)
                 guard let self, self.pending.first?.id == current.id else { return }
@@ -163,9 +174,13 @@ enum ShareAcceptance {
     }
 
     static func isRetryable(_ error: Error) -> Bool {
-        if let sharingError = error as? SharingError,
-           case .featureDisabled = sharingError {
-            return false
+        if let sharingError = error as? SharingError {
+            switch sharingError {
+            case .featureDisabled, .shareAccessRemoved:
+                return false
+            default:
+                break
+            }
         }
         let nsError = error as NSError
         return !(nsError.domain == CKErrorDomain && nsError.code == CKError.permissionFailure.rawValue)
@@ -189,11 +204,49 @@ enum ShareAcceptance {
         }
         let info = try await CloudKitSharingService.shared.acceptShare(metadata: metadata)
 
+        return try await importAcceptedShare(
+            info,
+            context: context,
+            localMemberID: localMemberID,
+            localMemberName: localMemberName
+        )
+    }
+
+    /// Rehydrates a share that CloudKit already accepted before the app was
+    /// deleted or its local SwiftData store was rebuilt. This deliberately
+    /// shares the import path with a new invitation so restoration remains
+    /// idempotent and still passes every snapshot through authorization.
+    @MainActor
+    static func restoreAcceptedShare(
+        _ info: AcceptedShareInfo,
+        context: ModelContext,
+        localMemberID: String,
+        localMemberName: String
+    ) async throws -> String {
+        guard Features.cloudKitSharing else {
+            throw SharingError.featureDisabled
+        }
+        return try await importAcceptedShare(
+            info,
+            context: context,
+            localMemberID: localMemberID,
+            localMemberName: localMemberName
+        )
+    }
+
+    @MainActor
+    private static func importAcceptedShare(
+        _ info: AcceptedShareInfo,
+        context: ModelContext,
+        localMemberID: String,
+        localMemberName: String
+    ) async throws -> String {
+
         let zoneName = info.zoneName
         let descriptor = FetchDescriptor<BookClub>(
             predicate: #Predicate { $0.cloudZoneName == zoneName }
         )
-        let existing = (try? context.fetch(descriptor)) ?? []
+        let existing = try context.fetch(descriptor)
         let joined: BookClub
         if let existingClub = existing.first {
             joined = existingClub
@@ -230,20 +283,7 @@ enum ShareAcceptance {
             logger.info("✅ Accepted share — imported '\(joined.name, privacy: .public)' from \(authorization.snapshots.count) authenticated member snapshot(s)")
         } else {
             try context.save()
-            logger.info("✅ Accepted share — joined '\(info.title, privacy: .public)' (zone \(info.zoneName, privacy: .public))")
-            // Owner published the share root *after* `acceptShare` returned —
-            // give CloudKit a beat to materialize the shared zone before
-            // `fetchMemberSnapshotBatch` makes its query. Without this, the
-            // first refresh returns no results and the joined club stays
-            // empty until the user pulls to refresh.
-            try? await Task.sleep(for: .seconds(1))
-            await SharedClubSync.refreshIfNeeded(
-                joined,
-                context: context,
-                localMemberID: localMemberID,
-                localMemberName: localMemberName,
-                removeUnavailableClub: false
-            )
+            logger.info("✅ Accepted share — joined '\(info.title, privacy: .public)' (zone \(info.zoneName, privacy: .public)); waiting for the first authenticated sync")
         }
 
         // Publish the joining member's empty snapshot so the owner gets

@@ -92,6 +92,10 @@ final class ShareAcceptanceQueueTests: XCTestCase {
         let permissionFailure = NSError(domain: CKErrorDomain, code: CKError.permissionFailure.rawValue)
         XCTAssertTrue(ShareAcceptance.failureMessage(for: permissionFailure).contains("new invitation"))
         XCTAssertFalse(ShareAcceptance.isRetryable(permissionFailure))
+
+        let removedShare = SharingError.shareAccessRemoved
+        XCTAssertTrue(ShareAcceptance.failureMessage(for: removedShare).contains("new invitation"))
+        XCTAssertFalse(ShareAcceptance.isRetryable(removedShare))
     }
 
     func testEnqueuedBeforeConfigurationStartsWhenConfigured() async {

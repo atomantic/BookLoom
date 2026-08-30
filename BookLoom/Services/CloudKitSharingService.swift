@@ -203,35 +203,138 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
     // MARK: - Member-side: accept share
 
     /// Accepts an incoming CKShare and returns the share root payload when the
-    /// owner has published one. Older builds may still return metadata only.
+    /// owner has published one. The async batch API reports a per-share
+    /// `Result`, so both the operation and that individual result must succeed
+    /// before local membership is created.
     func acceptShare(metadata: CKShare.Metadata) async throws -> AcceptedShareInfo {
         guard Features.cloudKitSharing else {
             throw SharingError.featureDisabled
         }
-        // Discard the return — the compiler warns if it's ignored implicitly.
-        _ = try await container.accept([metadata])
-        let rootRecord = await acceptedRootRecord(zoneID: metadata.share.recordID.zoneID)
-        let memberSnapshots = (try? await fetchMemberSnapshotBatch(
-            zoneID: metadata.share.recordID.zoneID,
-            in: sharedDB,
-            share: metadata.share
-        )) ?? MemberSnapshotBatch(
-            ownerUserRecordName: metadata.share.owner.userIdentity.userRecordID?.recordName
-                ?? metadata.share.recordID.zoneID.ownerName,
-            approvedParticipantUserRecordNames: Self.approvedParticipantUserRecordNames(in: metadata.share),
-            snapshots: []
-        )
+        let acceptedShare = try await acceptedShare(for: metadata)
+        let zoneID = acceptedShare.recordID.zoneID
+        let rootRecord: CKRecord?
+        do {
+            rootRecord = try await acceptedRootRecord(zoneID: zoneID)
+        } catch {
+            // A pending invitation can be accepted before CloudKit has made
+            // the shared zone visible locally. Preserve the accepted
+            // membership and let the normal sync retry once the zone appears;
+            // an already-accepted share must instead surface a real failure so
+            // restoration never creates an orphan local club.
+            guard metadata.participantStatus != .accepted,
+                  CKZoneAvailability.classify(error) == .zoneRemoved else {
+                throw error
+            }
+            rootRecord = nil
+        }
+
+        let shareForData: CKShare
+        if let rootRecord,
+           let shareReference = rootRecord.share,
+           let hydratedShare = try? await sharedDB.record(for: shareReference.recordID) as? CKShare {
+            shareForData = hydratedShare
+        } else {
+            shareForData = acceptedShare
+        }
+
+        let memberSnapshots: MemberSnapshotBatch
+        if rootRecord != nil {
+            memberSnapshots = try await fetchMemberSnapshotBatch(
+                zoneID: zoneID,
+                in: sharedDB,
+                share: shareForData
+            )
+        } else {
+            memberSnapshots = MemberSnapshotBatch(
+                ownerUserRecordName: shareForData.owner.userIdentity.userRecordID?.recordName
+                    ?? zoneID.ownerName,
+                approvedParticipantUserRecordNames: Self.approvedParticipantUserRecordNames(in: shareForData),
+                snapshots: []
+            )
+        }
         let clubName = clubName(from: rootRecord)
             ?? memberSnapshots.snapshots.compactMap { $0.snapshot.clubMeta?.name }.first
-            ?? Self.cleanShareTitle(metadata.share[CKShare.SystemFieldKey.title] as? String)
+            ?? Self.cleanShareTitle(shareForData[CKShare.SystemFieldKey.title] as? String)
             ?? "Shared Book Club"
         return AcceptedShareInfo(
-            zoneName: metadata.share.recordID.zoneID.zoneName,
-            ownerUserRecordName: metadata.share.recordID.zoneID.ownerName,
+            zoneName: zoneID.zoneName,
+            ownerUserRecordName: zoneID.ownerName,
             title: clubName,
-            participantCount: Self.acceptedParticipantCount(in: metadata.share),
+            participantCount: Self.acceptedParticipantCount(in: shareForData),
             memberSnapshotBatch: memberSnapshots
         )
+    }
+
+    /// Rebuild local membership from shared zones that CloudKit already
+    /// accepted. SwiftData's automatic mirroring only covers the user's own
+    /// private database; a cross-Apple-ID CKShare must be re-associated with a
+    /// local `BookClub` after an app reinstall or store rebuild.
+    func restoreAcceptedShares() async throws -> [AcceptedShareInfo] {
+        guard Features.cloudKitSharing else {
+            throw SharingError.featureDisabled
+        }
+
+        let zones = try await sharedDB.allRecordZones()
+        var restored: [AcceptedShareInfo] = []
+        for zone in zones where zone.zoneID.zoneName.hasPrefix("BookClub-") {
+            do {
+                let root = try await rootRecord(zoneID: zone.zoneID, in: sharedDB)
+                guard root.recordType == Self.rootRecordType,
+                      let shareReference = root.share,
+                      let share = try? await sharedDB.record(for: shareReference.recordID) as? CKShare else {
+                    continue
+                }
+
+                let batch = try await fetchMemberSnapshotBatch(
+                    zoneID: zone.zoneID,
+                    in: sharedDB,
+                    share: share
+                )
+                let title = clubName(from: root)
+                    ?? batch.snapshots.compactMap { $0.snapshot.clubMeta?.name }.first
+                    ?? Self.cleanShareTitle(share[CKShare.SystemFieldKey.title] as? String)
+                    ?? "Shared Book Club"
+                restored.append(
+                    AcceptedShareInfo(
+                        zoneName: zone.zoneID.zoneName,
+                        ownerUserRecordName: zone.zoneID.ownerName,
+                        title: title,
+                        participantCount: Self.acceptedParticipantCount(in: share),
+                        memberSnapshotBatch: batch
+                    )
+                )
+            } catch {
+                // One stale or temporarily unavailable zone must not prevent
+                // other accepted clubs from being restored. A later launch or
+                // the normal sync path can retry this zone.
+                if CKZoneAvailability.classify(error) == .zoneRemoved {
+                    continue
+                }
+                Self.logger.warning("Could not restore accepted shared zone \(zone.zoneID.zoneName, privacy: .public): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+            }
+        }
+        return restored
+    }
+
+    private func acceptedShare(for metadata: CKShare.Metadata) async throws -> CKShare {
+        switch metadata.participantStatus {
+        case .accepted:
+            return metadata.share
+        case .removed:
+            throw SharingError.shareAccessRemoved
+        case .pending, .unknown:
+            let results = try await container.accept([metadata])
+            guard let result = results[metadata] else {
+                throw SharingError.acceptanceResultMissing
+            }
+            return try result.get()
+        @unknown default:
+            let results = try await container.accept([metadata])
+            guard let result = results[metadata] else {
+                throw SharingError.acceptanceResultMissing
+            }
+            return try result.get()
+        }
     }
 
     /// Publish (or update) the local member's snapshot record for `club`.
@@ -648,9 +751,10 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
     /// Immediately after `container.accept`, the shared zone may not be
     /// queryable yet — CloudKit needs a moment to plumb the share through to
     /// `sharedCloudDatabase`. Retry with exponential backoff (250ms → 500ms →
-    /// 1s, ~1.75s total budget) before giving up. Returns nil on persistent
-    /// failure so the caller can fall back to the metadata-only join path.
-    private func acceptedRootRecord(zoneID: CKRecordZone.ID) async -> CKRecord? {
+    /// 1s, ~1.75s total budget) before giving up. Preserve the final error so
+    /// callers can distinguish a materializing zone from a network or
+    /// permission failure.
+    private func acceptedRootRecord(zoneID: CKRecordZone.ID) async throws -> CKRecord {
         var delay: Duration = .milliseconds(250)
         var lastError: Error?
         for attempt in 0..<4 {
@@ -666,8 +770,9 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
         }
         if let lastError {
             Self.logger.error("Shared root was not available after accept: \(CloudKitErrorDescriber.describe(lastError), privacy: .public)")
+            throw lastError
         }
-        return nil
+        throw SharingError.missingShare
     }
 
     private func database(for club: BookClub) throws -> CKDatabase {
@@ -795,6 +900,8 @@ enum SharingError: LocalizedError {
     case notOwner
     case cannotLeaveOwnShare
     case missingShare
+    case shareAccessRemoved
+    case acceptanceResultMissing
     case malformedMemberSnapshot(String)
 
     var errorDescription: String? {
@@ -813,6 +920,10 @@ enum SharingError: LocalizedError {
             return "You own this club — delete it instead of leaving."
         case .missingShare:
             return "The shared club's CloudKit share record is unavailable."
+        case .shareAccessRemoved:
+            return "This invitation no longer grants access to the book club. Ask its owner for a new invitation."
+        case .acceptanceResultMissing:
+            return "CloudKit did not confirm access to this book club. Try the invitation again."
         case .malformedMemberSnapshot(let recordName):
             return "The shared club contains an unreadable member snapshot (\(recordName)). No local data was changed."
         }

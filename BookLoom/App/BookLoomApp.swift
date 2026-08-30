@@ -149,6 +149,8 @@ struct BookLoomApp: App {
                     await BookLoomDataReset.retryPendingCloudKitCleanup(context: sharedModelContainer.mainContext)
                     configureShareAcceptance()
                     await drainAcceptedShares()
+                    await shareAcceptance.waitForActiveOperation()
+                    await restoreAcceptedShares()
                     await CloudKitChangeNotifications.configureIfNeeded()
                     await SharedClubSync.synchronizeSharedClubs(
                         in: sharedModelContainer.mainContext,
@@ -242,6 +244,31 @@ struct BookLoomApp: App {
                 appLogger.error("⚠️ Share accept failed: \(error.localizedDescription, privacy: .public)")
                 throw error
             }
+        }
+    }
+
+    @MainActor
+    private func restoreAcceptedShares() async {
+        guard Features.cloudKitSharing else { return }
+        do {
+            let acceptedShares = try await CloudKitSharingService.shared.restoreAcceptedShares()
+            for info in acceptedShares {
+                do {
+                    _ = try await ShareAcceptance.restoreAcceptedShare(
+                        info,
+                        context: sharedModelContainer.mainContext,
+                        localMemberID: memberIdentity.memberID,
+                        localMemberName: memberIdentity.name
+                    )
+                } catch {
+                    appLogger.error("⚠️ Restoring shared club \(info.zoneName, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        } catch {
+            // A temporary shared-database failure should not block the app. The
+            // existing local rows and the normal refresh path remain available,
+            // and a later launch can retry zone discovery.
+            appLogger.error("⚠️ Accepted shared-club discovery failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
