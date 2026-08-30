@@ -685,11 +685,41 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
             query: query,
             decode: decodeMemberSnapshot
         )
+        let currentUserRecordName = try await currentUserRecordName(
+            in: share,
+            databaseScope: database.databaseScope
+        )
         return MemberSnapshotBatch(
-            ownerUserRecordName: share.owner.userIdentity.userRecordID?.recordName ?? zoneID.ownerName,
+            ownerUserRecordName: share.owner.userIdentity.userRecordID?.recordName
+                ?? (database.databaseScope == .private ? currentUserRecordName : nil)
+                ?? zoneID.ownerName,
+            currentUserRecordName: currentUserRecordName,
             approvedParticipantUserRecordNames: Self.approvedParticipantUserRecordNames(in: share),
             snapshots: snapshots
         )
+    }
+
+    private func currentUserRecordName(
+        in share: CKShare,
+        databaseScope: CKDatabase.Scope
+    ) async throws -> String? {
+        if let recordName = share.currentUserParticipant?
+            .userIdentity.userRecordID?.recordName.trimmedOrNil,
+           recordName != CKCurrentUserDefaultName {
+            return recordName
+        }
+        // A private-database fetch is necessarily performed by the share
+        // owner. Some hydrated shares omit `currentUserParticipant`, but the
+        // owner participant still supplies the same stable identity.
+        if databaseScope == .private,
+           let recordName = share.owner.userIdentity.userRecordID?.recordName.trimmedOrNil,
+           recordName != CKCurrentUserDefaultName {
+            return recordName
+        }
+        // If the share supplies only the database-relative default alias, ask
+        // the container for this account's stable user record ID. CloudKit
+        // caches this lookup after the first request.
+        return try await container.userRecordID().recordName.trimmedOrNil
     }
 
     private static func approvedParticipantUserRecordNames(in share: CKShare) -> Set<String> {

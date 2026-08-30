@@ -27,7 +27,7 @@
 
 ## Authorization and legacy migration
 
-- A snapshot record is accepted only when its record name matches its claimed `authorMemberID`, its CloudKit creator and latest modifier are the same user, and the owner-published binding maps that member ID to that CloudKit user.
+- A snapshot record is accepted only when its record name matches its claimed `authorMemberID`, its CloudKit creator and latest modifier are the same user, and the owner-published binding maps that member ID to that CloudKit user. Before those checks, BookLoom resolves CloudKit's database-relative `CKCurrentUserDefaultName` system-field alias to the current account's stable user record ID.
 - The owner enrolls a new member ID only when its CloudKit creator is an accepted participant the owner added to the private share; privileged, removed, or previously bound IDs cannot be claimed. Missing records for current accepted participants and stable submission, prompt, poll, or meeting IDs claimed by multiple active authors fail the entire merge.
 - Every member-scoped identity inside the payload must match the authenticated snapshot author. Club metadata, the admin list, and removals are accepted only from the CloudKit share owner. Rename proposals additionally require the authenticated author to be the creator or an owner-designated admin.
 - Status, details, and deletion overrides remain collaborative operations available to any verified member, but actor fields cannot impersonate another member.

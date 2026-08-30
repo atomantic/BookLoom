@@ -115,6 +115,23 @@ struct SyncIssue: Equatable {
     }
 
     private static func directIssue(from error: Error) -> SyncIssue? {
+        if let authorizationError = error as? MemberSnapshotAuthorizationError {
+            if authorizationError.rejectedRecordNames.isEmpty {
+                return SyncIssue(
+                    severity: .offline,
+                    title: "Waiting for Club data",
+                    message: "The Club owner's verified snapshot is not available yet. BookLoom will keep trying without changing your local data.",
+                    systemImage: "icloud.and.arrow.down"
+                )
+            }
+            return SyncIssue(
+                severity: .warning,
+                title: "Club data needs attention",
+                message: "BookLoom received shared changes it couldn't verify, so your local data was left untouched. Ask the Club owner to open the latest version of BookLoom.",
+                systemImage: "checkmark.shield.fill"
+            )
+        }
+
         let ns = error as NSError
 
         if ns.domain == NSURLErrorDomain {

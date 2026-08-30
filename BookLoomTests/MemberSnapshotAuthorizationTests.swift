@@ -1,8 +1,64 @@
+import CloudKit
 import Foundation
 import XCTest
 @testable import BookLoom
 
 final class MemberSnapshotAuthorizationTests: XCTestCase {
+    func test_normalizesCurrentUserAliasBeforeEstablishingOwnerTrust() {
+        let owner = MemberShareSnapshot(
+            authorMemberID: "member-owner",
+            authorName: "Owner",
+            clubMeta: ownerMeta(
+                creatorMemberID: "member-owner",
+                removedMemberIDs: [],
+                bindings: [binding("member-owner", "cloud-owner")]
+            )
+        )
+        let batch = MemberSnapshotBatch(
+            ownerUserRecordName: CKCurrentUserDefaultName,
+            currentUserRecordName: "cloud-owner",
+            approvedParticipantUserRecordNames: [CKCurrentUserDefaultName],
+            snapshots: [envelope(owner, creator: CKCurrentUserDefaultName)]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: [:],
+            isShareOwner: true
+        )
+
+        XCTAssertTrue(result.isTrustEstablished)
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID), ["member-owner"])
+        XCTAssertEqual(result.bindings, ["member-owner": "cloud-owner"])
+    }
+
+    func test_normalizesCurrentParticipantAliasAgainstOwnerPublishedBinding() {
+        let original = batch(
+            ownerBindings: [
+                binding("member-owner", "cloud-owner"),
+                binding("member-sam", "cloud-sam")
+            ],
+            additional: [envelope(memberSnapshot("member-sam"), creator: CKCurrentUserDefaultName)]
+        )
+        let batch = MemberSnapshotBatch(
+            ownerUserRecordName: original.ownerUserRecordName,
+            currentUserRecordName: "cloud-sam",
+            approvedParticipantUserRecordNames: ["cloud-owner", "cloud-sam"],
+            snapshots: original.snapshots
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: [:],
+            isShareOwner: false
+        )
+
+        XCTAssertTrue(result.isTrustEstablished)
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-owner", "member-sam"])
+    }
+
     func test_acceptsOwnerBoundSelfAttributedMemberSnapshot() {
         let batch = batch(
             ownerBindings: [binding("member-owner", "cloud-owner"), binding("member-sam", "cloud-sam")],

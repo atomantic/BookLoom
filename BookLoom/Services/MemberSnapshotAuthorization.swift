@@ -1,3 +1,4 @@
+import CloudKit
 import Foundation
 
 struct MemberSnapshotProvenance: Equatable, Sendable {
@@ -13,10 +14,26 @@ struct ProvenancedMemberSnapshot: Equatable, Sendable {
 
 struct MemberSnapshotBatch: Equatable, Sendable {
     let ownerUserRecordName: String
+    /// Stable CloudKit identity for the account performing this fetch. System
+    /// record metadata may use `CKCurrentUserDefaultName` for this identity,
+    /// while CKShare participants and persisted bindings use its stable name.
+    let currentUserRecordName: String?
     /// CloudKit identities the owner has explicitly admitted to the private
     /// share. An unbound snapshot can be enrolled only for one of these users.
     let approvedParticipantUserRecordNames: Set<String>
     let snapshots: [ProvenancedMemberSnapshot]
+
+    init(
+        ownerUserRecordName: String,
+        currentUserRecordName: String? = nil,
+        approvedParticipantUserRecordNames: Set<String>,
+        snapshots: [ProvenancedMemberSnapshot]
+    ) {
+        self.ownerUserRecordName = ownerUserRecordName
+        self.currentUserRecordName = currentUserRecordName
+        self.approvedParticipantUserRecordNames = approvedParticipantUserRecordNames
+        self.snapshots = snapshots
+    }
 }
 
 struct MemberSnapshotAuthorizationResult: Equatable, Sendable {
@@ -49,10 +66,31 @@ enum MemberSnapshotAuthorization {
         existingBindings: [String: String],
         isShareOwner: Bool
     ) -> MemberSnapshotAuthorizationResult {
-        let structurallyValid = batch.snapshots.filter(isStructurallyValid)
+        // CloudKit uses `CKCurrentUserDefaultName` in record system fields when
+        // the creator/modifier is the account performing the fetch. CKShare
+        // participant identities and our persisted binding map use the stable
+        // user record name instead. Normalize that database-relative alias at
+        // the trust boundary before making any provenance comparisons.
+        let snapshots = normalizeCurrentUserAliases(
+            batch.snapshots,
+            currentUserRecordName: batch.currentUserRecordName
+        )
+        let ownerUserRecordName = normalizeCurrentUserAlias(
+            batch.ownerUserRecordName,
+            currentUserRecordName: batch.currentUserRecordName
+        )
+        let approvedParticipantUserRecordNames = Set(
+            batch.approvedParticipantUserRecordNames.map {
+                normalizeCurrentUserAlias(
+                    $0,
+                    currentUserRecordName: batch.currentUserRecordName
+                )
+            }
+        )
+        let structurallyValid = snapshots.filter(isStructurallyValid)
         let ownerEnvelope = structurallyValid
             .filter { envelope in
-                envelope.provenance.creatorUserRecordName == batch.ownerUserRecordName
+                envelope.provenance.creatorUserRecordName == ownerUserRecordName
                     && envelope.snapshot.clubMeta != nil
             }
             .max { metadataVersion($0.snapshot) < metadataVersion($1.snapshot) }
@@ -61,7 +99,7 @@ enum MemberSnapshotAuthorization {
             return MemberSnapshotAuthorizationResult(
                 snapshots: [],
                 bindings: isShareOwner ? existingBindings : [:],
-                rejectedRecordNames: batch.snapshots.map(\.provenance.recordName),
+                rejectedRecordNames: snapshots.map(\.provenance.recordName),
                 bindingsChanged: false,
                 isTrustEstablished: false
             )
@@ -88,8 +126,8 @@ enum MemberSnapshotAuthorization {
         // valid record created by the CKShare owner, not only whichever owner
         // metadata envelope won the version comparison.
         for envelope in structurallyValid
-        where envelope.provenance.creatorUserRecordName == batch.ownerUserRecordName {
-            bindings[envelope.snapshot.authorMemberID] = batch.ownerUserRecordName
+        where envelope.provenance.creatorUserRecordName == ownerUserRecordName {
+            bindings[envelope.snapshot.authorMemberID] = ownerUserRecordName
         }
 
         // A participant who has left (or was removed directly in the system
@@ -99,8 +137,8 @@ enum MemberSnapshotAuthorization {
         // owner even if CloudKit omits the owner from the participant array.
         bindings = bindings.filter { memberID, userRecordName in
             memberID == ownerMemberID
-                || userRecordName == batch.ownerUserRecordName
-                || batch.approvedParticipantUserRecordNames.contains(userRecordName)
+                || userRecordName == ownerUserRecordName
+                || approvedParticipantUserRecordNames.contains(userRecordName)
         }
 
         let creatorMemberID = ownerMeta.creatorMemberID?.trimmedOrNil ?? ownerMemberID
@@ -116,11 +154,11 @@ enum MemberSnapshotAuthorization {
             // legacy owner metadata is enrolled here because the trusted owner
             // both granted that role and admitted this CloudKit participant.
             for envelope in structurallyValid
-            where envelope.provenance.creatorUserRecordName != batch.ownerUserRecordName {
+            where envelope.provenance.creatorUserRecordName != ownerUserRecordName {
                 let memberID = envelope.snapshot.authorMemberID
                 guard bindings[memberID] == nil,
                       !protectedMemberIDs.contains(memberID),
-                      envelope.provenance.creatorUserRecordName.map(batch.approvedParticipantUserRecordNames.contains) == true,
+                      envelope.provenance.creatorUserRecordName.map(approvedParticipantUserRecordNames.contains) == true,
                       isPayloadAuthorized(envelope.snapshot, authorizedAdmins: authorizedAdmins) else { continue }
                 bindings[memberID] = envelope.provenance.creatorUserRecordName
             }
@@ -130,10 +168,10 @@ enum MemberSnapshotAuthorization {
         // inert legacy data. Ignoring them lets public-share migration and the
         // normal Leave Club flow converge without weakening checks on records
         // written by identities that still have access.
-        let activeEnvelopes = batch.snapshots.filter { envelope in
-            envelope.provenance.creatorUserRecordName == batch.ownerUserRecordName
+        let activeEnvelopes = snapshots.filter { envelope in
+            envelope.provenance.creatorUserRecordName == ownerUserRecordName
                 || envelope.provenance.creatorUserRecordName
-                    .map(batch.approvedParticipantUserRecordNames.contains) == true
+                    .map(approvedParticipantUserRecordNames.contains) == true
         }
         let activeStructurallyValid = activeEnvelopes.filter(isStructurallyValid)
         let presentMemberIDs = Set(activeStructurallyValid.map { $0.snapshot.authorMemberID })
@@ -148,7 +186,7 @@ enum MemberSnapshotAuthorization {
             let snapshot = envelope.snapshot
             let creator = envelope.provenance.creatorUserRecordName
             let isBound = creator != nil && bindings[snapshot.authorMemberID] == creator
-            let ownsMeta = snapshot.clubMeta == nil || creator == batch.ownerUserRecordName
+            let ownsMeta = snapshot.clubMeta == nil || creator == ownerUserRecordName
             if isStructurallyValid(envelope), isBound, ownsMeta,
                isPayloadAuthorized(snapshot, authorizedAdmins: authorizedAdmins) {
                 accepted.append(snapshot)
@@ -167,6 +205,41 @@ enum MemberSnapshotAuthorization {
             bindingsChanged: bindings != existingBindings,
             isTrustEstablished: true
         )
+    }
+
+    private static func normalizeCurrentUserAliases(
+        _ snapshots: [ProvenancedMemberSnapshot],
+        currentUserRecordName: String?
+    ) -> [ProvenancedMemberSnapshot] {
+        guard let currentUserRecordName = currentUserRecordName?.trimmedOrNil,
+              currentUserRecordName != CKCurrentUserDefaultName else {
+            return snapshots
+        }
+
+        let normalize: (String?) -> String? = { recordName in
+            recordName == CKCurrentUserDefaultName ? currentUserRecordName : recordName
+        }
+        return snapshots.map { envelope in
+            ProvenancedMemberSnapshot(
+                snapshot: envelope.snapshot,
+                provenance: MemberSnapshotProvenance(
+                    recordName: envelope.provenance.recordName,
+                    creatorUserRecordName: normalize(envelope.provenance.creatorUserRecordName),
+                    lastModifiedUserRecordName: normalize(envelope.provenance.lastModifiedUserRecordName)
+                )
+            )
+        }
+    }
+
+    private static func normalizeCurrentUserAlias(
+        _ recordName: String,
+        currentUserRecordName: String?
+    ) -> String {
+        guard recordName == CKCurrentUserDefaultName,
+              let currentUserRecordName = currentUserRecordName?.trimmedOrNil else {
+            return recordName
+        }
+        return currentUserRecordName
     }
 
     private static func metadataVersion(_ snapshot: MemberShareSnapshot) -> Date {

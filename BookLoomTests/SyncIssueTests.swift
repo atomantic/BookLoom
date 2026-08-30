@@ -58,6 +58,30 @@ final class SyncIssueTests: XCTestCase {
         XCTAssertEqual(issue.systemImage, "icloud.slash")
     }
 
+    func test_missingOwnerTrustRendersAsNonDestructiveWaitingState() {
+        let issue = SyncIssue.classify(
+            MemberSnapshotAuthorizationError(rejectedRecordNames: []),
+            operation: .refresh
+        )
+
+        XCTAssertEqual(issue.severity, .offline)
+        XCTAssertEqual(issue.title, "Waiting for Club data")
+        XCTAssertTrue(issue.message.contains("local data"))
+    }
+
+    func test_rejectedSnapshotRendersAsSpecificVerificationWarning() {
+        let issue = SyncIssue.classify(
+            MemberSnapshotAuthorizationError(
+                rejectedRecordNames: ["MemberSnapshot-member-sam"]
+            ),
+            operation: .refresh
+        )
+
+        XCTAssertEqual(issue.severity, .warning)
+        XCTAssertEqual(issue.title, "Club data needs attention")
+        XCTAssertFalse(issue.message.contains("MemberSnapshot"))
+    }
+
     func test_unknownErrorPicksFriendlyOperationCopy() {
         let error = NSError(domain: "ExampleDomain", code: 42, userInfo: [
             NSLocalizedDescriptionKey: "Specific failure"
