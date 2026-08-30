@@ -13,6 +13,32 @@ enum ModelContainerStorage: Equatable {
     case memory
 }
 
+/// Holds Club networking until both the persistent store is ready and
+/// onboarding has established the local identity used to sign snapshots.
+/// Share callbacks can still queue before then; configuring their operation is
+/// what allows the queue to begin mutating the model context.
+struct SharingStartupGate {
+    private(set) var isApplicationReady = false
+    private(set) var hasStarted = false
+
+    mutating func applicationDidBecomeReady(identityIsConfigured: Bool) -> Bool {
+        isApplicationReady = true
+        return startIfPossible(identityIsConfigured: identityIsConfigured)
+    }
+
+    mutating func identityConfigurationDidChange(isConfigured: Bool) -> Bool {
+        startIfPossible(identityIsConfigured: isConfigured)
+    }
+
+    private mutating func startIfPossible(identityIsConfigured: Bool) -> Bool {
+        guard isApplicationReady, identityIsConfigured, !hasStarted else {
+            return false
+        }
+        hasStarted = true
+        return true
+    }
+}
+
 @MainActor
 protocol ModelContainerBuilding {
     func makeContainer(schema: Schema, storage: ModelContainerStorage) throws -> ModelContainer
@@ -50,6 +76,7 @@ struct BookLoomApp: App {
     @State private var shareAcceptance = ShareAcceptanceQueue<CKShare.Metadata>(
         identifier: ShareAcceptance.identifier
     )
+    @State private var sharingStartupGate = SharingStartupGate()
     private let acceptedShareInbox = AcceptedShareInbox.shared
     private let cloudKitChangeInbox = CloudKitChangeInbox.shared
     #if os(macOS)
@@ -147,16 +174,23 @@ struct BookLoomApp: App {
                     SchemaPrimeDataCleanup.removeSchemaPrimeData(from: sharedModelContainer.mainContext)
                     CoverDataCleanup.clearPersistedCoverData(in: sharedModelContainer.mainContext)
                     await BookLoomDataReset.retryPendingCloudKitCleanup(context: sharedModelContainer.mainContext)
-                    configureShareAcceptance()
+                    // A cold-launch share callback may arrive before onboarding.
+                    // Move it into the serial queue now, but leave that queue
+                    // unconfigured so it cannot import with an empty name.
                     await drainAcceptedShares()
-                    await shareAcceptance.waitForActiveOperation()
-                    await restoreAcceptedShares()
-                    await CloudKitChangeNotifications.configureIfNeeded()
-                    await SharedClubSync.synchronizeSharedClubs(
-                        in: sharedModelContainer.mainContext,
-                        localMemberID: memberIdentity.memberID,
-                        localMemberName: memberIdentity.name
-                    )
+                    if sharingStartupGate.applicationDidBecomeReady(
+                        identityIsConfigured: memberIdentity.isConfigured
+                    ) {
+                        await startSharingServices()
+                    }
+                }
+                .onChange(of: memberIdentity.isConfigured) { _, isConfigured in
+                    guard sharingStartupGate.identityConfigurationDidChange(
+                        isConfigured: isConfigured
+                    ) else { return }
+                    Task { @MainActor in
+                        await startSharingServices()
+                    }
                 }
                 .onChange(of: acceptedShareInbox.pending.count) { _, _ in
                     Task { @MainActor in
@@ -164,6 +198,7 @@ struct BookLoomApp: App {
                     }
                 }
                 .onChange(of: cloudKitChangeInbox.pendingChangeCount) { _, _ in
+                    guard memberIdentity.isConfigured else { return }
                     Task { @MainActor in
                         await refreshCloudChanges()
                     }
@@ -210,6 +245,22 @@ struct BookLoomApp: App {
             }
         }
         #endif
+    }
+
+    @MainActor
+    private func startSharingServices() async {
+        // This is the sole point where the acceptance queue becomes active.
+        // Pending callbacks remain safely buffered until the member has chosen
+        // a non-empty name and startup cleanup has completed.
+        configureShareAcceptance()
+        await shareAcceptance.waitForActiveOperation()
+        await restoreAcceptedShares()
+        await CloudKitChangeNotifications.configureIfNeeded()
+        await SharedClubSync.synchronizeSharedClubs(
+            in: sharedModelContainer.mainContext,
+            localMemberID: memberIdentity.memberID,
+            localMemberName: memberIdentity.name
+        )
     }
 
     @MainActor

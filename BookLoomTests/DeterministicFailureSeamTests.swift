@@ -316,6 +316,31 @@ final class DeterministicFailureSeamTests: XCTestCase {
         XCTAssertNotNil(bootstrap.errorMessage)
     }
 
+    func test_sharingStartupWaitsForOnboardingAndStartsOnlyOnce() {
+        var gate = SharingStartupGate()
+
+        XCTAssertFalse(gate.applicationDidBecomeReady(identityIsConfigured: false))
+        XCTAssertFalse(gate.identityConfigurationDidChange(isConfigured: false))
+        XCTAssertTrue(gate.identityConfigurationDidChange(isConfigured: true))
+        XCTAssertFalse(gate.identityConfigurationDidChange(isConfigured: true))
+        XCTAssertTrue(gate.isApplicationReady)
+        XCTAssertTrue(gate.hasStarted)
+    }
+
+    func test_sharingStartupStartsImmediatelyForConfiguredUpgrade() {
+        var gate = SharingStartupGate()
+
+        XCTAssertTrue(gate.applicationDidBecomeReady(identityIsConfigured: true))
+        XCTAssertFalse(gate.applicationDidBecomeReady(identityIsConfigured: true))
+    }
+
+    func test_sharingStartupHandlesOnboardingCompletingBeforeAppReadiness() {
+        var gate = SharingStartupGate()
+
+        XCTAssertFalse(gate.identityConfigurationDidChange(isConfigured: true))
+        XCTAssertTrue(gate.applicationDidBecomeReady(identityIsConfigured: true))
+    }
+
     func test_resetFetchFailurePreservesIdentityRowsAndSideEffects() async {
         let club = BookClub(name: "Keep")
         let book = LibraryBook(title: "Keep")

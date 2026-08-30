@@ -9,6 +9,7 @@
 - New shares are private, read/write collaborations. iOS and macOS use the system CloudKit sharing UI to add specified recipients; BookLoom no longer distributes a reusable public write link.
 - Cover images are not stored in the share snapshot or SwiftData for new writes. Shared snapshots carry cover URLs, and `BookCoverCache` stores fetched image bytes in each device's local Caches directory.
 - Shared clubs refresh from the share root on club list/home load and publish a new snapshot after proposals, ratings, notes, prompts, meetings, RSVPs, polls, votes, and winner promotion changes.
+- On a fresh install, incoming share callbacks remain buffered until onboarding has established a non-empty member identity and startup cleanup is complete. Accepted-zone restoration, subscriptions, and Club synchronization begin only after that gate opens.
 - `InviteLoadError` maps common CloudKit auth and network failures into user-actionable states.
 
 ## Production Checklist
