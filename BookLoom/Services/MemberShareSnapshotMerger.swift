@@ -5,12 +5,15 @@ extension MemberShareSnapshotStore {
     /// Additive merge. Reconciles SwiftData rows with the union of all member
     /// snapshots. Local items authored by `localMemberID` are preserved as-is
     /// — they may carry unpublished updates that haven't reached CloudKit yet.
+    /// Contributions from `preservingMemberIDs` are likewise retained when a
+    /// bound member's remote record is temporarily absent from a complete query.
     static func merge(
         snapshots: [MemberShareSnapshot],
         into club: BookClub,
         context: ModelContext,
         localMemberID: String,
-        reactivatedMemberIDs: Set<String> = []
+        reactivatedMemberIDs: Set<String> = [],
+        preservingMemberIDs: Set<String> = []
     ) throws {
         // 1. Apply club meta from the snapshot that carries it (the owner's).
         if let metaSnapshot = snapshots
@@ -76,6 +79,7 @@ extension MemberShareSnapshotStore {
         // sets — otherwise step 5's "delete non-canonical, non-local" pass
         // would re-import their rows on every merge.
         let memberKey: (String) -> String = { club.canonicalMemberKey(for: $0) }
+        let preservedPersonKeys = Set(preservingMemberIDs.map(memberKey))
         let removedAuthors = club.removedMemberIDs
         let removedPersonKeys = Set(removedAuthors.map(memberKey))
         let activeSnapshots = removedPersonKeys.isEmpty
@@ -245,6 +249,7 @@ extension MemberShareSnapshotStore {
         //    locally (might be unpublished new additions).
         for (selectionID, sub) in submissionsByID where canonicalSubmissions[selectionID] == nil {
             if isAuthor(localMemberID, of: sub.submittedByMemberID) { continue }
+            if preservingMemberIDs.contains(sub.submittedByMemberID) { continue }
             context.delete(sub)
         }
 
@@ -270,6 +275,7 @@ extension MemberShareSnapshotStore {
         }
         for (promptID, prompt) in promptsByID where canonicalPrompts[promptID] == nil {
             if isAuthor(localMemberID, of: prompt.createdByMemberID) { continue }
+            if preservingMemberIDs.contains(prompt.createdByMemberID) { continue }
             // Starter prompts (empty createdByMemberID) are auto-generated locally
             // and not synced — leave them in place.
             if prompt.createdByMemberID.isEmpty { continue }
@@ -302,6 +308,7 @@ extension MemberShareSnapshotStore {
         }
         for (pollID, poll) in pollsByID where canonicalPolls[pollID] == nil {
             if isAuthor(localMemberID, of: poll.createdByMemberID) { continue }
+            if preservingMemberIDs.contains(poll.createdByMemberID) { continue }
             context.delete(poll)
         }
 
@@ -334,20 +341,49 @@ extension MemberShareSnapshotStore {
         }
         for (meetingID, meeting) in meetingsByID where canonicalMeetings[meetingID] == nil {
             if isAuthor(localMemberID, of: meeting.hostMemberID) { continue }
+            if preservingMemberIDs.contains(meeting.hostMemberID) { continue }
             context.delete(meeting)
         }
 
         // 9. Reconcile per-submission ratings/notes (own ratings/notes are
         //    preserved verbatim; remote authors' are upserted/pruned to match
         //    canonical).
-        applyRatings(canonical: ratingsByKey, submissionsByID: submissionsByID, localMemberID: localMemberID, memberKey: memberKey, context: context)
-        applyNotes(canonical: notesByKey, submissionsByID: submissionsByID, localMemberID: localMemberID, memberKey: memberKey, context: context)
+        applyRatings(
+            canonical: ratingsByKey,
+            submissionsByID: submissionsByID,
+            localMemberID: localMemberID,
+            preservedPersonKeys: preservedPersonKeys,
+            memberKey: memberKey,
+            context: context
+        )
+        applyNotes(
+            canonical: notesByKey,
+            submissionsByID: submissionsByID,
+            localMemberID: localMemberID,
+            preservedPersonKeys: preservedPersonKeys,
+            memberKey: memberKey,
+            context: context
+        )
 
         // 10. Reconcile votes per poll (one canonical vote per (poll, member)).
-        applyVotes(canonical: votesByKey, pollsByID: pollsByID, localMemberID: localMemberID, memberKey: memberKey, context: context)
+        applyVotes(
+            canonical: votesByKey,
+            pollsByID: pollsByID,
+            localMemberID: localMemberID,
+            preservedPersonKeys: preservedPersonKeys,
+            memberKey: memberKey,
+            context: context
+        )
 
         // 11. Reconcile RSVPs per meeting (one canonical RSVP per (meeting, member)).
-        applyRSVPs(canonical: rsvpsByKey, meetingsByID: meetingsByID, localMemberID: localMemberID, memberKey: memberKey, context: context)
+        applyRSVPs(
+            canonical: rsvpsByKey,
+            meetingsByID: meetingsByID,
+            localMemberID: localMemberID,
+            preservedPersonKeys: preservedPersonKeys,
+            memberKey: memberKey,
+            context: context
+        )
 
         // 12. Notification events (only after we have a baseline snapshot —
         //     never on first import or we'd flood the user).
@@ -377,6 +413,7 @@ extension MemberShareSnapshotStore {
         club.lastSharedSnapshotAt = latestCaptureAt
 
         let activePersonKeys = Set(activeSnapshots.map { memberKey($0.authorMemberID) })
+            .union(preservedPersonKeys)
         var roster = club.knownMemberRoster.filter { memberID, _ in
             !removedPersonKeys.contains(memberKey(memberID)) && activePersonKeys.contains(memberKey(memberID))
         }
@@ -429,6 +466,7 @@ extension MemberShareSnapshotStore {
         canonicalKey: (Payload) -> String,
         canonicalMemberID: (Payload) -> String,
         localMemberID: String,
+        preservedPersonKeys: Set<String>,
         memberKey: (String) -> String,
         context: ModelContext,
         update: (Existing, Payload, String) -> Void,
@@ -456,7 +494,8 @@ extension MemberShareSnapshotStore {
                 }
 
                 guard let payload = canonicalByKey[key] else {
-                    if existingMemberID(keeper) != localMemberID {
+                    if existingMemberID(keeper) != localMemberID,
+                       !preservedPersonKeys.contains(memberKey(existingMemberID(keeper))) {
                         context.delete(keeper)
                     }
                     continue
@@ -486,6 +525,7 @@ extension MemberShareSnapshotStore {
         canonical: [String: MemberShareSnapshot.RatingPayload],
         submissionsByID: [String: BookSubmission],
         localMemberID: String,
+        preservedPersonKeys: Set<String>,
         memberKey: @escaping (String) -> String,
         context: ModelContext
     ) {
@@ -500,6 +540,7 @@ extension MemberShareSnapshotStore {
             canonicalKey: { memberKey($0.memberID) },
             canonicalMemberID: \.memberID,
             localMemberID: localMemberID,
+            preservedPersonKeys: preservedPersonKeys,
             memberKey: memberKey,
             context: context,
             update: { rating, payload, storedMemberID in
@@ -528,6 +569,7 @@ extension MemberShareSnapshotStore {
         canonical: [String: MemberShareSnapshot.NotePayload],
         submissionsByID: [String: BookSubmission],
         localMemberID: String,
+        preservedPersonKeys: Set<String>,
         memberKey: @escaping (String) -> String,
         context: ModelContext
     ) {
@@ -545,6 +587,7 @@ extension MemberShareSnapshotStore {
             canonicalKey: { noteKey(memberKey($0.memberID), $0.createdAt) },
             canonicalMemberID: \.memberID,
             localMemberID: localMemberID,
+            preservedPersonKeys: preservedPersonKeys,
             memberKey: memberKey,
             context: context,
             update: { note, payload, storedMemberID in
@@ -572,6 +615,7 @@ extension MemberShareSnapshotStore {
         canonical: [String: MemberShareSnapshot.VotePayload],
         pollsByID: [String: SelectionPoll],
         localMemberID: String,
+        preservedPersonKeys: Set<String>,
         memberKey: @escaping (String) -> String,
         context: ModelContext
     ) {
@@ -586,6 +630,7 @@ extension MemberShareSnapshotStore {
             canonicalKey: { memberKey($0.memberID) },
             canonicalMemberID: \.memberID,
             localMemberID: localMemberID,
+            preservedPersonKeys: preservedPersonKeys,
             memberKey: memberKey,
             context: context,
             update: { vote, payload, storedMemberID in
@@ -614,6 +659,7 @@ extension MemberShareSnapshotStore {
         canonical: [String: MemberShareSnapshot.RSVPPayload],
         meetingsByID: [String: ClubMeeting],
         localMemberID: String,
+        preservedPersonKeys: Set<String>,
         memberKey: @escaping (String) -> String,
         context: ModelContext
     ) {
@@ -628,6 +674,7 @@ extension MemberShareSnapshotStore {
             canonicalKey: { memberKey($0.memberID) },
             canonicalMemberID: \.memberID,
             localMemberID: localMemberID,
+            preservedPersonKeys: preservedPersonKeys,
             memberKey: memberKey,
             context: context,
             update: { rsvp, payload, storedMemberID in

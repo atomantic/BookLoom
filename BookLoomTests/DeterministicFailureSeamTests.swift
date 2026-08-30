@@ -178,6 +178,32 @@ final class DeterministicFailureSeamTests: XCTestCase {
         XCTAssertEqual(service.events, ["publish-start", "publish-end", "fetch"])
     }
 
+    func test_synchronizeKeepsPublishFailureVisibleAndSkipsStaleFetch() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let club = BookClub(name: "Failed owner publish")
+        club.shareIsActive = true
+        club.creatorMemberID = "local"
+        context.insert(club)
+        try context.save()
+        let service = FailingPublishSnapshotService()
+
+        await SharedClubSync.synchronizeIfNeeded(
+            club,
+            context: context,
+            localMemberID: "local",
+            localMemberName: "Reader",
+            service: service,
+            isEnabled: true
+        )
+
+        XCTAssertEqual(service.events, ["publish"])
+        XCTAssertEqual(
+            SharedClubSyncStatus.shared.issue(for: club)?.title,
+            "iCloud storage is full"
+        )
+    }
+
     func test_refreshesForSameZoneCoalesceIntoOneFetch() async throws {
         let container = try makeContainer()
         let context = container.mainContext
@@ -471,6 +497,31 @@ private final class PublishThenFetchSnapshotService: MemberSnapshotSyncing {
     func releasePublish() {
         publishGate.release()
     }
+}
+
+@MainActor
+private final class FailingPublishSnapshotService: MemberSnapshotSyncing {
+    private(set) var events: [String] = []
+
+    func publishMemberSnapshot(
+        _ snapshot: MemberShareSnapshot,
+        target: MemberSnapshotSyncTarget,
+        localMemberID: String
+    ) async throws {
+        events.append("publish")
+        throw CKError(.quotaExceeded)
+    }
+
+    func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
+        events.append("fetch")
+        return MemberSnapshotBatch(
+            ownerUserRecordName: "owner-user",
+            approvedParticipantUserRecordNames: ["owner-user"],
+            snapshots: []
+        )
+    }
+
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 1 }
 }
 
 @MainActor

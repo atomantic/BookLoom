@@ -351,7 +351,7 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         XCTAssertTrue(result.reactivatedMemberIDs.isEmpty)
         XCTAssertEqual(result.bindings["member-sam"], "cloud-sam")
         XCTAssertEqual(result.snapshots.map(\.authorMemberID), ["member-owner"])
-        XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-sam"])
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty, "A removed identity remains inert")
     }
 
     func test_ownerRepairsLegacyReinviteOnlyFromSnapshotNewerThanRemoval() {
@@ -401,7 +401,7 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
 
         XCTAssertTrue(result.reactivatedMemberIDs.isEmpty)
         XCTAssertNil(result.bindings["member-sam"])
-        XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-sam"])
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty, "A stale pre-reinvite record remains inert")
     }
 
     func test_participantCannotRetireOwnerRemovalTombstone() {
@@ -422,7 +422,75 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
 
         XCTAssertTrue(result.reactivatedMemberIDs.isEmpty)
         XCTAssertTrue(result.rejectedRecordNames.isEmpty)
-        XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-owner", "member-sam"])
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID), ["member-owner"])
+    }
+
+    func test_ownerIgnoresRetainedSnapshotThatPredatesReinvite() {
+        let batch = batch(
+            ownerBindings: [
+                binding("member-owner", "cloud-owner"),
+                binding("member-sam", "cloud-sam")
+            ],
+            removedMemberIDs: ["member-sam"],
+            ownerModificationDate: Date(timeIntervalSince1970: 1_000),
+            additional: [
+                envelope(
+                    memberSnapshot("member-sam"),
+                    creator: "cloud-sam",
+                    modificationDate: Date(timeIntervalSince1970: 900)
+                )
+            ]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: ["member-owner": "cloud-owner", "member-sam": "cloud-sam"],
+            isShareOwner: true
+        )
+
+        XCTAssertTrue(result.reactivatedMemberIDs.isEmpty)
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID), ["member-owner"])
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+        XCTAssertTrue(result.missingMemberIDs.isEmpty, "A removed generation is inert, not missing")
+    }
+
+    func test_ownerStripsFormerAdminRenameProposalDuringFreshReinvite() throws {
+        let returning = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 2_000),
+            authorMemberID: "member-sam",
+            authorName: "Sam",
+            nameProposal: .init(
+                name: "Stale Admin Rename",
+                updatedAt: Date(timeIntervalSince1970: 2_000),
+                proposerMemberID: "member-sam"
+            )
+        )
+        let batch = batch(
+            ownerBindings: [
+                binding("member-owner", "cloud-owner"),
+                binding("member-sam", "cloud-sam")
+            ],
+            removedMemberIDs: ["member-sam"],
+            ownerModificationDate: Date(timeIntervalSince1970: 1_000),
+            additional: [
+                envelope(
+                    returning,
+                    creator: "cloud-sam",
+                    modificationDate: Date(timeIntervalSince1970: 2_000)
+                )
+            ]
+        )
+
+        let result = MemberSnapshotAuthorization.authorize(
+            batch,
+            existingBindings: ["member-owner": "cloud-owner", "member-sam": "cloud-sam"],
+            isShareOwner: true
+        )
+
+        XCTAssertEqual(result.reactivatedMemberIDs, ["member-sam"])
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+        let accepted = try XCTUnwrap(result.snapshots.first { $0.authorMemberID == "member-sam" })
+        XCTAssertNil(accepted.nameProposal)
     }
 
     func test_ownerReinviteOnNewDeviceStartsFreshMembershipGeneration() {
@@ -455,7 +523,7 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         XCTAssertTrue(result.rejectedRecordNames.isEmpty)
     }
 
-    func test_missingOwnerBoundMemberRecordFailsClosed() {
+    func test_missingOwnerBoundMemberRecordPreservesAuthorWithoutRejectingBatch() {
         let original = batch(
             ownerBindings: [binding("member-owner", "cloud-owner"), binding("member-sam", "cloud-sam")],
             additional: []
@@ -468,7 +536,9 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
 
         let result = MemberSnapshotAuthorization.authorize(batch, existingBindings: [:], isShareOwner: false)
 
-        XCTAssertEqual(result.rejectedRecordNames, ["MemberSnapshot-member-sam"])
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
+        XCTAssertEqual(result.missingMemberIDs, ["member-sam"])
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID), ["member-owner"])
     }
 
     func test_legacyOwnerMetadataUsesCapturedAtAsVersion() {
@@ -532,7 +602,7 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
         XCTAssertEqual(Set(result.rejectedRecordNames), ["MemberSnapshot-member-owner", "MemberSnapshot-member-sam"])
     }
 
-    func test_nonAdminRenameProposalIsRejected() {
+    func test_nonAdminRenameProposalIsStrippedWithoutRejectingContributions() throws {
         let snapshot = MemberShareSnapshot(
             authorMemberID: "member-sam",
             authorName: "Sam",
@@ -545,7 +615,10 @@ final class MemberSnapshotAuthorizationTests: XCTestCase {
 
         let result = MemberSnapshotAuthorization.authorize(batch, existingBindings: [:], isShareOwner: false)
 
-        XCTAssertEqual(result.snapshots.map(\.authorMemberID), ["member-owner"])
+        XCTAssertEqual(result.snapshots.map(\.authorMemberID).sorted(), ["member-owner", "member-sam"])
+        let accepted = try XCTUnwrap(result.snapshots.first { $0.authorMemberID == "member-sam" })
+        XCTAssertNil(accepted.nameProposal)
+        XCTAssertTrue(result.rejectedRecordNames.isEmpty)
     }
 
     func test_missingOwnerTrustRootFailsClosed() {

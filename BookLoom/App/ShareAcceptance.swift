@@ -283,7 +283,8 @@ enum ShareAcceptance {
                 snapshots: authorization.snapshots,
                 into: joined,
                 context: context,
-                localMemberID: localMemberID
+                localMemberID: localMemberID,
+                preservingMemberIDs: authorization.missingMemberIDs
             )
             try context.save()
             logger.info("✅ Accepted share — imported '\(joined.name, privacy: .public)' from \(authorization.snapshots.count) authenticated member snapshot(s)")

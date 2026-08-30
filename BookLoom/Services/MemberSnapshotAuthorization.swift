@@ -59,6 +59,11 @@ struct MemberSnapshotAuthorizationResult: Equatable, Sendable {
     /// same CloudKit identity has explicitly rejoined the share. Empty on
     /// participant devices so only the share owner can reactivate membership.
     let reactivatedMemberIDs: Set<String>
+    /// Authenticated members whose records are temporarily absent from this
+    /// query result. The merge may import verified records that are present,
+    /// but must preserve locally cached contributions from these authors until
+    /// their snapshots return or the owner explicitly removes them.
+    let missingMemberIDs: Set<String>
     let rejectedRecordNames: [String]
     let bindingsChanged: Bool
     let isTrustEstablished: Bool
@@ -120,6 +125,7 @@ enum MemberSnapshotAuthorization {
                 snapshots: [],
                 bindings: isShareOwner ? existingBindings : [:],
                 reactivatedMemberIDs: [],
+                missingMemberIDs: [],
                 rejectedRecordNames: snapshots.map(\.provenance.recordName),
                 bindingsChanged: false,
                 isTrustEstablished: false
@@ -180,8 +186,9 @@ enum MemberSnapshotAuthorization {
                     .map(approvedParticipantUserRecordNames.contains) == true
         }
         let activeStructurallyValid = activeEnvelopes.filter(isStructurallyValid)
-        let presentMemberIDs = Set(activeStructurallyValid.map { $0.snapshot.authorMemberID })
         var reactivatedMemberIDs = Set<String>()
+        var staleReinviteRecordNames = Set<String>()
+        var freshGenerationMemberIDsByUser: [String: Set<String>] = [:]
 
         if isShareOwner {
             // The owner adding a specified CloudKit participant is the approval
@@ -196,12 +203,23 @@ enum MemberSnapshotAuthorization {
                 let memberID = envelope.snapshot.authorMemberID
                 guard let creator = envelope.provenance.creatorUserRecordName,
                       approvedParticipantUserRecordNames.contains(creator),
-                      isPayloadAuthorized(envelope.snapshot, authorizedAdmins: authorizedAdmins) else { continue }
+                      envelope.snapshot.clubMeta == nil else { continue }
+
+                let matchingTombstones = removedMemberIDs.filter { bindings[$0] == creator }
+                let isLegacyRemovedID = removedMemberIDs.contains(memberID) && bindings[memberID] == nil
+                if (!matchingTombstones.isEmpty || isLegacyRemovedID),
+                   !isFreshReinvite(envelope, newerThan: ownerEnvelope) {
+                    // Re-accepting a CKShare can expose a record that survived
+                    // the previous removal. It is authenticated but belongs to
+                    // the retired membership generation, so ignore it until
+                    // that participant actually republishes after rejoining.
+                    staleReinviteRecordNames.insert(envelope.provenance.recordName)
+                    continue
+                }
 
                 if let boundCreator = bindings[memberID] {
                     guard boundCreator == creator else { continue }
                 } else if removedMemberIDs.contains(memberID) {
-                    guard isFreshLegacyReinvite(envelope, newerThan: ownerEnvelope) else { continue }
                     bindings[memberID] = creator
                 } else {
                     bindings[memberID] = creator
@@ -210,8 +228,13 @@ enum MemberSnapshotAuthorization {
                 // A returning person may publish under the same device ID or a
                 // new one. Clear every tombstone authenticated to that CloudKit
                 // identity, but never restore their old admin designation.
-                let matchingTombstones = removedMemberIDs.filter { bindings[$0] == creator }
                 reactivatedMemberIDs.formUnion(matchingTombstones)
+                if isLegacyRemovedID {
+                    reactivatedMemberIDs.insert(memberID)
+                }
+                if !matchingTombstones.isEmpty || isLegacyRemovedID {
+                    freshGenerationMemberIDsByUser[creator, default: []].insert(memberID)
+                }
             }
 
             // Start a fresh membership generation for each reactivated person:
@@ -221,32 +244,41 @@ enum MemberSnapshotAuthorization {
             let reactivatedUsers = Set(reactivatedMemberIDs.compactMap { bindings[$0] })
             if !reactivatedUsers.isEmpty {
                 bindings = bindings.filter { memberID, userRecordName in
-                    !reactivatedUsers.contains(userRecordName) || presentMemberIDs.contains(memberID)
+                    !reactivatedUsers.contains(userRecordName)
+                        || freshGenerationMemberIDsByUser[userRecordName]?.contains(memberID) == true
                 }
             }
         }
 
         let effectiveRemovedMemberIDs = removedMemberIDs.subtracting(reactivatedMemberIDs)
-        let missingBoundRecordNames = bindings.keys
-            .filter { !effectiveRemovedMemberIDs.contains($0) && !presentMemberIDs.contains($0) }
-            .map { recordPrefix + $0 }
-        let collidingRecordNames = stableObjectOwnershipCollisions(in: activeStructurallyValid)
+        let eligibleEnvelopes = activeEnvelopes.filter { envelope in
+            !effectiveRemovedMemberIDs.contains(envelope.snapshot.authorMemberID)
+                && !staleReinviteRecordNames.contains(envelope.provenance.recordName)
+        }
+        let eligibleStructurallyValid = eligibleEnvelopes.filter(isStructurallyValid)
+        let presentMemberIDs = Set(eligibleStructurallyValid.map { $0.snapshot.authorMemberID })
+        let missingMemberIDs = Set(bindings.keys.filter {
+            !effectiveRemovedMemberIDs.contains($0) && !presentMemberIDs.contains($0)
+        })
+        let collidingRecordNames = stableObjectOwnershipCollisions(in: eligibleStructurallyValid)
 
         var accepted: [MemberShareSnapshot] = []
         var rejected: [String] = []
-        for envelope in activeEnvelopes {
+        for envelope in eligibleEnvelopes {
             let snapshot = envelope.snapshot
             let creator = envelope.provenance.creatorUserRecordName
             let isBound = creator != nil && bindings[snapshot.authorMemberID] == creator
             let ownsMeta = snapshot.clubMeta == nil || creator == ownerUserRecordName
             if isStructurallyValid(envelope), isBound, ownsMeta,
-               isPayloadAuthorized(snapshot, authorizedAdmins: authorizedAdmins) {
-                accepted.append(snapshot)
+               let authorizedSnapshot = authorizedSnapshot(
+                   snapshot,
+                   authorizedAdmins: authorizedAdmins
+               ) {
+                accepted.append(authorizedSnapshot)
             } else {
                 rejected.append(envelope.provenance.recordName)
             }
         }
-        rejected.append(contentsOf: missingBoundRecordNames)
         rejected.append(contentsOf: collidingRecordNames)
         rejected = Array(Set(rejected)).sorted()
 
@@ -254,6 +286,7 @@ enum MemberSnapshotAuthorization {
             snapshots: accepted,
             bindings: bindings,
             reactivatedMemberIDs: reactivatedMemberIDs,
+            missingMemberIDs: missingMemberIDs,
             rejectedRecordNames: rejected,
             bindingsChanged: bindings != existingBindings,
             isTrustEstablished: true
@@ -301,13 +334,14 @@ enum MemberSnapshotAuthorization {
         return meta.metadataUpdatedAt ?? snapshot.capturedAt
     }
 
-    /// Legacy removals did not preserve a CloudKit identity binding. The exact
-    /// member ID therefore acts as a recovery token only when the accepted
-    /// participant has freshly rewritten that record after the owner snapshot
-    /// carrying the tombstone. CloudKit server dates avoid trusting device
-    /// clock skew; capture times are retained as a compatibility fallback for
-    /// old/test records without hydrated system dates.
-    private static func isFreshLegacyReinvite(
+    /// Re-accepting a participant proves current share access, but an old record
+    /// may have survived the prior removal. Require a server-side rewrite after
+    /// the owner snapshot carrying the tombstone before treating that record as
+    /// a new membership generation. This also authenticates exact-ID recovery
+    /// for legacy removals that did not preserve an identity binding. CloudKit
+    /// server dates avoid trusting device clock skew; capture times remain a
+    /// compatibility fallback for old/test records without hydrated metadata.
+    private static func isFreshReinvite(
         _ envelope: ProvenancedMemberSnapshot,
         newerThan ownerEnvelope: ProvenancedMemberSnapshot
     ) -> Bool {
@@ -370,15 +404,39 @@ enum MemberSnapshotAuthorization {
             && (snapshot.nameProposal == nil || snapshot.nameProposal?.proposerMemberID == author)
     }
 
-    private static func isPayloadAuthorized(
+    /// A non-admin can carry a stale rename proposal immediately after being
+    /// removed and re-invited. The proposal is optional authority, not proof of
+    /// the rest of the self-authored payload, so strip it while retaining the
+    /// verified contributions. The merge engine independently checks proposer
+    /// authority before applying any rename.
+    private static func authorizedSnapshot(
         _ snapshot: MemberShareSnapshot,
         authorizedAdmins: Set<String>
-    ) -> Bool {
-        guard hasSelfAttributedPayload(snapshot) else { return false }
-        if snapshot.nameProposal != nil && !authorizedAdmins.contains(snapshot.authorMemberID) {
-            return false
+    ) -> MemberShareSnapshot? {
+        guard hasSelfAttributedPayload(snapshot) else { return nil }
+        guard snapshot.nameProposal != nil,
+              !authorizedAdmins.contains(snapshot.authorMemberID) else {
+            return snapshot
         }
-        return true
+        return MemberShareSnapshot(
+            schemaVersion: snapshot.schemaVersion,
+            capturedAt: snapshot.capturedAt,
+            authorMemberID: snapshot.authorMemberID,
+            authorName: snapshot.authorName,
+            clubMeta: snapshot.clubMeta,
+            nameProposal: nil,
+            submissions: snapshot.submissions,
+            statusOverrides: snapshot.statusOverrides,
+            detailsOverrides: snapshot.detailsOverrides ?? [],
+            deletedSubmissions: snapshot.deletedSubmissions ?? [],
+            ratings: snapshot.ratings,
+            notes: snapshot.notes,
+            prompts: snapshot.prompts,
+            polls: snapshot.polls,
+            votes: snapshot.votes,
+            meetings: snapshot.meetings,
+            rsvps: snapshot.rsvps
+        )
     }
 
     private static func bindingDictionary(

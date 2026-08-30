@@ -1797,6 +1797,68 @@ final class SharedClubSnapshotTests: XCTestCase {
         XCTAssertEqual(meeting.rsvps?.first?.bringingNote, "Snacks")
     }
 
+    func test_mergePreservesCachedContributionsWhenBoundSnapshotIsTemporarilyMissing() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Sunday Pages")
+        club.shareIsActive = true
+        club.creatorMemberID = "member-owner"
+        club.memberIdentityBindings = [
+            "member-owner": "cloud-owner",
+            "member-sam": "cloud-sam"
+        ]
+        club.knownMemberRoster = ["member-owner": "Owner", "member-sam": "Sam"]
+        context.insert(club)
+
+        let cachedSubmission = BookSubmission(
+            title: "Keep Sam's Book",
+            submittedBy: "Sam",
+            submittedByMemberID: "member-sam"
+        )
+        cachedSubmission.selectionID = "selection-sam"
+        club.addSubmission(cachedSubmission)
+        context.insert(cachedSubmission)
+        let cachedRating = Rating(memberID: "member-sam", memberName: "Sam", stars: 5)
+        cachedRating.submission = cachedSubmission
+        cachedSubmission.ratings = [cachedRating]
+        context.insert(cachedRating)
+        try context.save()
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-owner",
+            authorName: "Owner",
+            clubMeta: .init(
+                name: club.name,
+                createdAt: club.createdAt,
+                cloudZoneName: club.cloudZoneName,
+                shareParticipantCount: 2,
+                creatorMemberID: "member-owner",
+                adminMemberIDs: [],
+                removedMemberIDs: [],
+                memberIdentityBindings: [
+                    .init(memberID: "member-owner", cloudKitUserRecordName: "cloud-owner"),
+                    .init(memberID: "member-sam", cloudKitUserRecordName: "cloud-sam")
+                ],
+                metadataUpdatedAt: Date(timeIntervalSince1970: 5_000),
+                inviteURLString: nil,
+                nameUpdatedAt: nil
+            )
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner],
+            into: club,
+            context: context,
+            localMemberID: "member-owner",
+            preservingMemberIDs: ["member-sam"]
+        )
+
+        let submissions = try context.fetch(FetchDescriptor<BookSubmission>())
+        XCTAssertEqual(submissions.map(\.selectionID), ["selection-sam"])
+        XCTAssertEqual(submissions.first?.ratings?.first?.stars, 5)
+        XCTAssertEqual(club.knownMemberRoster["member-sam"], "Sam")
+    }
+
     private func makeContext() throws -> ModelContext {
         let container = try ModelContainer(
             for: BookClub.self,

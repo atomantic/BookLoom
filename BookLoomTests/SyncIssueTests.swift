@@ -82,6 +82,20 @@ final class SyncIssueTests: XCTestCase {
         XCTAssertFalse(issue.message.contains("MemberSnapshot"))
     }
 
+    func test_rejectedSnapshotGivesOwnerRelevantRecoveryCopy() {
+        let issue = SyncIssue.classify(
+            MemberSnapshotAuthorizationError(
+                rejectedRecordNames: ["MemberSnapshot-member-sam"]
+            ),
+            operation: .refresh,
+            isShareOwner: true
+        )
+
+        XCTAssertEqual(issue.severity, .warning)
+        XCTAssertTrue(issue.message.contains("each current member"))
+        XCTAssertFalse(issue.message.contains("Ask the Club owner"))
+    }
+
     func test_unknownErrorPicksFriendlyOperationCopy() {
         let error = NSError(domain: "ExampleDomain", code: 42, userInfo: [
             NSLocalizedDescriptionKey: "Specific failure"
