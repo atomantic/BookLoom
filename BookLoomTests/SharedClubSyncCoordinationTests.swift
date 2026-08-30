@@ -124,6 +124,96 @@ final class SharedClubSyncCoordinationTests: XCTestCase {
         XCTAssertNotNil(SharedClubSyncStatus.shared.issue(for: club))
     }
 
+    func test_refreshIfNeeded_keepsNewlyAcceptedClubWhileZoneMaterializes() async throws {
+        let context = try makeContext()
+        let club = makeActiveSharedClub(name: "Just Joined")
+        club.ownerUserRecordName = "cloud-owner"
+        club.shareAwaitingInitialSync = true
+        context.insert(club)
+        try context.save()
+        let clubID = club.persistentModelID
+
+        let isAvailable = await SharedClubSync.refreshIfNeeded(
+            club,
+            context: context,
+            localMemberID: "member-eve",
+            localMemberName: "Eve",
+            service: MissingZoneSnapshotService(),
+            isEnabled: true
+        )
+
+        XCTAssertTrue(isAvailable, "An accepted share remains locally available during CloudKit materialization")
+        XCTAssertTrue(club.shareAwaitingInitialSync)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<BookClub>()).map(\.persistentModelID), [clubID])
+    }
+
+    func test_refreshIfNeeded_removesPreviouslyMaterializedClubWhenZoneDisappears() async throws {
+        let context = try makeContext()
+        let club = makeActiveSharedClub(name: "Revoked Club")
+        club.ownerUserRecordName = "cloud-owner"
+        club.shareAwaitingInitialSync = false
+        context.insert(club)
+        try context.save()
+
+        let isAvailable = await SharedClubSync.refreshIfNeeded(
+            club,
+            context: context,
+            localMemberID: "member-eve",
+            localMemberName: "Eve",
+            service: MissingZoneSnapshotService(),
+            isEnabled: true
+        )
+
+        XCTAssertFalse(isAvailable)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<BookClub>()).isEmpty, "A real revoke must still clear the orphaned local club")
+    }
+
+    func test_refreshIfNeeded_clearsMaterializationMarkerAfterFirstSuccessfulFetch() async throws {
+        let context = try makeContext()
+        let club = makeActiveSharedClub(name: "Ready Club")
+        club.ownerUserRecordName = "cloud-owner"
+        club.shareAwaitingInitialSync = true
+        context.insert(club)
+        try context.save()
+        let ownerSnapshot = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-owner",
+            authorName: "Owner",
+            clubMeta: .init(
+                name: "Ready Club",
+                createdAt: club.createdAt,
+                cloudZoneName: club.cloudZoneName,
+                shareParticipantCount: 2,
+                creatorMemberID: "member-owner",
+                adminMemberIDs: [],
+                removedMemberIDs: [],
+                memberIdentityBindings: [.init(memberID: "member-owner", cloudKitUserRecordName: "cloud-owner")],
+                metadataUpdatedAt: Date(timeIntervalSince1970: 5_000),
+                inviteURLString: nil,
+                nameUpdatedAt: Date(timeIntervalSince1970: 5_000)
+            )
+        )
+        let service = CapturingAuthorizedBatchSnapshotService(
+            batch: MemberSnapshotBatch(
+                ownerUserRecordName: "cloud-owner",
+                approvedParticipantUserRecordNames: ["cloud-owner"],
+                snapshots: [envelope(ownerSnapshot, creator: "cloud-owner")]
+            )
+        )
+
+        let isAvailable = await SharedClubSync.refreshIfNeeded(
+            club,
+            context: context,
+            localMemberID: "member-eve",
+            localMemberName: "Eve",
+            service: service,
+            isEnabled: true
+        )
+
+        XCTAssertTrue(isAvailable)
+        XCTAssertFalse(club.shareAwaitingInitialSync)
+    }
+
     func test_refreshIfNeeded_reconcilesRemoteOwnerMetaBeforePublishingNewBinding() async throws {
         let context = try makeContext()
         let club = makeActiveSharedClub(name: "Stale Local Name")
@@ -349,6 +439,20 @@ private final class UntrustedBatchSnapshotService: MemberSnapshotSyncing {
 
     func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
         MemberSnapshotBatch(ownerUserRecordName: "owner-user", approvedParticipantUserRecordNames: ["owner-user"], snapshots: [])
+    }
+
+    func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 0 }
+}
+
+private final class MissingZoneSnapshotService: MemberSnapshotSyncing {
+    func publishMemberSnapshot(
+        _ snapshot: MemberShareSnapshot,
+        target: MemberSnapshotSyncTarget,
+        localMemberID: String
+    ) async throws {}
+
+    func fetchMemberSnapshotBatch(target: MemberSnapshotSyncTarget) async throws -> MemberSnapshotBatch {
+        throw CKError(.unknownItem)
     }
 
     func fetchAcceptedParticipantCount(target: MemberSnapshotSyncTarget) async throws -> Int { 0 }

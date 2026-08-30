@@ -7,19 +7,13 @@ import XCTest
 /// `ClubManagementView` (delete/leave, remove member, toggle admin, rename,
 /// creator backfill).
 ///
-/// Each method chains a SwiftData mutation with CloudKit + sync calls. Under
-/// XCTest `Features.cloudKitSharing` is `false`, so the CloudKit half
-/// short-circuits and the local SwiftData mutation + save runs in isolation —
-/// which is exactly the layer these tests cover.
-///
-/// BLOCKED (needs a production seam): the CloudKit side-effects —
-/// `removeMember`'s `removeMemberSnapshot` + post-delete refresh,
-/// `cleanupBeforeDelete`'s zone delete / leave-share, and the snapshot publish
-/// inside `saveAndPublish` — all route through the concrete
-/// `CloudKitSharingService.shared` singleton and cannot be observed without a
-/// protocol injection seam. That is a production change and is not made here.
+/// Destructive workflows inject their CloudKit side-effects so tests can prove
+/// that remote failure leaves the complete local club available for retry.
 @MainActor
 final class ClubAdminServiceTests: XCTestCase {
+    private enum TestFailure: Error {
+        case cloudKit
+    }
 
     // MARK: - rename
 
@@ -169,7 +163,7 @@ final class ClubAdminServiceTests: XCTestCase {
 
     // MARK: - removeMember
 
-    func test_removeMember_marksMemberRemovedAndStripsAdmin() throws {
+    func test_removeMember_marksMemberRemovedAndStripsAdmin() async throws {
         let context = try makeContext()
         let club = makeOwnedActiveClub(creator: "member-eve")
         club.setAdmin(true, memberID: "member-sam")
@@ -179,7 +173,7 @@ final class ClubAdminServiceTests: XCTestCase {
         context.insert(club)
         try context.save()
 
-        try ClubAdminService.removeMember(
+        try await ClubAdminService.removeMember(
             "member-sam",
             from: club,
             context: context,
@@ -192,13 +186,13 @@ final class ClubAdminServiceTests: XCTestCase {
         XCTAssertNil(club.knownMemberRoster["member-sam"], "A removed member is dropped from the roster")
     }
 
-    func test_removeMember_refusesToRemoveCreator() throws {
+    func test_removeMember_refusesToRemoveCreator() async throws {
         let context = try makeContext()
         let club = makeOwnedActiveClub(creator: "member-eve")
         context.insert(club)
         try context.save()
 
-        try ClubAdminService.removeMember(
+        try await ClubAdminService.removeMember(
             "member-eve",
             from: club,
             context: context,
@@ -209,13 +203,13 @@ final class ClubAdminServiceTests: XCTestCase {
         XCTAssertFalse(club.removedMemberIDs.contains("member-eve"), "The creator can never be removed")
     }
 
-    func test_removeMember_ignoresEmptyMemberID() throws {
+    func test_removeMember_ignoresEmptyMemberID() async throws {
         let context = try makeContext()
         let club = makeOwnedActiveClub(creator: "member-eve")
         context.insert(club)
         try context.save()
 
-        try ClubAdminService.removeMember(
+        try await ClubAdminService.removeMember(
             "",
             from: club,
             context: context,
@@ -226,14 +220,14 @@ final class ClubAdminServiceTests: XCTestCase {
         XCTAssertTrue(club.removedMemberIDs.isEmpty, "An empty memberID is a no-op")
     }
 
-    func test_removeMember_participantCannotChangeOwnerPublishedRemovalList() throws {
+    func test_removeMember_participantCannotChangeOwnerPublishedRemovalList() async throws {
         let context = try makeContext()
         let club = makeOwnedActiveClub(creator: "member-owner")
         club.ownerUserRecordName = "cloud-owner"
         context.insert(club)
         try context.save()
 
-        try ClubAdminService.removeMember(
+        try await ClubAdminService.removeMember(
             "member-victim",
             from: club,
             context: context,
@@ -242,6 +236,87 @@ final class ClubAdminServiceTests: XCTestCase {
         )
 
         XCTAssertFalse(club.removedMemberIDs.contains("member-victim"))
+    }
+
+    func test_removeMember_remoteFailureLeavesEveryLocalIdentityUntouched() async throws {
+        let context = try makeContext()
+        let club = makeOwnedActiveClub(creator: "member-eve")
+        club.memberIdentityBindings = [
+            "member-sam-phone": "cloud-sam",
+            "member-sam-mac": "cloud-sam"
+        ]
+        club.knownMemberRoster = [
+            "member-sam-phone": "Sam",
+            "member-sam-mac": "Sam"
+        ]
+        club.adminMemberIDs = ["member-sam-phone", "member-sam-mac"]
+        context.insert(club)
+        try context.save()
+        let sideEffects = ClubAdminSideEffects(
+            cleanupClub: { _, _ in },
+            revokeMember: { _, memberIDs in
+                XCTAssertEqual(memberIDs, ["member-sam-phone", "member-sam-mac"])
+                throw TestFailure.cloudKit
+            }
+        )
+
+        do {
+            try await ClubAdminService.removeMember(
+                "member-sam-phone",
+                from: club,
+                context: context,
+                localMemberID: "member-eve",
+                localMemberName: "Eve",
+                sideEffects: sideEffects
+            )
+            XCTFail("A failed CKShare revocation must fail the removal")
+        } catch TestFailure.cloudKit {
+            // Expected.
+        }
+
+        XCTAssertTrue(club.removedMemberIDs.isEmpty)
+        XCTAssertEqual(club.adminMemberIDs, ["member-sam-phone", "member-sam-mac"])
+        XCTAssertEqual(Set(club.knownMemberRoster.keys), ["member-sam-phone", "member-sam-mac"])
+        XCTAssertEqual(Set(club.memberIdentityBindings.keys), ["member-sam-phone", "member-sam-mac"])
+    }
+
+    func test_removeMember_revokesBeforeRemovingEveryDeviceIdentity() async throws {
+        let context = try makeContext()
+        let club = makeOwnedActiveClub(creator: "member-eve")
+        club.memberIdentityBindings = [
+            "member-sam-phone": "cloud-sam",
+            "member-sam-mac": "cloud-sam"
+        ]
+        club.knownMemberRoster = [
+            "member-sam-phone": "Sam",
+            "member-sam-mac": "Sam"
+        ]
+        club.adminMemberIDs = ["member-sam-mac"]
+        context.insert(club)
+        try context.save()
+        var revokedIDs: Set<String> = []
+        let sideEffects = ClubAdminSideEffects(
+            cleanupClub: { _, _ in },
+            revokeMember: { _, memberIDs in
+                XCTAssertTrue(club.removedMemberIDs.isEmpty, "Local tombstones must wait for remote revocation")
+                revokedIDs = memberIDs
+            }
+        )
+
+        try await ClubAdminService.removeMember(
+            "member-sam-phone",
+            from: club,
+            context: context,
+            localMemberID: "member-eve",
+            localMemberName: "Eve",
+            sideEffects: sideEffects
+        )
+
+        XCTAssertEqual(revokedIDs, ["member-sam-phone", "member-sam-mac"])
+        XCTAssertEqual(club.removedMemberIDs, revokedIDs)
+        XCTAssertTrue(club.adminMemberIDs.isEmpty)
+        XCTAssertTrue(club.knownMemberRoster.isEmpty)
+        XCTAssertTrue(club.memberIdentityBindings.isEmpty)
     }
 
     // MARK: - backfillCreatorIfNeeded
@@ -344,6 +419,41 @@ final class ClubAdminServiceTests: XCTestCase {
             active.cloudZoneName,
             "Deleting a non-active club must leave the active selection untouched"
         )
+    }
+
+    func test_deleteClub_remoteFailureKeepsClubAndActiveSelection() async throws {
+        let context = try makeContext()
+        let club = makeOwnedActiveClub(creator: "member-eve")
+        context.insert(club)
+        try context.save()
+        let clubID = club.persistentModelID
+        let activeStore = ActiveClubStore()
+        addTeardownBlock { @MainActor in activeStore.clearActiveClub() }
+        activeStore.setActiveClub(club)
+        let sideEffects = ClubAdminSideEffects(
+            cleanupClub: { target, memberID in
+                XCTAssertEqual(target.zoneName, club.cloudZoneName)
+                XCTAssertEqual(memberID, "member-eve")
+                throw TestFailure.cloudKit
+            },
+            revokeMember: { _, _ in }
+        )
+
+        do {
+            try await ClubAdminService.deleteClub(
+                club,
+                context: context,
+                localMemberID: "member-eve",
+                activeClubStore: activeStore,
+                sideEffects: sideEffects
+            )
+            XCTFail("A failed remote delete must not discard the local club")
+        } catch TestFailure.cloudKit {
+            // Expected.
+        }
+
+        XCTAssertEqual(try context.fetch(FetchDescriptor<BookClub>()).map(\.persistentModelID), [clubID])
+        XCTAssertEqual(activeStore.activeClubZoneName, club.cloudZoneName)
     }
 
     // MARK: - Helpers

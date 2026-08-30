@@ -261,7 +261,8 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
             ownerUserRecordName: zoneID.ownerName,
             title: clubName,
             participantCount: Self.acceptedParticipantCount(in: shareForData),
-            memberSnapshotBatch: memberSnapshots
+            memberSnapshotBatch: memberSnapshots,
+            isMaterializing: rootRecord == nil
         )
     }
 
@@ -466,72 +467,93 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
         Self.logger.info("🗑 Deleted shared zone \(zoneName, privacy: .public)")
     }
 
-    /// Owner-side: delete a specific participant's `MemberShareSnapshot`
-    /// record from the shared zone AND revoke their CKShare access so removal
-    /// is a single atomic-feeling action from the user's perspective. Their
-    /// content is gone for everyone, the owner's `removedMemberIDs` list
-    /// (synced via `ClubMeta`) prevents any re-published snapshot from being
-    /// applied, and they're dropped from the share's participant list.
-    func removeMemberSnapshot(for club: BookClub, memberID: String) async throws {
+    /// Owner-side: revoke one CloudKit participant and delete every per-device
+    /// snapshot authenticated to that person. The trusted binding map is the
+    /// primary identity source, so a missing snapshot cannot silently skip
+    /// CKShare revocation. All non-idempotent failures propagate to the UI.
+    func removeMemberSnapshots(for club: BookClub, memberIDs: Set<String>) async throws {
         guard Features.cloudKitSharing else { return }
         guard club.isOwner else {
             throw SharingError.notOwner
         }
-        guard !memberID.isEmpty else {
+        let sanitizedMemberIDs = Set(memberIDs.filter { !$0.isEmpty })
+        guard !sanitizedMemberIDs.isEmpty else {
             throw SharingError.missingLocalMemberID
         }
         let zoneID = try zoneID(for: club)
-        let recordID = CKRecord.ID(recordName: Self.memberRecordPrefix + memberID, zoneID: zoneID)
-        // Capture the participant's CloudKit user identity from the snapshot
-        // record's system field BEFORE deletion, so we can revoke share access
-        // afterward. Best-effort — the record may already be gone if they
-        // leftShare on their device.
-        let participantUserRecordID = (try? await privateDB.record(for: recordID))?.creatorUserRecordID
-        do {
-            _ = try await privateDB.modifyRecords(saving: [], deleting: [recordID])
-            Self.logger.info("✂️ Removed member snapshot \(memberID, privacy: .private) from \(club.cloudZoneName, privacy: .public)")
-        } catch {
-            Self.logger.warning("⚠️ Best-effort removeMemberSnapshot failed for \(memberID, privacy: .private): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
+        let recordIDs = sanitizedMemberIDs.map {
+            CKRecord.ID(recordName: Self.memberRecordPrefix + $0, zoneID: zoneID)
         }
-        if let participantUserRecordID {
-            await revokeShareParticipant(for: club, userRecordID: participantUserRecordID, memberID: memberID)
+
+        var participantUserRecordNames = Set(
+            sanitizedMemberIDs.compactMap { club.memberIdentityBindings[$0]?.trimmedOrNil }
+        )
+        if participantUserRecordNames.isEmpty {
+            // Legacy fallback for shares that have not published schema-v5
+            // bindings yet. A missing record is acceptable only if another
+            // related record still supplies the immutable creator identity.
+            for recordID in recordIDs {
+                do {
+                    if let recordName = try await privateDB.record(for: recordID)
+                        .creatorUserRecordID?.recordName.trimmedOrNil {
+                        participantUserRecordNames.insert(recordName)
+                    }
+                } catch {
+                    guard CKZoneAvailability.confirmsRemoval(error) else { throw error }
+                }
+            }
+        }
+        guard participantUserRecordNames.count == 1,
+              let participantUserRecordName = participantUserRecordNames.first else {
+            throw SharingError.missingShareParticipantIdentity
+        }
+
+        let remainingParticipantCount = try await revokeShareParticipant(
+            for: club,
+            userRecordName: participantUserRecordName,
+            memberIDs: sanitizedMemberIDs
+        )
+
+        do {
+            _ = try await privateDB.modifyRecords(saving: [], deleting: recordIDs)
+            Self.logger.info("✂️ Removed \(recordIDs.count) member snapshot(s) from \(club.cloudZoneName, privacy: .public)")
+        } catch {
+            guard CKZoneAvailability.confirmsRemoval(error) else { throw error }
+            Self.logger.info("Member snapshots were already absent from \(club.cloudZoneName, privacy: .public)")
+        }
+        if club.shareParticipantCount != remainingParticipantCount {
+            club.shareParticipantCount = remainingParticipantCount
         }
     }
 
-    /// Best-effort revoke of a participant's CKShare access. Looks up the
-    /// share, removes the participant matching `userRecordID`, and saves.
-    /// Failures are logged but not thrown — the snapshot has already been
-    /// removed, so the member's content is gone either way; share-list cleanup
-    /// is the secondary effect.
-    private func revokeShareParticipant(for club: BookClub, userRecordID: CKRecord.ID, memberID: String) async {
-        guard let zoneID = try? zoneID(for: club) else { return }
+    /// Revoke the participant before local membership is changed. Missing
+    /// participant is idempotent success; every load/save failure throws.
+    private func revokeShareParticipant(
+        for club: BookClub,
+        userRecordName: String,
+        memberIDs: Set<String>
+    ) async throws -> Int {
+        let zoneID = try zoneID(for: club)
         let rootID = CKRecord.ID(recordName: Self.rootRecordName, zoneID: zoneID)
-        guard let rootRecord = try? await privateDB.record(for: rootID),
-              let shareReference = rootRecord.share,
-              let share = try? await privateDB.record(for: shareReference.recordID) as? CKShare else {
-            Self.logger.warning("⚠️ Could not load CKShare to revoke participant for \(memberID, privacy: .private)")
-            return
+        let rootRecord = try await privateDB.record(for: rootID)
+        guard let shareReference = rootRecord.share,
+              let share = try await privateDB.record(for: shareReference.recordID) as? CKShare else {
+            throw SharingError.missingShare
         }
-        guard let target = share.participants.first(where: { $0.userIdentity.userRecordID == userRecordID }) else {
-            // No matching participant — likely already left the share or never
-            // accepted on this Apple ID. Nothing to revoke.
-            return
+        guard let target = share.participants.first(where: {
+            $0.userIdentity.userRecordID?.recordName == userRecordName
+        }) else {
+            Self.logger.info("Participant was already absent while removing \(memberIDs.count) member ID(s)")
+            return Self.acceptedParticipantCount(in: share)
         }
         guard target.role != .owner else {
             Self.logger.warning("⚠️ Refusing to revoke owner participant for club \(club.cloudZoneName, privacy: .public)")
-            return
+            throw SharingError.notOwner
         }
         share.removeParticipant(target)
-        do {
-            _ = try await privateDB.modifyRecords(saving: [share], deleting: [])
-            Self.logger.info("🚫 Revoked share access for member \(memberID, privacy: .private) in \(club.cloudZoneName, privacy: .public)")
-            let count = Self.acceptedParticipantCount(in: share)
-            if club.shareParticipantCount != count {
-                club.shareParticipantCount = count
-            }
-        } catch {
-            Self.logger.warning("⚠️ Failed to save share after removing participant \(memberID, privacy: .private): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
-        }
+        _ = try await privateDB.modifyRecords(saving: [share], deleting: [])
+        Self.logger.info("🚫 Revoked share access for \(memberIDs.count) member ID(s) in \(club.cloudZoneName, privacy: .public)")
+        return Self.acceptedParticipantCount(in: share)
     }
 
     /// Member-side cleanup: remove the local member's `MemberShareSnapshot`
@@ -559,9 +581,15 @@ final class CloudKitSharingService: MemberSnapshotSyncing {
         guard !localMemberID.isEmpty else { throw SharingError.missingLocalMemberID }
         let zoneID = CKRecordZone.ID(zoneName: zoneName, ownerName: ownerName)
         let memberRecordID = CKRecord.ID(recordName: Self.memberRecordPrefix + localMemberID, zoneID: zoneID)
-        // Best-effort: clear our own contribution record. The zone-delete
-        // below is what actually removes us from the share.
-        _ = try? await sharedDB.modifyRecords(saving: [], deleting: [memberRecordID])
+        // Clear our contribution before leaving. If this fails transiently,
+        // keep the local club and share membership intact so the user can
+        // retry instead of leaving an unauthorized snapshot that blocks the
+        // owner's next provenance-checked refresh.
+        do {
+            _ = try await sharedDB.modifyRecords(saving: [], deleting: [memberRecordID])
+        } catch {
+            guard CKZoneAvailability.confirmsRemoval(error) else { throw error }
+        }
         _ = try await sharedDB.modifyRecordZones(saving: [], deleting: [zoneID])
         Self.logger.info("👋 Left share \(zoneName, privacy: .public)")
     }
@@ -890,6 +918,23 @@ struct AcceptedShareInfo: Sendable {
     let title: String
     let participantCount: Int
     let memberSnapshotBatch: MemberSnapshotBatch
+    let isMaterializing: Bool
+
+    init(
+        zoneName: String,
+        ownerUserRecordName: String,
+        title: String,
+        participantCount: Int,
+        memberSnapshotBatch: MemberSnapshotBatch,
+        isMaterializing: Bool = false
+    ) {
+        self.zoneName = zoneName
+        self.ownerUserRecordName = ownerUserRecordName
+        self.title = title
+        self.participantCount = participantCount
+        self.memberSnapshotBatch = memberSnapshotBatch
+        self.isMaterializing = isMaterializing
+    }
 }
 
 enum SharingError: LocalizedError {
@@ -902,6 +947,8 @@ enum SharingError: LocalizedError {
     case missingShare
     case shareAccessRemoved
     case acceptanceResultMissing
+    case conflictingLocalClub
+    case missingShareParticipantIdentity
     case malformedMemberSnapshot(String)
 
     var errorDescription: String? {
@@ -924,6 +971,10 @@ enum SharingError: LocalizedError {
             return "This invitation no longer grants access to the book club. Ask its owner for a new invitation."
         case .acceptanceResultMissing:
             return "CloudKit did not confirm access to this book club. Try the invitation again."
+        case .conflictingLocalClub:
+            return "This invitation conflicts with another club already on this device. No club data was shared. Remove the conflicting club or ask the owner to create a new invitation."
+        case .missingShareParticipantIdentity:
+            return "BookLoom couldn't verify this member's iCloud identity, so their access was not changed. Refresh the club and try again."
         case .malformedMemberSnapshot(let recordName):
             return "The shared club contains an unreadable member snapshot (\(recordName)). No local data was changed."
         }
@@ -955,6 +1006,25 @@ enum CKZoneAvailability {
                 }
             }
             return .available
+        }
+    }
+
+    /// True only when every reported CloudKit failure confirms that the target
+    /// zone or record is already absent. Unlike `classify`, a mixed partial
+    /// failure containing a network/service error must not be treated as a
+    /// successful destructive operation.
+    static func confirmsRemoval(_ error: Error) -> Bool {
+        let ns = error as NSError
+        guard ns.domain == CKErrorDomain else { return false }
+        switch ns.code {
+        case CKError.zoneNotFound.rawValue,
+             CKError.userDeletedZone.rawValue,
+             CKError.unknownItem.rawValue:
+            return true
+        default:
+            guard let partials = ns.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Error],
+                  !partials.isEmpty else { return false }
+            return partials.values.allSatisfy(confirmsRemoval)
         }
     }
 }

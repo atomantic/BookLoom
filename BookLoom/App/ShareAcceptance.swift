@@ -176,7 +176,7 @@ enum ShareAcceptance {
     static func isRetryable(_ error: Error) -> Bool {
         if let sharingError = error as? SharingError {
             switch sharingError {
-            case .featureDisabled, .shareAccessRemoved:
+            case .featureDisabled, .shareAccessRemoved, .conflictingLocalClub:
                 return false
             default:
                 break
@@ -235,7 +235,7 @@ enum ShareAcceptance {
     }
 
     @MainActor
-    private static func importAcceptedShare(
+    static func importAcceptedShare(
         _ info: AcceptedShareInfo,
         context: ModelContext,
         localMemberID: String,
@@ -246,11 +246,15 @@ enum ShareAcceptance {
         let descriptor = FetchDescriptor<BookClub>(
             predicate: #Predicate { $0.cloudZoneName == zoneName }
         )
-        let existing = try context.fetch(descriptor)
+        let zoneMatches = try context.fetch(descriptor)
+        guard zoneMatches.allSatisfy({ $0.ownerUserRecordName == info.ownerUserRecordName }) else {
+            logger.error("Refusing share accept for owner-scoped zone collision \(info.zoneName, privacy: .public)")
+            throw SharingError.conflictingLocalClub
+        }
         let joined: BookClub
-        if let existingClub = existing.first {
+        if let existingClub = zoneMatches.first {
             joined = existingClub
-            logger.info("↺ Share accept matched existing zone \(info.zoneName, privacy: .public)")
+            logger.info("↺ Share accept matched existing owner-scoped zone \(info.zoneName, privacy: .public)")
         } else {
             joined = BookClub(name: info.title)
             joined.cloudZoneName = info.zoneName
@@ -259,6 +263,7 @@ enum ShareAcceptance {
 
         joined.ownerUserRecordName = info.ownerUserRecordName
         joined.shareIsActive = true
+        joined.shareAwaitingInitialSync = info.isMaterializing
         joined.shareParticipantCount = max(1, info.participantCount)
         let authorization = MemberSnapshotAuthorization.authorize(
             info.memberSnapshotBatch,
@@ -273,6 +278,7 @@ enum ShareAcceptance {
         if authorization.isTrustEstablished,
            authorization.rejectedRecordNames.isEmpty,
            !authorization.snapshots.isEmpty {
+            joined.shareAwaitingInitialSync = false
             try MemberShareSnapshotStore.merge(
                 snapshots: authorization.snapshots,
                 into: joined,

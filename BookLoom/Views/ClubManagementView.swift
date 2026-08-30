@@ -17,6 +17,7 @@ struct ClubManagementView: View {
     @State private var showingInvite = false
     @State private var showingDeleteConfirmation = false
     @State private var isDeleting = false
+    @State private var isRemovingMember = false
     @State private var memberPendingRemoval: ClubMemberDigest? = nil
     @State private var adminErrorMessage: String? = nil
 
@@ -56,11 +57,11 @@ struct ClubManagementView: View {
                         ClubMemberRow(
                             member: member,
                             isCreator: isCreator(member),
-                            isAdmin: club.isAdmin(memberID: member.id),
+                            isAdmin: member.memberIDs.contains(where: club.isAdmin),
                             canToggleAdmin: canToggleAdmin(for: member, canManage: canManageAdmins),
-                            canRemove: canRemoveMember(member, canManage: canManageAdmins),
+                            canRemove: !isRemovingMember && canRemoveMember(member, canManage: canManageAdmins),
                             adminToggle: { newValue in
-                                toggleAdmin(memberID: member.id, isAdmin: newValue)
+                                toggleAdmin(member: member, isAdmin: newValue)
                             },
                             onRemove: { memberPendingRemoval = member }
                         )
@@ -133,7 +134,7 @@ struct ClubManagementView: View {
             if canDelete {
                 Text("This removes the club and its proposals, meetings, votes, ratings, and notes from this device, and from anyone you've shared it with.")
             } else {
-                Text("This removes the club from this device. The creator's copy is unaffected.")
+                Text("This removes the club from this device and leaves its iCloud share. The creator's copy and other members' copies are unaffected.")
             }
         }
         .confirmationDialog(
@@ -147,6 +148,7 @@ struct ClubManagementView: View {
                 Button("Remove \(target.name)", role: .destructive) {
                     removeMember(target)
                 }
+                .disabled(isRemovingMember)
                 Button("Cancel", role: .cancel) {}
             },
             message: { _ in
@@ -171,7 +173,7 @@ struct ClubManagementView: View {
     }
 
     private func isCreator(_ member: ClubMemberDigest) -> Bool {
-        !club.creatorMemberID.isEmpty && member.id == club.creatorMemberID
+        !club.creatorMemberID.isEmpty && member.memberIDs.contains(club.creatorMemberID)
     }
 
     private func canToggleAdmin(for member: ClubMemberDigest, canManage: Bool) -> Bool {
@@ -179,37 +181,42 @@ struct ClubManagementView: View {
         // Name-keyed digests have no MemberIdentity.memberID, so admin status
         // would never round-trip through CloudKit.
         guard !member.isNameOnly else { return false }
-        if member.id == club.creatorMemberID { return false }
+        if member.memberIDs.contains(club.creatorMemberID) { return false }
         return true
     }
 
     private func canRemoveMember(_ member: ClubMemberDigest, canManage: Bool) -> Bool {
         guard canManage else { return false }
         guard !member.isNameOnly else { return false }
-        if member.id == club.creatorMemberID { return false }
-        if member.id == memberIdentity.memberID { return false }
+        if member.memberIDs.contains(club.creatorMemberID) { return false }
+        if member.memberIDs.contains(memberIdentity.memberID) { return false }
         return true
     }
 
     private func removeMember(_ member: ClubMemberDigest) {
-        do {
-            try ClubAdminService.removeMember(
-                member.id,
-                from: club,
-                context: context,
-                localMemberID: memberIdentity.memberID,
-                localMemberName: memberIdentity.name
-            )
-        } catch {
-            adminErrorMessage = "Couldn't remove this member. Your changes weren't saved — please try again."
+        guard !isRemovingMember else { return }
+        isRemovingMember = true
+        Task { @MainActor in
+            defer { isRemovingMember = false }
+            do {
+                try await ClubAdminService.removeMember(
+                    member.id,
+                    from: club,
+                    context: context,
+                    localMemberID: memberIdentity.memberID,
+                    localMemberName: memberIdentity.name
+                )
+            } catch {
+                adminErrorMessage = "BookLoom couldn't verify that this member's iCloud access was revoked. The membership was left unchanged — check your connection and try again."
+            }
         }
     }
 
-    private func toggleAdmin(memberID: String, isAdmin: Bool) {
+    private func toggleAdmin(member: ClubMemberDigest, isAdmin: Bool) {
         do {
             try ClubAdminService.setAdmin(
                 isAdmin,
-                memberID: memberID,
+                memberID: member.id,
                 in: club,
                 context: context,
                 localMemberID: memberIdentity.memberID,
@@ -242,6 +249,7 @@ struct ClubManagementView: View {
     private func deleteClub() {
         guard !isDeleting else { return }
         isDeleting = true
+        let deletingOwnedClub = club.isOwner
         Task { @MainActor in
             do {
                 try await ClubAdminService.deleteClub(
@@ -253,11 +261,10 @@ struct ClubManagementView: View {
                 isDeleting = false
                 dismiss()
             } catch {
-                // The local delete didn't persist — keep the view in place and
-                // tell the user rather than dismissing over a club that's
-                // still in the store.
                 isDeleting = false
-                adminErrorMessage = "Couldn't finish deleting this club. It may still appear — please try again."
+                adminErrorMessage = deletingOwnedClub
+                    ? "BookLoom couldn't finish removing this club. It remains on this device — check your connection and try again."
+                    : "BookLoom couldn't finish leaving this club. It remains on this device — check your connection and try again."
             }
         }
     }
@@ -375,7 +382,7 @@ private struct ClubDeleteCard: View {
     private var message: String {
         canDelete
             ? "Permanently removes “\(clubName)” from this device and from anyone you've shared it with. This can't be undone."
-            : "Removes “\(clubName)” from this device. The creator's copy and other members' copies are unaffected."
+            : "Leaves the iCloud share and removes “\(clubName)” from this device. The creator's copy and other members' copies are unaffected."
     }
 }
 

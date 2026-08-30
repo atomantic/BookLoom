@@ -13,6 +13,31 @@ protocol ClubSharingProviding {
 
 extension CloudKitSharingService: ClubSharingProviding {}
 
+@MainActor
+enum ClubSharingState {
+    static func recordSavedShare(_ share: CKShare, for club: BookClub, context: ModelContext) throws {
+        club.shareIsActive = true
+        club.shareAwaitingInitialSync = false
+        club.shareParticipantCount = max(
+            1,
+            share.participants.filter {
+                $0.role == .owner || $0.acceptanceStatus == .accepted
+            }.count
+        )
+        try context.save()
+    }
+
+    static func recordStoppedSharing(for club: BookClub, context: ModelContext) throws {
+        club.shareIsActive = false
+        club.shareAwaitingInitialSync = false
+        club.shareParticipantCount = 1
+        club.inviteURLString = ""
+        club.lastSharedSnapshotAt = nil
+        SharedClubSyncStatus.shared.clearFailure(zoneName: club.cloudZoneName)
+        try context.save()
+    }
+}
+
 /// Sheet presented when the owner taps "Invite Members". Splits behavior
 /// between the native iOS controller and macOS private-recipient share picker.
 /// When `Features.cloudKitSharing` is off, shows a "coming soon" placeholder
@@ -29,6 +54,8 @@ struct InviteView: View {
     @State private var loadError: InviteLoadError? = nil
     @State private var isLoading: Bool = false
     @State private var showingMigrationConfirmation = false
+    @State private var didStopSharing = false
+    @State private var controllerErrorMessage: String?
 
     init(club: BookClub, sharingService: ClubSharingProviding = CloudKitSharingService.shared) {
         self.club = club
@@ -60,6 +87,15 @@ struct InviteView: View {
                 } message: {
                     Text("Anyone currently joined through the public link will be disconnected and must be invited again by name, email address, or phone number. Their published club contributions remain available to the creator.")
                 }
+                .alert(
+                    "Couldn't Update Sharing",
+                    isPresented: .presence(of: $controllerErrorMessage),
+                    presenting: controllerErrorMessage
+                ) { _ in
+                    Button("OK", role: .cancel) {}
+                } message: { message in
+                    Text(message)
+                }
         }
     }
 
@@ -72,6 +108,12 @@ struct InviteView: View {
                 systemImage: "lock.fill",
                 title: "Invitations are creator only",
                 message: "Ask the club creator to invite each new member privately through iCloud."
+            )
+        } else if didStopSharing {
+            InviteStatusView(
+                systemImage: "person.crop.circle.fill",
+                title: "Sharing Stopped",
+                message: "This club is now owner-only. Previous participants no longer have access."
             )
         } else if let loadError {
             errorView(loadError)
@@ -145,7 +187,27 @@ struct InviteView: View {
             #if os(iOS)
             CloudSharingControllerView(
                 share: share,
-                container: sharingService.cloudKitContainer()
+                container: sharingService.cloudKitContainer(),
+                onSaveFailure: { error in
+                    controllerErrorMessage = InviteLoadError.from(error).body
+                },
+                onShareSaved: { savedShare in
+                    do {
+                        try ClubSharingState.recordSavedShare(savedShare, for: club, context: context)
+                        self.share = savedShare
+                    } catch {
+                        controllerErrorMessage = "The invitation was saved in iCloud, but BookLoom couldn't update its local sharing status. Close this sheet and try again."
+                    }
+                },
+                onSharingStopped: {
+                    do {
+                        try ClubSharingState.recordStoppedSharing(for: club, context: context)
+                        self.share = nil
+                        didStopSharing = true
+                    } catch {
+                        controllerErrorMessage = "iCloud stopped sharing, but BookLoom couldn't save that status locally. Close this sheet and reopen the club."
+                    }
+                }
             )
             .ignoresSafeArea()
             #else
@@ -175,7 +237,7 @@ struct InviteView: View {
                 ownerMemberID: memberIdentity.memberID,
                 ownerName: memberIdentity.name
             )
-            try? context.save()
+            try context.save()
             self.share = s
         } catch {
             self.loadError = InviteLoadError.from(error)
@@ -188,8 +250,9 @@ struct InviteView: View {
         loadError = nil
         defer { isLoading = false }
         do {
-            self.share = try await sharingService.migrateShareToPrivate(share, for: club)
-            try? context.save()
+            let migratedShare = try await sharingService.migrateShareToPrivate(share, for: club)
+            try context.save()
+            self.share = migratedShare
         } catch {
             loadError = InviteLoadError.from(error)
         }

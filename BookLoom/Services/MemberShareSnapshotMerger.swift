@@ -64,10 +64,12 @@ extension MemberShareSnapshotStore {
         // Removed members' snapshots must be filtered before building canonical
         // sets — otherwise step 5's "delete non-canonical, non-local" pass
         // would re-import their rows on every merge.
+        let memberKey: (String) -> String = { club.canonicalMemberKey(for: $0) }
         let removedAuthors = club.removedMemberIDs
-        let activeSnapshots = removedAuthors.isEmpty
+        let removedPersonKeys = Set(removedAuthors.map(memberKey))
+        let activeSnapshots = removedPersonKeys.isEmpty
             ? snapshots
-            : snapshots.filter { !removedAuthors.contains($0.authorMemberID) }
+            : snapshots.filter { !removedPersonKeys.contains(memberKey($0.authorMemberID)) }
 
         // 2. Index existing local rows by stable ID for upsert.
         //
@@ -117,10 +119,10 @@ extension MemberShareSnapshotStore {
         var canonicalPolls: [String: MemberShareSnapshot.PollPayload] = [:]
         var canonicalMeetings: [String: MemberShareSnapshot.MeetingPayload] = [:]
         var meetingsBySubmissionID: [String: String] = [:]
-        var ratingsByKey: [String: MemberShareSnapshot.RatingPayload] = [:] // "<submissionID>|<memberID>"
+        var ratingsByKey: [String: MemberShareSnapshot.RatingPayload] = [:] // "<submissionID>|<person>"
         var notesByKey: [String: MemberShareSnapshot.NotePayload] = [:] // "<submissionID>|<memberID>|<createdAt>"
-        var votesByKey: [String: MemberShareSnapshot.VotePayload] = [:] // "<pollID>|<memberID>"
-        var rsvpsByKey: [String: MemberShareSnapshot.RSVPPayload] = [:] // "<meetingID>|<memberID>"
+        var votesByKey: [String: MemberShareSnapshot.VotePayload] = [:] // "<pollID>|<person>"
+        var rsvpsByKey: [String: MemberShareSnapshot.RSVPPayload] = [:] // "<meetingID>|<person>"
 
         for snap in activeSnapshots {
             for sub in snap.submissions {
@@ -148,21 +150,21 @@ extension MemberShareSnapshotStore {
                 }
             }
             for rating in snap.ratings {
-                let key = "\(rating.submissionSelectionID)|\(rating.memberID)"
+                let key = "\(rating.submissionSelectionID)|\(memberKey(rating.memberID))"
                 if let existing = ratingsByKey[key], existing.createdAt >= rating.createdAt { continue }
                 ratingsByKey[key] = rating
             }
             for note in snap.notes {
-                let key = "\(note.submissionSelectionID)|\(note.memberID)|\(note.createdAt.timeIntervalSince1970)"
+                let key = "\(note.submissionSelectionID)|\(memberKey(note.memberID))|\(note.createdAt.timeIntervalSince1970)"
                 notesByKey[key] = note
             }
             for vote in snap.votes {
-                let key = "\(vote.pollID)|\(vote.memberID)"
+                let key = "\(vote.pollID)|\(memberKey(vote.memberID))"
                 if let existing = votesByKey[key], existing.updatedAt >= vote.updatedAt { continue }
                 votesByKey[key] = vote
             }
             for rsvp in snap.rsvps {
-                let key = "\(rsvp.meetingID)|\(rsvp.memberID)"
+                let key = "\(rsvp.meetingID)|\(memberKey(rsvp.memberID))"
                 if let existing = rsvpsByKey[key], existing.updatedAt >= rsvp.updatedAt { continue }
                 rsvpsByKey[key] = rsvp
             }
@@ -327,14 +329,14 @@ extension MemberShareSnapshotStore {
         // 9. Reconcile per-submission ratings/notes (own ratings/notes are
         //    preserved verbatim; remote authors' are upserted/pruned to match
         //    canonical).
-        applyRatings(canonical: ratingsByKey, submissionsByID: submissionsByID, localMemberID: localMemberID, context: context)
-        applyNotes(canonical: notesByKey, submissionsByID: submissionsByID, localMemberID: localMemberID, context: context)
+        applyRatings(canonical: ratingsByKey, submissionsByID: submissionsByID, localMemberID: localMemberID, memberKey: memberKey, context: context)
+        applyNotes(canonical: notesByKey, submissionsByID: submissionsByID, localMemberID: localMemberID, memberKey: memberKey, context: context)
 
         // 10. Reconcile votes per poll (one canonical vote per (poll, member)).
-        applyVotes(canonical: votesByKey, pollsByID: pollsByID, localMemberID: localMemberID, context: context)
+        applyVotes(canonical: votesByKey, pollsByID: pollsByID, localMemberID: localMemberID, memberKey: memberKey, context: context)
 
         // 11. Reconcile RSVPs per meeting (one canonical RSVP per (meeting, member)).
-        applyRSVPs(canonical: rsvpsByKey, meetingsByID: meetingsByID, localMemberID: localMemberID, context: context)
+        applyRSVPs(canonical: rsvpsByKey, meetingsByID: meetingsByID, localMemberID: localMemberID, memberKey: memberKey, context: context)
 
         // 12. Notification events (only after we have a baseline snapshot —
         //     never on first import or we'd flood the user).
@@ -363,7 +365,10 @@ extension MemberShareSnapshotStore {
         let latestCaptureAt = activeSnapshots.map(\.capturedAt).max() ?? .now
         club.lastSharedSnapshotAt = latestCaptureAt
 
-        var roster = club.knownMemberRoster
+        let activePersonKeys = Set(activeSnapshots.map { memberKey($0.authorMemberID) })
+        var roster = club.knownMemberRoster.filter { memberID, _ in
+            !removedPersonKeys.contains(memberKey(memberID)) && activePersonKeys.contains(memberKey(memberID))
+        }
         for snap in activeSnapshots {
             let trimmedID = snap.authorMemberID.trimmedOrNil
             let trimmedName = snap.authorName.trimmedOrNil
@@ -413,32 +418,55 @@ extension MemberShareSnapshotStore {
         canonicalKey: (Payload) -> String,
         canonicalMemberID: (Payload) -> String,
         localMemberID: String,
+        memberKey: (String) -> String,
         context: ModelContext,
-        update: (Existing, Payload) -> Void,
-        insert: (Parent, Payload) -> Void
+        update: (Existing, Payload, String) -> Void,
+        insert: (Parent, Payload, String) -> Void
     ) {
         var canonicalByParent: [String: [Payload]] = [:]
         for payload in canonical.values {
             canonicalByParent[canonicalParentKey(payload), default: []].append(payload)
         }
+        let localPersonKey = memberKey(localMemberID)
         for parent in parents {
             let canonicalForParent = canonicalByParent[parentKey(parent)] ?? []
-            let canonicalKeys = Set(canonicalForParent.map(canonicalKey))
+            let canonicalByKey = Dictionary(
+                canonicalForParent.map { (canonicalKey($0), $0) },
+                uniquingKeysWith: { _, latest in latest }
+            )
             let existing = existingChildren(parent)
-            // Tolerate stray duplicates (e.g. legacy rows): last-write wins.
-            let existingByKey = Dictionary(existing.map { (existingKey($0), $0) }, uniquingKeysWith: { _, latest in latest })
+            let existingByKey = Dictionary(grouping: existing, by: existingKey)
 
-            for child in existing where !isAuthor(localMemberID, of: existingMemberID(child)) {
-                if !canonicalKeys.contains(existingKey(child)) {
-                    context.delete(child)
+            for (key, duplicates) in existingByKey {
+                let keeper = duplicates.first(where: { existingMemberID($0) == localMemberID })
+                    ?? duplicates.last!
+                for duplicate in duplicates where duplicate.persistentModelID != keeper.persistentModelID {
+                    context.delete(duplicate)
                 }
+
+                guard let payload = canonicalByKey[key] else {
+                    if existingMemberID(keeper) != localMemberID {
+                        context.delete(keeper)
+                    }
+                    continue
+                }
+                let payloadMemberID = canonicalMemberID(payload)
+                let storedMemberID = memberKey(payloadMemberID) == localPersonKey
+                    ? localMemberID
+                    : payloadMemberID
+                if payloadMemberID == localMemberID,
+                   existingMemberID(keeper) == localMemberID {
+                    continue
+                }
+                update(keeper, payload, storedMemberID)
             }
-            for payload in canonicalForParent where !isAuthor(localMemberID, of: canonicalMemberID(payload)) {
-                if let existing = existingByKey[canonicalKey(payload)] {
-                    update(existing, payload)
-                } else {
-                    insert(parent, payload)
-                }
+
+            for payload in canonicalForParent where existingByKey[canonicalKey(payload)] == nil {
+                let payloadMemberID = canonicalMemberID(payload)
+                let storedMemberID = memberKey(payloadMemberID) == localPersonKey
+                    ? localMemberID
+                    : payloadMemberID
+                insert(parent, payload, storedMemberID)
             }
         }
     }
@@ -447,6 +475,7 @@ extension MemberShareSnapshotStore {
         canonical: [String: MemberShareSnapshot.RatingPayload],
         submissionsByID: [String: BookSubmission],
         localMemberID: String,
+        memberKey: @escaping (String) -> String,
         context: ModelContext
     ) {
         reconcileCollection(
@@ -455,20 +484,22 @@ extension MemberShareSnapshotStore {
             parentKey: \.selectionID,
             canonicalParentKey: \.submissionSelectionID,
             existingChildren: { $0.ratings ?? [] },
-            existingKey: \.memberID,
+            existingKey: { memberKey($0.memberID) },
             existingMemberID: \.memberID,
-            canonicalKey: \.memberID,
+            canonicalKey: { memberKey($0.memberID) },
             canonicalMemberID: \.memberID,
             localMemberID: localMemberID,
+            memberKey: memberKey,
             context: context,
-            update: { rating, payload in
+            update: { rating, payload, storedMemberID in
+                rating.memberID = storedMemberID
                 rating.memberName = payload.memberName
                 rating.stars = payload.stars
                 rating.createdAt = payload.createdAt
             },
-            insert: { submission, payload in
+            insert: { submission, payload, storedMemberID in
                 let rating = Rating(
-                    memberID: payload.memberID,
+                    memberID: storedMemberID,
                     memberName: payload.memberName,
                     stars: payload.stars,
                     createdAt: payload.createdAt
@@ -486,6 +517,7 @@ extension MemberShareSnapshotStore {
         canonical: [String: MemberShareSnapshot.NotePayload],
         submissionsByID: [String: BookSubmission],
         localMemberID: String,
+        memberKey: @escaping (String) -> String,
         context: ModelContext
     ) {
         // Notes are keyed by (memberID, createdAt) so multiple notes per
@@ -497,19 +529,21 @@ extension MemberShareSnapshotStore {
             parentKey: \.selectionID,
             canonicalParentKey: \.submissionSelectionID,
             existingChildren: { $0.notes ?? [] },
-            existingKey: { noteKey($0.memberID, $0.createdAt) },
+            existingKey: { noteKey(memberKey($0.memberID), $0.createdAt) },
             existingMemberID: \.memberID,
-            canonicalKey: { noteKey($0.memberID, $0.createdAt) },
+            canonicalKey: { noteKey(memberKey($0.memberID), $0.createdAt) },
             canonicalMemberID: \.memberID,
             localMemberID: localMemberID,
+            memberKey: memberKey,
             context: context,
-            update: { note, payload in
+            update: { note, payload, storedMemberID in
+                note.memberID = storedMemberID
                 note.memberName = payload.memberName
                 note.text = payload.text
             },
-            insert: { submission, payload in
+            insert: { submission, payload, storedMemberID in
                 let note = BookNote(
-                    memberID: payload.memberID,
+                    memberID: storedMemberID,
                     memberName: payload.memberName,
                     text: payload.text,
                     createdAt: payload.createdAt
@@ -527,6 +561,7 @@ extension MemberShareSnapshotStore {
         canonical: [String: MemberShareSnapshot.VotePayload],
         pollsByID: [String: SelectionPoll],
         localMemberID: String,
+        memberKey: @escaping (String) -> String,
         context: ModelContext
     ) {
         reconcileCollection(
@@ -535,20 +570,22 @@ extension MemberShareSnapshotStore {
             parentKey: \.pollID,
             canonicalParentKey: \.pollID,
             existingChildren: { $0.votes ?? [] },
-            existingKey: \.memberID,
+            existingKey: { memberKey($0.memberID) },
             existingMemberID: \.memberID,
-            canonicalKey: \.memberID,
+            canonicalKey: { memberKey($0.memberID) },
             canonicalMemberID: \.memberID,
             localMemberID: localMemberID,
+            memberKey: memberKey,
             context: context,
-            update: { vote, payload in
+            update: { vote, payload, storedMemberID in
+                vote.memberID = storedMemberID
                 vote.memberName = payload.memberName
                 vote.rankedSubmissionIDsRaw = payload.rankedSubmissionIDsRaw
                 vote.updatedAt = payload.updatedAt
             },
-            insert: { poll, payload in
+            insert: { poll, payload, storedMemberID in
                 let vote = BookVote(
-                    memberID: payload.memberID,
+                    memberID: storedMemberID,
                     memberName: payload.memberName,
                     rankedSubmissionIDs: SelectionPoll.decodeIDs(payload.rankedSubmissionIDsRaw),
                     updatedAt: payload.updatedAt
@@ -566,6 +603,7 @@ extension MemberShareSnapshotStore {
         canonical: [String: MemberShareSnapshot.RSVPPayload],
         meetingsByID: [String: ClubMeeting],
         localMemberID: String,
+        memberKey: @escaping (String) -> String,
         context: ModelContext
     ) {
         reconcileCollection(
@@ -574,21 +612,23 @@ extension MemberShareSnapshotStore {
             parentKey: \.meetingID,
             canonicalParentKey: \.meetingID,
             existingChildren: { $0.rsvps ?? [] },
-            existingKey: \.memberID,
+            existingKey: { memberKey($0.memberID) },
             existingMemberID: \.memberID,
-            canonicalKey: \.memberID,
+            canonicalKey: { memberKey($0.memberID) },
             canonicalMemberID: \.memberID,
             localMemberID: localMemberID,
+            memberKey: memberKey,
             context: context,
-            update: { rsvp, payload in
+            update: { rsvp, payload, storedMemberID in
+                rsvp.memberID = storedMemberID
                 rsvp.memberName = payload.memberName
                 rsvp.statusRaw = payload.statusRaw
                 rsvp.bringingNote = payload.bringingNote
                 rsvp.updatedAt = payload.updatedAt
             },
-            insert: { meeting, payload in
+            insert: { meeting, payload, storedMemberID in
                 let rsvp = MeetingRSVP(
-                    memberID: payload.memberID,
+                    memberID: storedMemberID,
                     memberName: payload.memberName,
                     status: MeetingRSVPStatus(rawValue: payload.statusRaw) ?? .attending,
                     bringingNote: payload.bringingNote,

@@ -19,6 +19,12 @@ final class BookClub {
     /// True once a CKShare has been created and saved for this club.
     var shareIsActive: Bool = false
 
+    /// True while a newly accepted CKShare is waiting for its shared zone and
+    /// root record to become queryable. CloudKit can confirm acceptance before
+    /// materializing that zone; refresh must not interpret `unknownItem` as a
+    /// revocation until one successful fetch clears this marker.
+    var shareAwaitingInitialSync: Bool = false
+
     /// Cached count of share participants (including the owner). Updated when
     /// the sharing service refreshes the share record.
     var shareParticipantCount: Int = 1
@@ -188,22 +194,62 @@ final class BookClub {
         }
     }
 
+    /// All per-device member IDs authenticated to the same CloudKit user as
+    /// `memberID`. Older clubs and local-only members fall back to the supplied
+    /// ID, so callers can use this for person-level votes, roles, and removal
+    /// without weakening the provenance checks at the CloudKit boundary.
+    func relatedMemberIDs(to memberID: String) -> Set<String> {
+        guard !memberID.isEmpty else { return [] }
+        guard let cloudUser = memberIdentityBindings[memberID] else {
+            return [memberID]
+        }
+        let related = Set(memberIdentityBindings.compactMap { candidateID, candidateUser in
+            candidateUser == cloudUser ? candidateID : nil
+        })
+        return related.isEmpty ? [memberID] : related
+    }
+
+    /// Stable person-level key used only for local reconciliation. The raw
+    /// CloudKit user record name never leaves the existing trusted binding map.
+    func canonicalMemberKey(for memberID: String) -> String {
+        if let cloudUser = memberIdentityBindings[memberID] {
+            return "cloud:\(cloudUser)"
+        }
+        return "member:\(memberID)"
+    }
+
     /// Owner-only operation. Marks `memberID` as removed, demotes them out of
     /// the admin set, and drops them from the local roster so the UI clears.
     /// The creator can never be removed.
     func removeMember(memberID: String) {
-        guard !memberID.isEmpty, memberID != creatorMemberID else { return }
+        removeMembers(memberIDs: relatedMemberIDs(to: memberID))
+    }
+
+    /// Removes every device identity belonging to one authenticated CloudKit
+    /// participant. The creator's Apple ID is protected as a group, not merely
+    /// by the one device ID that originally created the club.
+    func removeMembers(memberIDs: Set<String>) {
+        let sanitized = memberIDs.filter { !$0.isEmpty }
+        guard !sanitized.isEmpty, !sanitized.contains(creatorMemberID) else { return }
         var removed = removedMemberIDs
-        removed.insert(memberID)
+        removed.formUnion(sanitized)
         removedMemberIDs = removed
 
         var admins = adminMemberIDs
-        admins.remove(memberID)
+        admins.subtract(sanitized)
         adminMemberIDs = admins
 
         var roster = knownMemberRoster
-        roster.removeValue(forKey: memberID)
+        for memberID in sanitized {
+            roster.removeValue(forKey: memberID)
+        }
         knownMemberRoster = roster
+
+        var bindings = memberIdentityBindings
+        for memberID in sanitized {
+            bindings.removeValue(forKey: memberID)
+        }
+        memberIdentityBindings = bindings
     }
 }
 

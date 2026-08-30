@@ -17,6 +17,8 @@ struct ClubSwitcherView: View {
     @State private var showingNewClubForm = false
     @State private var pendingDeleteClub: BookClub?
     @State private var clubCountBeforeCreate: Int?
+    @State private var deletingClubZoneName: String?
+    @State private var deletionErrorMessage: String?
 
     init(onDismiss: (() -> Void)? = nil) {
         self.onDismiss = onDismiss
@@ -45,16 +47,31 @@ struct ClubSwitcherView: View {
         }
         #endif
         .confirmationDialog(
-            pendingDeleteClub.map { "Delete \($0.name)?" } ?? "Delete club?",
+            pendingDeleteClub.map { club in
+                club.isOwner ? "Delete \(club.name)?" : "Leave \(club.name)?"
+            } ?? "Remove club?",
             isPresented: .presence(of: $pendingDeleteClub),
             titleVisibility: .visible
         ) {
-            Button("Delete Club", role: .destructive) {
+            Button(pendingDeleteClub?.isOwner == false ? "Leave Club" : "Delete Club", role: .destructive) {
                 confirmDelete()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the club and its proposals, meetings, votes, ratings, and notes from this device.")
+            if pendingDeleteClub?.isOwner == false {
+                Text("This removes the club from this device and leaves its iCloud share. The creator's copy and other members' copies are unaffected.")
+            } else {
+                Text("This permanently removes the club from this device and from everyone you've shared it with. This can't be undone.")
+            }
+        }
+        .alert(
+            "Couldn't Remove Club",
+            isPresented: .presence(of: $deletionErrorMessage),
+            presenting: deletionErrorMessage
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
     }
 
@@ -79,8 +96,12 @@ struct ClubSwitcherView: View {
                             Button(role: .destructive) {
                                 pendingDeleteClub = club
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label(
+                                    club.isOwner ? "Delete" : "Leave",
+                                    systemImage: club.isOwner ? "trash" : "rectangle.portrait.and.arrow.right"
+                                )
                             }
+                            .disabled(deletingClubZoneName != nil)
                         }
                         .bookLoomListRow()
                     }
@@ -153,17 +174,23 @@ struct ClubSwitcherView: View {
     }
 
     private func confirmDelete() {
-        guard let club = pendingDeleteClub else { return }
+        guard let club = pendingDeleteClub, deletingClubZoneName == nil else { return }
         pendingDeleteClub = nil
-        let memberID = memberIdentity.memberID
-        let zoneName = club.cloudZoneName
-        let isActive = zoneName == activeClubStore.activeClubZoneName
+        deletingClubZoneName = club.cloudZoneName
+        let deletingOwnedClub = club.isOwner
         Task { @MainActor in
-            await SharedClubSync.cleanupBeforeDelete(club, localMemberID: memberID)
-            context.delete(club)
-            try? context.save()
-            if isActive {
-                activeClubStore.clearActiveClub()
+            defer { deletingClubZoneName = nil }
+            do {
+                try await ClubAdminService.deleteClub(
+                    club,
+                    context: context,
+                    localMemberID: memberIdentity.memberID,
+                    activeClubStore: activeClubStore
+                )
+            } catch {
+                deletionErrorMessage = deletingOwnedClub
+                    ? "BookLoom couldn't finish removing this club. It remains on this device — check your connection and try again."
+                    : "BookLoom couldn't finish leaving this club. It remains on this device — check your connection and try again."
             }
         }
     }

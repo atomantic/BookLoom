@@ -215,21 +215,40 @@ struct ClubMemberDigest: Identifiable, Equatable {
     static let nameOnlyPrefix = "name:"
 
     let id: String
+    let memberIDs: Set<String>
     let name: String
     let activityCount: Int
 
-    var isNameOnly: Bool { id.hasPrefix(Self.nameOnlyPrefix) }
+    var isNameOnly: Bool { memberIDs.isEmpty }
 }
 
 enum ClubMemberCollector {
     static func collect(from club: BookClub) -> [ClubMemberDigest] {
-        var members: [String: (name: String, activityCount: Int)] = [:]
+        var members: [String: (representativeID: String, memberIDs: Set<String>, name: String, activityCount: Int)] = [:]
+        let removedPersonKeys = Set(club.removedMemberIDs.map(club.canonicalMemberKey))
 
         func insert(memberID: String, memberName: String, activity: Int = 1) {
             let trimmedName = memberName.trimmedOrNil ?? "Unknown member"
-            let key = memberID.trimmedOrNil ?? "\(ClubMemberDigest.nameOnlyPrefix)\(trimmedName.lowercased())"
+            let resolvedMemberID = memberID.trimmedOrNil
+            let key = resolvedMemberID.map(club.canonicalMemberKey)
+                ?? "\(ClubMemberDigest.nameOnlyPrefix)\(trimmedName.lowercased())"
+            guard !removedPersonKeys.contains(key) else { return }
             let existing = members[key]
+            var memberIDs = existing?.memberIDs ?? []
+            if let resolvedMemberID {
+                memberIDs.insert(resolvedMemberID)
+            }
+            let representativeID: String
+            if let resolvedMemberID, resolvedMemberID == club.creatorMemberID {
+                representativeID = resolvedMemberID
+            } else {
+                representativeID = existing?.representativeID
+                    ?? resolvedMemberID
+                    ?? key
+            }
             members[key] = (
+                representativeID: representativeID,
+                memberIDs: memberIDs,
                 name: existing?.name.trimmedOrNil ?? trimmedName,
                 activityCount: (existing?.activityCount ?? 0) + activity
             )
@@ -263,7 +282,14 @@ enum ClubMemberCollector {
         }
 
         return members
-            .map { ClubMemberDigest(id: $0.key, name: $0.value.name, activityCount: $0.value.activityCount) }
+            .map {
+                ClubMemberDigest(
+                    id: $0.value.representativeID,
+                    memberIDs: $0.value.memberIDs,
+                    name: $0.value.name,
+                    activityCount: $0.value.activityCount
+                )
+            }
             .sorted {
                 if $0.activityCount != $1.activityCount { return $0.activityCount > $1.activityCount }
                 return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending

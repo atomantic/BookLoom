@@ -1,5 +1,6 @@
 import XCTest
 import CloudKit
+import SwiftData
 @testable import BookLoom
 
 @MainActor
@@ -148,11 +149,154 @@ final class ShareAcceptanceQueueTests: XCTestCase {
         XCTAssertEqual(attempts, 2)
     }
 
+    func testMaterializingAcceptedSharePersistsUntilFirstSuccessfulSync() async throws {
+        let context = try makeContext()
+        let info = AcceptedShareInfo(
+            zoneName: "BookClub-Materializing",
+            ownerUserRecordName: "cloud-owner",
+            title: "Newly Joined",
+            participantCount: 2,
+            memberSnapshotBatch: MemberSnapshotBatch(
+                ownerUserRecordName: "cloud-owner",
+                approvedParticipantUserRecordNames: ["cloud-owner", "cloud-eve"],
+                snapshots: []
+            ),
+            isMaterializing: true
+        )
+
+        let name = try await ShareAcceptance.importAcceptedShare(
+            info,
+            context: context,
+            localMemberID: "member-eve",
+            localMemberName: "Eve"
+        )
+
+        let club = try XCTUnwrap(context.fetch(FetchDescriptor<BookClub>()).first)
+        XCTAssertEqual(name, "Newly Joined")
+        XCTAssertEqual(club.ownerUserRecordName, "cloud-owner")
+        XCTAssertTrue(club.shareIsActive)
+        XCTAssertTrue(club.shareAwaitingInitialSync, "A transient unknown-item refresh must not delete a newly accepted club")
+    }
+
+    func testAcceptedShareRejectsSameZoneFromDifferentOwnerWithoutMutation() async throws {
+        let context = try makeContext()
+        let existing = BookClub(name: "My Private Club")
+        existing.cloudZoneName = "BookClub-Collision"
+        existing.shareIsActive = true
+        context.insert(existing)
+        try context.save()
+        let existingID = existing.persistentModelID
+
+        let info = AcceptedShareInfo(
+            zoneName: existing.cloudZoneName,
+            ownerUserRecordName: "attacker-owner",
+            title: "Lookalike Club",
+            participantCount: 2,
+            memberSnapshotBatch: MemberSnapshotBatch(
+                ownerUserRecordName: "attacker-owner",
+                approvedParticipantUserRecordNames: ["attacker-owner"],
+                snapshots: []
+            )
+        )
+
+        do {
+            _ = try await ShareAcceptance.importAcceptedShare(
+                info,
+                context: context,
+                localMemberID: "member-eve",
+                localMemberName: "Eve"
+            )
+            XCTFail("Owner-scoped zone collision should be rejected")
+        } catch SharingError.conflictingLocalClub {
+            // Expected: zone name alone is not a globally unique share identity.
+        }
+
+        let clubs = try context.fetch(FetchDescriptor<BookClub>())
+        XCTAssertEqual(clubs.map(\.persistentModelID), [existingID])
+        XCTAssertEqual(existing.name, "My Private Club")
+        XCTAssertNil(existing.ownerUserRecordName)
+    }
+
+    func testNativeSharingStateTracksSaveAndStopCallbacks() throws {
+        let context = try makeContext()
+        let club = BookClub(name: "Callback Club")
+        club.shareAwaitingInitialSync = true
+        club.inviteURLString = "https://example.invalid/invite"
+        club.lastSharedSnapshotAt = Date(timeIntervalSince1970: 123)
+        context.insert(club)
+        try context.save()
+
+        let root = CKRecord(
+            recordType: "BookClub",
+            recordID: CKRecord.ID(
+                recordName: "BookClubRoot",
+                zoneID: CKRecordZone.ID(zoneName: club.cloudZoneName)
+            )
+        )
+        let share = CKShare(rootRecord: root)
+        try ClubSharingState.recordSavedShare(share, for: club, context: context)
+        XCTAssertTrue(club.shareIsActive)
+        XCTAssertFalse(club.shareAwaitingInitialSync)
+        XCTAssertGreaterThanOrEqual(club.shareParticipantCount, 1)
+
+        try ClubSharingState.recordStoppedSharing(for: club, context: context)
+        XCTAssertFalse(club.shareIsActive)
+        XCTAssertFalse(club.shareAwaitingInitialSync)
+        XCTAssertEqual(club.shareParticipantCount, 1)
+        XCTAssertTrue(club.inviteURLString.isEmpty)
+        XCTAssertNil(club.lastSharedSnapshotAt)
+    }
+
+    func testConfirmedRemovalRequiresEveryCloudKitPartialFailureToBeAbsent() {
+        XCTAssertTrue(CKZoneAvailability.confirmsRemoval(CKError(.unknownItem)))
+        XCTAssertFalse(CKZoneAvailability.confirmsRemoval(CKError(.networkUnavailable)))
+
+        let allAbsent = NSError(
+            domain: CKErrorDomain,
+            code: CKError.partialFailure.rawValue,
+            userInfo: [
+                CKPartialErrorsByItemIDKey: [
+                    AnyHashable("first"): CKError(.unknownItem),
+                    AnyHashable("second"): CKError(.zoneNotFound)
+                ] as [AnyHashable: Error]
+            ]
+        )
+        XCTAssertTrue(CKZoneAvailability.confirmsRemoval(allAbsent))
+
+        let mixed = NSError(
+            domain: CKErrorDomain,
+            code: CKError.partialFailure.rawValue,
+            userInfo: [
+                CKPartialErrorsByItemIDKey: [
+                    AnyHashable("gone"): CKError(.unknownItem),
+                    AnyHashable("offline"): CKError(.networkUnavailable)
+                ] as [AnyHashable: Error]
+            ]
+        )
+        XCTAssertFalse(CKZoneAvailability.confirmsRemoval(mixed), "A transient partial failure must keep destructive cleanup fail-closed")
+    }
+
     private func waitUntilSettled(_ queue: ShareAcceptanceQueue<String>) async {
         for _ in 0..<100 {
             guard queue.state == .accepting else { return }
             try? await Task.sleep(for: .milliseconds(5))
         }
         XCTFail("Share acceptance did not settle before the test timeout")
+    }
+
+    private func makeContext() throws -> ModelContext {
+        let container = try ModelContainer(
+            for: BookClub.self,
+            BookSubmission.self,
+            Rating.self,
+            BookNote.self,
+            ClubMeeting.self,
+            MeetingRSVP.self,
+            SelectionPoll.self,
+            BookVote.self,
+            DiscussionPrompt.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        return ModelContext(container)
     }
 }

@@ -379,7 +379,7 @@ enum SharedClubSync {
             remoteBatch = try await service.fetchMemberSnapshotBatch(target: target)
         } catch {
             if CKZoneAvailability.classify(error) == .zoneRemoved {
-                guard removeUnavailableClub else {
+                guard removeUnavailableClub, !club.shareAwaitingInitialSync else {
                     logger.info("Newly accepted shared zone for \(club.name, privacy: .private) is still materializing")
                     return true
                 }
@@ -402,6 +402,10 @@ enum SharedClubSync {
         }
         guard club.modelContext != nil else { return true }
         SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
+        if club.shareAwaitingInitialSync {
+            club.shareAwaitingInitialSync = false
+            guard saveOrLog(context, club: club, what: "share materialization") else { return false }
+        }
 
         do {
             let authorization = MemberSnapshotAuthorization.authorize(
@@ -435,6 +439,12 @@ enum SharedClubSync {
                 authorName: localMemberName,
                 includeClubMeta: club.isShareOwner
             )
+            let bindingsChanged = club.memberIdentityBindings != authorization.bindings
+            if bindingsChanged {
+                // The merger uses this authenticated map to collapse multiple
+                // per-device IDs belonging to one CloudKit participant.
+                club.memberIdentityBindings = authorization.bindings
+            }
             // Keep the authenticated remote snapshot for the local author in
             // the input as well. The local snapshot comes last and therefore
             // wins content upserts, while a newer remote owner metadata clock
@@ -446,8 +456,7 @@ enum SharedClubSync {
                 context: context,
                 localMemberID: localMemberID
             )
-            if club.memberIdentityBindings != authorization.bindings {
-                club.memberIdentityBindings = authorization.bindings
+            if bindingsChanged {
                 if club.isShareOwner {
                     let now = Date.now
                     club.clubMetaUpdatedAt = now > club.clubMetaUpdatedAt
@@ -563,39 +572,32 @@ enum SharedClubSync {
         }
     }
 
-    /// Best-effort CloudKit cleanup before a local club row is deleted. The
-    /// caller still removes the SwiftData row regardless of outcome — the
-    /// user has asked for it to go away, and the most common failure mode
-    /// here is "zone already deleted" which is the desired end state anyway.
-    static func cleanupBeforeDelete(_ club: BookClub, localMemberID: String) async {
-        await cleanupBeforeDelete(ClubCleanupTarget(club), localMemberID: localMemberID)
-    }
-
-    static func cleanupBeforeDelete(_ target: ClubCleanupTarget, localMemberID: String) async {
-        do {
-            try await cleanupBeforeDeleteThrowing(target, localMemberID: localMemberID)
-        } catch {
-            logger.error("CloudKit cleanup for \(target.clubName, privacy: .private) failed (continuing with local delete): \(CloudKitErrorDescriber.describe(error), privacy: .public)")
-        }
-    }
-
     static func cleanupBeforeDeleteThrowing(_ target: ClubCleanupTarget, localMemberID: String) async throws {
+        if Features.cloudKitSharing, target.shareIsActive {
+            do {
+                if target.isOwner {
+                    try await CloudKitSharingService.shared.deleteSharedZone(zoneName: target.zoneName)
+                } else {
+                    try await CloudKitSharingService.shared.leaveShare(
+                        zoneName: target.zoneName,
+                        ownerUserRecordName: target.ownerUserRecordName,
+                        localMemberID: localMemberID
+                    )
+                }
+            } catch {
+                guard CKZoneAvailability.confirmsRemoval(error) else { throw error }
+                logger.info("CloudKit already confirms \(target.clubName, privacy: .private) is unavailable")
+            }
+        }
+
+        // Clear local retry state only after CloudKit cleanup succeeded (or
+        // confirmed the zone was already gone). A failed leave/delete keeps
+        // the complete local club available for the user to retry.
         SharedClubSyncStatus.shared.clearFailure(zoneName: target.zoneName)
         StatusOverrideStore.clear(forZone: target.zoneName)
         SubmissionDetailsOverrideStore.clear(forZone: target.zoneName)
         SubmissionDeletionStore.clear(forZone: target.zoneName)
         queuedPublishes.removeValue(forKey: target.zoneName)
-
-        guard Features.cloudKitSharing, target.shareIsActive else { return }
-        if target.isOwner {
-            try await CloudKitSharingService.shared.deleteSharedZone(zoneName: target.zoneName)
-        } else {
-            try await CloudKitSharingService.shared.leaveShare(
-                zoneName: target.zoneName,
-                ownerUserRecordName: target.ownerUserRecordName,
-                localMemberID: localMemberID
-            )
-        }
     }
 }
 
@@ -616,6 +618,21 @@ struct ClubCleanupTarget: Codable, Equatable, Sendable {
     }
 }
 
+@MainActor
+struct ClubAdminSideEffects {
+    let cleanupClub: @MainActor (ClubCleanupTarget, String) async throws -> Void
+    let revokeMember: @MainActor (BookClub, Set<String>) async throws -> Void
+
+    static let production = ClubAdminSideEffects(
+        cleanupClub: { target, memberID in
+            try await SharedClubSync.cleanupBeforeDeleteThrowing(target, localMemberID: memberID)
+        },
+        revokeMember: { club, memberIDs in
+            try await CloudKitSharingService.shared.removeMemberSnapshots(for: club, memberIDs: memberIDs)
+        }
+    )
+}
+
 /// Orchestrates the multi-step club-administration workflows that previously
 /// lived inline in `ClubManagementView` (delete/leave, remove member, toggle
 /// admin, creator backfill). Each method chains a local SwiftData mutation with
@@ -626,18 +643,19 @@ struct ClubCleanupTarget: Codable, Equatable, Sendable {
 enum ClubAdminService {
     private static let logger = Logger(subsystem: "net.shadowpuppet.BookLoom", category: "ClubAdminService")
 
-    /// Delete (owner) or leave (participant) a club: best-effort CloudKit
-    /// cleanup, then remove the local row. Throws if the local delete fails to
-    /// persist so the caller can keep the UI in place and alert.
+    /// Delete (owner) or leave (participant) a club only after CloudKit has
+    /// confirmed the destructive operation. A remote failure preserves the
+    /// complete local row and throws so the UI can offer a safe retry.
     static func deleteClub(
         _ club: BookClub,
         context: ModelContext,
         localMemberID: String,
-        activeClubStore: ActiveClubStore
+        activeClubStore: ActiveClubStore,
+        sideEffects: ClubAdminSideEffects = .production
     ) async throws {
         let zoneName = club.cloudZoneName
         let isActive = zoneName == activeClubStore.activeClubZoneName
-        await SharedClubSync.cleanupBeforeDelete(club, localMemberID: localMemberID)
+        try await sideEffects.cleanupClub(ClubCleanupTarget(club), localMemberID)
         context.delete(club)
         try context.save()
         if isActive {
@@ -645,19 +663,24 @@ enum ClubAdminService {
         }
     }
 
-    /// Owner-only: mark a member removed locally, publish, then delete their
-    /// CloudKit snapshot and refresh so the next merge doesn't re-import them.
+    /// Owner-only: revoke the participant's CloudKit access first, then commit
+    /// the local removal tombstones for every device ID bound to that person.
     static func removeMember(
         _ memberID: String,
         from club: BookClub,
         context: ModelContext,
         localMemberID: String,
-        localMemberName: String
-    ) throws {
+        localMemberName: String,
+        sideEffects: ClubAdminSideEffects = .production
+    ) async throws {
+        let relatedMemberIDs = club.relatedMemberIDs(to: memberID)
         guard club.isOwner,
               !memberID.isEmpty,
-              memberID != club.creatorMemberID else { return }
-        club.removeMember(memberID: memberID)
+              !relatedMemberIDs.contains(club.creatorMemberID) else { return }
+        if club.shareIsActive {
+            try await sideEffects.revokeMember(club, relatedMemberIDs)
+        }
+        club.removeMembers(memberIDs: relatedMemberIDs)
         club.clubMetaUpdatedAt = .now
         try SharedClubSync.saveAndPublish(
             context: context,
@@ -665,18 +688,16 @@ enum ClubAdminService {
             localMemberID: localMemberID,
             localMemberName: localMemberName
         )
-        guard Features.cloudKitSharing, club.shareIsActive else { return }
-        // The refresh waits for the CloudKit deletion so the next merge doesn't
-        // re-import the just-removed snapshot.
-        Task { @MainActor in
-            try? await CloudKitSharingService.shared.removeMemberSnapshot(for: club, memberID: memberID)
-            await SharedClubSync.refreshIfNeeded(
-                club,
-                context: context,
-                localMemberID: localMemberID,
-                localMemberName: localMemberName
-            )
-        }
+        // With the revoked snapshots gone, reconcile immediately so the
+        // removed person's activity rows clear from the owner's current UI.
+        // Transient refresh failures remain visible through sync status and
+        // retry automatically; membership itself is already safely revoked.
+        _ = await SharedClubSync.refreshIfNeeded(
+            club,
+            context: context,
+            localMemberID: localMemberID,
+            localMemberName: localMemberName
+        )
     }
 
     /// Owner-only: grant/revoke admin status for a member and publish the
@@ -690,7 +711,9 @@ enum ClubAdminService {
         localMemberName: String
     ) throws {
         guard club.isOwner else { return }
-        club.setAdmin(isAdmin, memberID: memberID)
+        for relatedMemberID in club.relatedMemberIDs(to: memberID) {
+            club.setAdmin(isAdmin, memberID: relatedMemberID)
+        }
         club.clubMetaUpdatedAt = .now
         try SharedClubSync.saveAndPublish(
             context: context,

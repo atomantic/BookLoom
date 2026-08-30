@@ -411,6 +411,16 @@ final class SharedClubSnapshotTests: XCTestCase {
         club.cloudZoneName = "BookClub-Test"
         club.ownerUserRecordName = "owner-record"
         club.shareIsActive = true
+        club.knownMemberRoster = [
+            "member-alex": "Alex",
+            "member-kim": "Kim",
+            "member-kim-tablet": "Kim"
+        ]
+        club.memberIdentityBindings = [
+            "member-alex": "cloud-alex",
+            "member-kim": "cloud-kim",
+            "member-kim-tablet": "cloud-kim"
+        ]
         context.insert(club)
         try context.save()
 
@@ -458,9 +468,15 @@ final class SharedClubSnapshotTests: XCTestCase {
             authorName: "Kim",
             submissions: [kickedSubmission]
         )
+        let kickedTablet = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_600),
+            authorMemberID: "member-kim-tablet",
+            authorName: "Kim",
+            submissions: [kickedSubmission]
+        )
 
         try MemberShareSnapshotStore.merge(
-            snapshots: [owner, kicked],
+            snapshots: [owner, kicked, kickedTablet],
             into: club,
             context: context,
             localMemberID: "member-eve"
@@ -470,6 +486,8 @@ final class SharedClubSnapshotTests: XCTestCase {
             .filter { $0.bookClub?.persistentModelID == club.persistentModelID }
         XCTAssertTrue(surviving.isEmpty, "Removed member's submissions must not appear after merge")
         XCTAssertEqual(club.removedMemberIDs, ["member-kim"], "Owner-published removal list propagates locally")
+        XCTAssertNil(club.knownMemberRoster["member-kim"], "Removed members must disappear from the roster and member count")
+        XCTAssertNil(club.knownMemberRoster["member-kim-tablet"], "A removed person's other device IDs must also disappear")
     }
 
     func test_adminNameProposalAdoptedWhenNewerThanOwnerMeta() throws {
@@ -1558,6 +1576,131 @@ final class SharedClubSnapshotTests: XCTestCase {
 
         XCTAssertEqual(club.name, "Canonical Name", "Without clubMeta, a non-owner snapshot must not change the club name")
         XCTAssertEqual(club.shareParticipantCount, 3, "Participant count is owner-published; non-owner snapshots can't lower it")
+    }
+
+    func test_mergeCollapsesRatingsVotesAndRSVPsAcrossOnePersonsDevices() throws {
+        let context = try makeContext()
+        let club = try makeJoinedClub(zone: "BookClub-CrossDevice", in: context)
+        club.memberIdentityBindings = [
+            "member-alex": "cloud-owner",
+            "member-sam-phone": "cloud-sam",
+            "member-sam-mac": "cloud-sam"
+        ]
+
+        let owner = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_000),
+            authorMemberID: "member-alex",
+            authorName: "Alex",
+            submissions: [ownerSubmissionPayload(selectionID: "sel-book")],
+            polls: [
+                .init(
+                    pollID: "poll-1",
+                    createdByMemberID: "member-alex",
+                    title: "Pick One",
+                    createdAt: Date(timeIntervalSince1970: 4_000),
+                    closesAt: nil,
+                    statusRaw: SelectionPollStatus.open.rawValue,
+                    isAnonymousResults: false,
+                    candidateIDsRaw: "sel-book",
+                    winnerSubmissionID: ""
+                )
+            ],
+            meetings: [emptyMeetingPayload()]
+        )
+        let phone = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_100),
+            authorMemberID: "member-sam-phone",
+            authorName: "Sam",
+            ratings: [
+                .init(
+                    submissionSelectionID: "sel-book",
+                    memberID: "member-sam-phone",
+                    memberName: "Sam",
+                    stars: 3,
+                    createdAt: Date(timeIntervalSince1970: 5_010)
+                )
+            ],
+            votes: [
+                .init(
+                    pollID: "poll-1",
+                    memberID: "member-sam-phone",
+                    memberName: "Sam",
+                    rankedSubmissionIDsRaw: "sel-book",
+                    updatedAt: Date(timeIntervalSince1970: 5_010)
+                )
+            ],
+            rsvps: [
+                .init(
+                    meetingID: "meeting-1",
+                    memberID: "member-sam-phone",
+                    memberName: "Sam",
+                    statusRaw: MeetingRSVPStatus.maybe.rawValue,
+                    bringingNote: "",
+                    updatedAt: Date(timeIntervalSince1970: 5_010)
+                )
+            ]
+        )
+        let mac = MemberShareSnapshot(
+            capturedAt: Date(timeIntervalSince1970: 5_200),
+            authorMemberID: "member-sam-mac",
+            authorName: "Sam",
+            ratings: [
+                .init(
+                    submissionSelectionID: "sel-book",
+                    memberID: "member-sam-mac",
+                    memberName: "Sam",
+                    stars: 5,
+                    createdAt: Date(timeIntervalSince1970: 5_020)
+                )
+            ],
+            votes: [
+                .init(
+                    pollID: "poll-1",
+                    memberID: "member-sam-mac",
+                    memberName: "Sam",
+                    rankedSubmissionIDsRaw: "sel-book",
+                    updatedAt: Date(timeIntervalSince1970: 5_020)
+                )
+            ],
+            rsvps: [
+                .init(
+                    meetingID: "meeting-1",
+                    memberID: "member-sam-mac",
+                    memberName: "Sam",
+                    statusRaw: MeetingRSVPStatus.attending.rawValue,
+                    bringingNote: "Snacks",
+                    updatedAt: Date(timeIntervalSince1970: 5_020)
+                )
+            ]
+        )
+
+        try MemberShareSnapshotStore.merge(
+            snapshots: [owner, phone, mac],
+            into: club,
+            context: context,
+            localMemberID: "member-eve"
+        )
+
+        let submission = try XCTUnwrap(
+            context.fetch(FetchDescriptor<BookSubmission>()).first { $0.selectionID == "sel-book" }
+        )
+        XCTAssertEqual(submission.ratings?.count, 1, "One Apple ID gets one rating")
+        let rating = try XCTUnwrap(submission.ratings?.first)
+        XCTAssertEqual(rating.memberID, "member-sam-mac")
+        XCTAssertEqual(rating.stars, 5)
+
+        let poll = try XCTUnwrap(
+            context.fetch(FetchDescriptor<SelectionPoll>()).first { $0.pollID == "poll-1" }
+        )
+        XCTAssertEqual(poll.votes?.count, 1, "One Apple ID gets one ballot even when it publishes from multiple devices")
+        XCTAssertEqual(poll.votes?.first?.memberID, "member-sam-mac")
+
+        let meeting = try XCTUnwrap(
+            context.fetch(FetchDescriptor<ClubMeeting>()).first { $0.meetingID == "meeting-1" }
+        )
+        XCTAssertEqual(meeting.rsvps?.count, 1, "One Apple ID gets one RSVP")
+        XCTAssertEqual(meeting.rsvps?.first?.status, .attending)
+        XCTAssertEqual(meeting.rsvps?.first?.bringingNote, "Snacks")
     }
 
     private func makeContext() throws -> ModelContext {

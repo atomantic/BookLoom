@@ -51,6 +51,48 @@ final class ClubLogisticsTests: XCTestCase {
         XCTAssertEqual(Set(tally.winningResults.map(\.id)), Set([first.selectionID, second.selectionID]))
     }
 
+    func test_memberCollectorCollapsesDeviceIDsBoundToSameCloudUser() throws {
+        let club = BookClub(name: "Tuesday")
+        club.creatorMemberID = "member-sam-phone"
+        club.memberIdentityBindings = [
+            "member-sam-phone": "cloud-sam",
+            "member-sam-mac": "cloud-sam"
+        ]
+        club.knownMemberRoster = [
+            "member-sam-phone": "Sam",
+            "member-sam-mac": "Sam"
+        ]
+
+        let member = try XCTUnwrap(ClubMemberCollector.collect(from: club).first)
+
+        XCTAssertEqual(ClubMemberCollector.collect(from: club).count, 1)
+        XCTAssertEqual(member.id, "member-sam-phone", "The creator identity remains the representative row")
+        XCTAssertEqual(member.memberIDs, ["member-sam-phone", "member-sam-mac"])
+        XCTAssertEqual(member.name, "Sam")
+        XCTAssertFalse(member.isNameOnly)
+    }
+
+    func test_memberCollectorHidesEveryDeviceIdentityForRemovedPerson() {
+        let club = BookClub(name: "Tuesday")
+        club.memberIdentityBindings = [
+            "member-sam-phone": "cloud-sam",
+            "member-sam-mac": "cloud-sam"
+        ]
+        club.removedMemberIDs = ["member-sam-phone"]
+        club.knownMemberRoster = [
+            "member-sam-phone": "Sam",
+            "member-sam-mac": "Sam"
+        ]
+        let submission = BookSubmission(
+            title: "Sam's Pick",
+            submittedBy: "Sam",
+            submittedByMemberID: "member-sam-mac"
+        )
+        club.addSubmission(submission)
+
+        XCTAssertTrue(ClubMemberCollector.collect(from: club).isEmpty)
+    }
+
     func test_promoteWinnerCompletesExistingCurrentBook() {
         let club = BookClub(name: "Tuesday")
         let current = BookSubmission(title: "Current", status: .current)
